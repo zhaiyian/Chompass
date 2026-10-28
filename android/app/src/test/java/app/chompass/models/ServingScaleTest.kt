@@ -1,0 +1,138 @@
+package app.chompass.models
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * Amount scaling: grams over the sheet's base, unless nutrition editing is
+ * unlocked (scaleWithAmount false).
+ */
+class ServingScaleTest {
+    // --- servingScale ---------------------------------------------------------
+
+    @Test
+    fun scale_fromDisplayedGrams_whenLocked() {
+        assertEquals(1.0, ServingUnitOption.servingScale(100.0, 100.0, scaleWithAmount = true), 0.0)
+        assertEquals(1.5, ServingUnitOption.servingScale(150.0, 100.0, scaleWithAmount = true), 0.0)
+        assertEquals(0.5, ServingUnitOption.servingScale(100.0, 200.0, scaleWithAmount = true), 0.0)
+    }
+
+    @Test
+    fun scale_isOne_whenUnlocked() {
+        assertEquals(1.0, ServingUnitOption.servingScale(150.0, 100.0, scaleWithAmount = false), 0.0)
+    }
+
+    @Test
+    fun scale_isOne_whenBaseServingIsZero() {
+        assertEquals(1.0, ServingUnitOption.servingScale(120.0, 0.0, scaleWithAmount = true), 0.0)
+    }
+
+    // --- persistedServingGrams ------------------------------------------------
+
+    @Test
+    fun persist_keepsNull_whenNoRecordedServing_andWeightUntouched() {
+        // Saving an imported entry without touching the weight must not bake in
+        // the 100 g placeholder: the entry stays serving-less, so a later edit
+        // cannot corrupt macros either.
+        assertNull(ServingUnitOption.persistedServingGrams(null, servingTouched = false, servingGrams = 100.0))
+    }
+
+    @Test
+    fun persist_recordsCorrectedWeight_whenNoRecordedServing_andWeightTouched() {
+        assertEquals(
+            150.0,
+            ServingUnitOption.persistedServingGrams(null, servingTouched = true, servingGrams = 150.0)!!,
+            0.0,
+        )
+    }
+
+    @Test
+    fun persist_keepsEditedWeight_whenRecordedServingExists() {
+        assertEquals(
+            180.0,
+            ServingUnitOption.persistedServingGrams(120.0, servingTouched = true, servingGrams = 180.0)!!,
+            0.0,
+        )
+        // Recorded serving persists even when untouched (status quo).
+        assertEquals(
+            120.0,
+            ServingUnitOption.persistedServingGrams(120.0, servingTouched = false, servingGrams = 120.0)!!,
+            0.0,
+        )
+    }
+
+    // --- recordedPortionGrams (Codeberg #89) ----------------------------------
+
+    @Test
+    fun portion_derivesFromUnitQuantity_whenServingless() {
+        val options = listOf(ServingUnitOption(unit = "slice", gramsPerUnit = 125.0))
+        assertEquals(
+            250.0,
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = null,
+                selectedUnit = "slice",
+                selectedQuantity = 2.0,
+                options = options,
+            )!!,
+            0.0,
+        )
+    }
+
+    @Test
+    fun portion_prefersRecordedServing() {
+        val options = listOf(ServingUnitOption(unit = "slice", gramsPerUnit = 125.0))
+        assertEquals(
+            300.0,
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = 300.0,
+                selectedUnit = "slice",
+                selectedQuantity = 2.0,
+                options = options,
+            )!!,
+            0.0,
+        )
+    }
+
+    @Test
+    fun portion_isNull_forPureGramEntries() {
+        // No unit selection, or a gram selection: no honest base exists, so
+        // the entry stays serving-less (Codeberg #10 follow-up).
+        assertNull(
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = null,
+                selectedUnit = null,
+                selectedQuantity = 2.0,
+                options = listOf(ServingUnitOption(unit = "slice", gramsPerUnit = 125.0)),
+            )
+        )
+        assertNull(
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = null,
+                selectedUnit = "g",
+                selectedQuantity = 2.0,
+                options = listOf(ServingUnitOption(unit = "g", gramsPerUnit = 125.0)),
+            )
+        )
+    }
+
+    @Test
+    fun portion_isNull_withoutQuantityOrMatchingOption() {
+        assertNull(
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = null,
+                selectedUnit = "slice",
+                selectedQuantity = null,
+                options = listOf(ServingUnitOption(unit = "slice", gramsPerUnit = 125.0)),
+            )
+        )
+        assertNull(
+            ServingUnitOption.recordedPortionGrams(
+                recordedServingGrams = null,
+                selectedUnit = "slice",
+                selectedQuantity = 2.0,
+                options = listOf(ServingUnitOption(unit = "cup", gramsPerUnit = 240.0)),
+            )
+        )
+    }
+}

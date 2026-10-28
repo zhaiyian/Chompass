@@ -1,0 +1,380 @@
+package app.chompass.services
+
+import app.chompass.models.CalorieSafety
+import app.chompass.models.FoodEntry
+import app.chompass.models.GoalJournal
+import app.chompass.models.GoalJournalEntry
+import app.chompass.models.GoalSource
+import app.chompass.models.MacroPlanResolver
+import app.chompass.models.NutritionConstants
+import app.chompass.models.UserProfile
+import app.chompass.models.WeightEntry
+import app.chompass.models.WeightGoal
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+
+/**
+ * Pure thermodynamic / statistical forecast of where the user's weight is heading based on
+ * recent calorie intake, logged weight history, and their profile. No network, no LLM —
+ * energy-balance math + linear regression.
+ */
+data class WeightForecast(
+    val avgDailyCalories: Int,
+    val tdee: Int,
+    val dailyEnergyBalance: Int,
+    val predictedWeeklyChangeKg: Double,
+    val observedWeeklyChangeKg: Double?,
+    val currentWeightKg: Double,
+    val predictedWeight30dKg: Double,
+    val predictedWeight60dKg: Double,
+    val predictedWeight90dKg: Double,
+    val daysToGoal: Int?,
+    val goalReachDate: Instant?,
+    val hasEnoughData: Boolean,
+    val trendsDisagree: Boolean,
+    val daysOfFoodData: Int,
+    val weightEntriesUsed: Int,
+    /** Calendar days from first logged food in lookback through yesterday. */
+    val calendarDaysInWindow: Int = WeightForecast.MAX_LOOKBACK_DAYS,
+    /** True when sparse logging triggered calendar-day intake averaging. */
+    val usesCalendarDayAverage: Boolean = false,
+    /** Mean of complete logged days (today excluded). Equal to [avgDailyCalories] when not sparse. */
+    val loggedDayAvgCalories: Int = 0,
+    val firstLoggedDate: LocalDate? = null,
+    val lastLoggedDate: LocalDate? = null,
+    /** Calendar days between first and last weigh-in in the lookback (0 if fewer than 2). */
+    val weightSpanDays: Int = 0,
+) {
+    companion object {
+        const val MAX_LOOKBACK_DAYS = 90
+    }
+}
+
+data class AdaptiveGoalResult(
+    val profile: UserProfile,
+    val changed: Boolean,
+    val updatedCalories: Int?,
+    val message: String
+)
+
+object AdaptiveGoalService {
+    private const val MINIMUM_FOOD_DAYS = 4
+    private const val MINIMUM_WEIGHT_ENTRIES = 6
+    private const val MINIMUM_WEIGHT_SPAN_DAYS = 28
+    private const val MINIMUM_DAILY_ADJUSTMENT = 25
+    private const val MAXIMUM_DAILY_ADJUSTMENT = 150
+    private val caloriesPerKg: Double get() = NutritionConstants.KCAL_PER_KG_BODY_MASS
+
+    /**
+     * #60 phase 4: window for the journaled lookback average (MACRO-CYCLE-D)
+     * that replaces `effectiveCalories` as the Adaptive baseline when day types
+     * are on — the ~14-day span the weight trend tests against.
+     */
+    internal const val PLAN_LOOKBACK_DAYS = 14
+
+    /** Journaled days required in that window before the lookback wins over the forward average. */
+    internal const val PLAN_MIN_JOURNAL_DAYS = 7
+
+    /**
+     * Plan-aware `currentCalories` for [apply] (#60 phase 4): the journaled
+     * lookback average (MACRO-CYCLE-D, what the user actually targeted) when
+     * at least [PLAN_MIN_JOURNAL_DAYS] days of the last [PLAN_LOOKBACK_DAYS]
+     * are journaled, else the forward window average (MACRO-CYCLE-B). Null
+     * when the plan is off — callers then pass nothing and today's single-target
+     * behavior is unchanged.
+     */
+    fun planCurrentCalories(
+        profile: UserProfile,
+        journal: List<GoalJournalEntry>,
+        today: LocalDate,
+    ): Int? {
+        val plan = profile.macroPlan?.takeIf { it.enabled } ?: return null
+        val from = today.minusDays((PLAN_LOOKBACK_DAYS - 1).toLong())
+        val coverage = journal.count { entry ->
+            GoalJournal.parseDateOrNull(entry.date)?.let { !it.isBefore(from) && !it.isAfter(today) } == true
+        }
+        val lookback = MacroPlanResolver.journalAverage(journal, from, today)
+        if (coverage >= PLAN_MIN_JOURNAL_DAYS && lookback != null) return lookback.calories
+        return MacroPlanResolver.averageForward(plan, MacroPlanResolver.baseTargets(profile), today).calories
+    }
+
+    /**
+     * [measuredTdee] (Health Connect active + basal energy, kcal/day) is preferred over the
+     * formula TDEE when available: it sets the safety ceiling and, when there isn't yet enough
+     * weight-trend data, drives a burn-based correction toward measured maintenance + the goal
+     * pace. The weight-trend correction stays primary whenever enough logs/weigh-ins exist.
+     */
+    fun apply(
+        profile: UserProfile,
+        weights: List<WeightEntry>,
+        foods: List<FoodEntry>,
+        measuredTdee: Int? = null,
+        /**
+         * #60 phase 4: plan-aware current target from [planCurrentCalories]
+         * (journaled lookback or forward average). Null = plan off.
+         */
+        planAverageCalories: Int? = null,
+    ): AdaptiveGoalResult {
+        if (profile.caloriesLocked) {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Calories are locked, so Adaptive Goals did not change them."
+            )
+        }
+        val forecast = WeightAnalysisService.compute(weights = weights, foods = foods, profile = profile)
+        val observedWeeklyChangeKg = forecast.observedWeeklyChangeKg
+        val targetWeeklyChangeKg = targetWeeklyChangeKg(profile)
+        val currentCalories = planAverageCalories ?: profile.effectiveCalories
+        val safetyFloor = CalorieSafety.floorKcal(profile.bmr)
+        // Prefer Health Connect measured burn for the maintenance/ceiling basis when available.
+        val maintenanceTdee = measuredTdee ?: profile.tdee.roundToInt()
+        val safetyCeiling = max(safetyFloor, (maintenanceTdee * 1.25).roundToInt())
+
+        // Plan users cannot sit below the floor: every profile is floored at
+        // every write (MACRO-CYCLE-C), so their average cannot either. The lift
+        // branch stays a single-target repair.
+        if (planAverageCalories == null && currentCalories < safetyFloor) {
+            val lifted = profile.applyCaloriesEdit(safetyFloor).copy(goalSource = GoalSource.ADAPTIVE)
+            return AdaptiveGoalResult(
+                profile = lifted,
+                changed = true,
+                updatedCalories = safetyFloor,
+                message = "Adaptive Goals raised calories to $safetyFloor kcal, the safety floor (never below your estimated resting burn or 1,200 kcal)."
+            )
+        }
+
+        val hasWeightTrend = forecast.daysOfFoodData >= MINIMUM_FOOD_DAYS &&
+            forecast.weightEntriesUsed >= MINIMUM_WEIGHT_ENTRIES &&
+            forecast.weightSpanDays >= MINIMUM_WEIGHT_SPAN_DAYS &&
+            observedWeeklyChangeKg != null
+
+        val limitedAdjustment: Int = if (hasWeightTrend && observedWeeklyChangeKg != null) {
+            // Primary: correct from the real weight trend vs the target pace.
+            val raw = (targetWeeklyChangeKg - observedWeeklyChangeKg) * caloriesPerKg / 7.0
+            raw.roundToInt().coerceIn(-MAXIMUM_DAILY_ADJUSTMENT, MAXIMUM_DAILY_ADJUSTMENT)
+        } else if (measuredTdee != null) {
+            // Not enough weigh-ins/food yet, but Health Connect gives measured burn: steer the
+            // target toward measured maintenance + the goal pace.
+            val targetCalories = measuredTdee +
+                NutritionConstants.dailyCalorieAdjustmentForWeeklyRateKg(targetWeeklyChangeKg)
+            (targetCalories - currentCalories).coerceIn(-MAXIMUM_DAILY_ADJUSTMENT, MAXIMUM_DAILY_ADJUSTMENT)
+        } else {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Adaptive Goals needs about four weeks of weigh-ins ($MINIMUM_WEIGHT_ENTRIES readings spanning $MINIMUM_WEIGHT_SPAN_DAYS days) and $MINIMUM_FOOD_DAYS logged food days, or Health Connect energy data, before changing calories."
+            )
+        }
+
+        if (abs(limitedAdjustment) < MINIMUM_DAILY_ADJUSTMENT) {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Your recent trend is close to your selected goal pace, so Adaptive Goals did not change calories this week."
+            )
+        }
+
+        if (limitedAdjustment < 0 && currentCalories <= safetyFloor) {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Adaptive Goals did not lower calories because your current target is already at the safety floor."
+            )
+        }
+        if (limitedAdjustment > 0 && currentCalories >= safetyCeiling) {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Adaptive Goals did not raise calories because your current target is already at the safety ceiling."
+            )
+        }
+
+        val proposedCalories = currentCalories + limitedAdjustment
+        val adjustedCalories = if (limitedAdjustment < 0) {
+            max(proposedCalories, safetyFloor)
+        } else {
+            min(proposedCalories, safetyCeiling)
+        }
+
+        if (adjustedCalories == currentCalories) {
+            return AdaptiveGoalResult(
+                profile = profile,
+                changed = false,
+                updatedCalories = null,
+                message = "Adaptive Goals checked your trend, but calorie guardrails kept this week's target unchanged."
+            )
+        }
+
+        val signedAdjustment = adjustedCalories - currentCalories
+        val nextProfile = (if (planAverageCalories != null) {
+            applyToDayTypePlan(profile, signedAdjustment)
+        } else {
+            profile.applyCaloriesEdit(adjustedCalories)
+        }).copy(goalSource = GoalSource.ADAPTIVE)
+        val sign = if (signedAdjustment > 0) "+" else ""
+        val basis = if (hasWeightTrend) "your recent weight trend" else "your Health Connect energy burn"
+        val trendNote = if (hasWeightTrend && observedWeeklyChangeKg != null) {
+            " Observed ${formatWeeklyKg(observedWeeklyChangeKg)}, target ${formatWeeklyKg(targetWeeklyChangeKg)}."
+        } else ""
+        // #60 phase 4: with day types the tweak hit every profile and the headline number is the new weekly average.
+        val newAverage = if (planAverageCalories != null) {
+            MacroPlanResolver.averageForward(
+                nextProfile.macroPlan,
+                MacroPlanResolver.baseTargets(nextProfile),
+                LocalDate.now(),
+            ).calories
+        } else {
+            null
+        }
+        val dayTypesNote = newAverage?.let { " Adjusted every day-type profile by the same amount; your new weekly average is $it kcal." } ?: ""
+        return AdaptiveGoalResult(
+            profile = nextProfile,
+            changed = true,
+            updatedCalories = newAverage ?: adjustedCalories,
+            message = "Adaptive Goals adjusted calories by $sign$signedAdjustment kcal to $adjustedCalories kcal based on $basis.$trendNote$dayTypesNote"
+        )
+    }
+
+    /**
+     * #60 phase 4: the weekly tweak applies to EVERY day-type profile (spread
+     * preserved, each clamped to its own floor/ceiling via
+     * [app.chompass.models.MacroDayProfile.shiftedBy]) and the base target set
+     * moves by the same delta so the disabled state stays consistent.
+     */
+    private fun applyToDayTypePlan(profile: UserProfile, deltaKcal: Int): UserProfile {
+        val base = profile.applyCaloriesEdit(profile.effectiveCalories + deltaKcal)
+        val plan = profile.macroPlan?.takeIf { it.enabled } ?: return base
+        return base.copy(
+            macroPlan = plan.copy(
+                profiles = plan.profiles.map { it.shiftedBy(deltaKcal, profile.bmr, profile.tdee) },
+            ),
+        )
+    }
+
+    private fun formatWeeklyKg(kg: Double): String =
+        String.format(Locale.US, "%+.2f kg/week", kg)
+
+    private fun targetWeeklyChangeKg(profile: UserProfile): Double = when (profile.goal) {
+        WeightGoal.LOSE -> -(profile.weeklyChangeKg ?: 0.5)
+        WeightGoal.MAINTAIN -> 0.0
+        WeightGoal.GAIN -> profile.weeklyChangeKg ?: 0.5
+    }
+}
+
+object WeightAnalysisService {
+    fun compute(
+        weights: List<WeightEntry>,
+        foods: List<FoodEntry>,
+        profile: UserProfile,
+        now: Instant = Instant.now(),
+        zone: ZoneId = ZoneId.systemDefault(),
+        untrackedDates: Collection<LocalDate> = emptySet(),
+    ): WeightForecast {
+        val today = now.atZone(zone).toLocalDate()
+        val lookbackStart = today.minusDays(WeightForecast.MAX_LOOKBACK_DAYS.toLong())
+        val cutoff = lookbackStart.atStartOfDay(zone).toInstant()
+
+        val untracked = untrackedDates.toSet()
+        val foodDates = foods.map { it.timestamp.atZone(zone).toLocalDate() }
+        val window = WeightForecastMath.completeDayWindow(
+            foodDates,
+            today,
+            WeightForecast.MAX_LOOKBACK_DAYS,
+            untrackedDates = untracked,
+        )
+        val completeFoods = foods.filter {
+            it.timestamp.atZone(zone).toLocalDate() in window.loggedDates
+        }
+        val daysLogged = window.loggedDates.size
+        val totalRecentCal = completeFoods.sumOf { it.calories }
+        val intake = WeightForecastMath.averageDailyIntake(
+            totalRecentCal,
+            daysLogged,
+            window.calendarDays,
+        )
+        val avgDailyCal = intake.avgDailyCalories
+        val loggedDayAvg = if (daysLogged > 0) totalRecentCal / daysLogged else 0
+
+        val tdee = profile.tdee.toInt()
+        val balance = avgDailyCal - tdee
+        // 7,700 kcal ≈ 1 kg body fat (ISSN standard for deficit/surplus math).
+        val predictedWeeklyKg = balance.toDouble() * 7.0 / NutritionConstants.KCAL_PER_KG_BODY_MASS
+
+        val sortedWeights = weights.sortedByDescending { it.date }
+        val currentWeight = sortedWeights.firstOrNull()?.weightKg ?: profile.weightKg
+
+        val regressionWindow = sortedWeights.filter { it.date >= cutoff }
+        val observedWeeklyKg = WeightForecastMath.theilSenSlopePerDay(regressionWindow, zone)?.let { it * 7.0 }
+        val weightSpanDays = if (regressionWindow.size >= 2) {
+            val dates = regressionWindow.map { it.date.atZone(zone).toLocalDate() }
+            ChronoUnit.DAYS.between(dates.min(), dates.max()).toInt()
+        } else {
+            0
+        }
+
+        val pred30 = currentWeight + predictedWeeklyKg * 30.0 / 7.0
+        val pred60 = currentWeight + predictedWeeklyKg * 60.0 / 7.0
+        val pred90 = currentWeight + predictedWeeklyKg * 90.0 / 7.0
+
+        var daysToGoal: Int? = null
+        var goalReachDate: Instant? = null
+        val goalKg = profile.goalWeightKg
+        if (goalKg != null && predictedWeeklyKg != 0.0 && profile.goal != WeightGoal.MAINTAIN) {
+            val kgRemaining = goalKg - currentWeight
+            val movingCorrectWay =
+                (profile.goal == WeightGoal.LOSE && predictedWeeklyKg < 0 && kgRemaining < 0) ||
+                        (profile.goal == WeightGoal.GAIN && predictedWeeklyKg > 0 && kgRemaining > 0)
+            if (movingCorrectWay) {
+                val daysPerKg = 7.0 / abs(predictedWeeklyKg)
+                val days = (abs(kgRemaining) * daysPerKg).roundToInt()
+                daysToGoal = days
+                goalReachDate = now.plusSeconds(days * 86_400L)
+            }
+        }
+
+        val hasEnoughData = daysLogged >= 2 && weights.size >= 2
+
+        val trendsDisagree = WeightForecastMath.trendsDisagree(
+            predictedWeeklyKg,
+            observedWeeklyKg,
+            hasEnoughData,
+        )
+
+        return WeightForecast(
+            avgDailyCalories = avgDailyCal,
+            tdee = tdee,
+            dailyEnergyBalance = balance,
+            predictedWeeklyChangeKg = predictedWeeklyKg,
+            observedWeeklyChangeKg = observedWeeklyKg,
+            currentWeightKg = currentWeight,
+            predictedWeight30dKg = pred30,
+            predictedWeight60dKg = pred60,
+            predictedWeight90dKg = pred90,
+            daysToGoal = daysToGoal,
+            goalReachDate = goalReachDate,
+            hasEnoughData = hasEnoughData,
+            trendsDisagree = trendsDisagree,
+            daysOfFoodData = daysLogged,
+            weightEntriesUsed = regressionWindow.size,
+            calendarDaysInWindow = intake.calendarDaysInWindow,
+            usesCalendarDayAverage = intake.usesCalendarDayAverage,
+            loggedDayAvgCalories = loggedDayAvg,
+            firstLoggedDate = window.firstLogged,
+            lastLoggedDate = window.loggedDates.maxOrNull(),
+            weightSpanDays = weightSpanDays,
+        )
+    }
+}

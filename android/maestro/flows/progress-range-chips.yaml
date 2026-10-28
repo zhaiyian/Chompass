@@ -1,0 +1,24 @@
+# Device-pass pilot flow 1: Progress tab + range chips.
+# Maps to the P2-1 known-destination surface and the perf-capture range chips.
+# Selectors use the German strings (device locale de-DE, values-de/strings.xml).
+appId: app.chompass.debug
+name: Progress tab and range chips
+---
+- launchApp
+# First launch after install seeds a year of fixture data; wait it out.
+- extendedWaitUntil:
+    visible: "Heute"
+    timeout: 90000
+- tapOn: "Fortschritt"                      # nav_progress bottom nav
+- assertVisible: "Fortschritt anpassen"     # progress header (pass P2-1)
+- extendedWaitUntil:                        # seeded chart titles
+    visible: "Gewicht"
+    timeout: 10000
+- tapOn:                                  # range chip (if the device renders
+    text: "1 Monat"                       # "1M" instead, adjust both labels)
+    optional: true
+- assertVisible: "Gewicht"
+- tapOn:
+    text: "1 Woche"                       # range chip back
+    optional: true
+- assertVisible: "Fortschritt anpassen"

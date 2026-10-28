@@ -1,0 +1,111 @@
+package app.chompass.ui.navigation
+
+object ChompassRoutes {
+    const val ONBOARDING = "onboarding"
+    const val HOME = "home"
+    const val HEALTH = "health"
+    const val HEALTH_URIC_ENTRY = "health/uric-entry?recordId={recordId}"
+    const val HEALTH_PAIN_ENTRY = "health/pain-entry?episodeId={episodeId}"
+    const val HEALTH_PAIN_DETAIL = "health/pain-detail/{episodeId}"
+    const val HEALTH_PAIN_INSIGHT = "health/pain-insight"
+    const val HEALTH_MED_LOG = "health/med-log"
+    const val HEALTH_MED_MANAGE = "health/med-manage"
+    const val HEALTH_MED_EDIT = "health/med-edit?medId={medId}"
+    const val HEALTH_MED_EXTRA = "health/med-extra?medId={medId}"
+    const val HEALTH_DATA = "health/data"
+    const val PROGRESS = "progress"
+    const val COACH = "coach"
+    const val PLAN_WEEK = "plan-week"
+    const val SETTINGS = "settings"
+    const val SETTINGS_PERSONAL = "settings/personal"
+    const val SETTINGS_GOALS = "settings/goals"
+    const val SETTINGS_DAY_TYPES = "settings/day-types"
+    const val SETTINGS_APP = "settings/app"
+    const val SETTINGS_TRACKERS = "settings/trackers"
+    const val SETTINGS_AI = "settings/ai"
+    const val SETTINGS_DATA = "settings/data"
+    const val SETTINGS_NUTRITION_TARGETS = "settings/nutrition-targets"
+    const val SETTINGS_SPEECH = "settings/speech"
+    const val SETTINGS_COACH = "settings/coach"
+    const val SETTINGS_HEALTH = "settings/health"
+    const val SETTINGS_ABOUT = "settings/about"
+    const val SETTINGS_SUPPORT = "settings/support"
+    const val SETTINGS_LEGAL = "settings/legal"
+    const val OPTIONAL_NUTRIENT_GOALS = "settings/optional-nutrient-goals"
+    const val HOME_DISPLAY = "settings/home-display"
+    const val CUSTOMIZE_PROGRESS = "settings/customize-progress"
+    const val GOAL_PHASES = "settings/goal-phases"
+    const val CALCULATION_METHODS = "settings/calculation-methods"
+    const val BODY_MEASUREMENTS = "settings/body-measurements"
+    const val SETTINGS_FOOD = "settings/food"
+    const val SETTINGS_WATER = "settings/water?from={from}"
+    const val SETTINGS_NICOTINE = "settings/nicotine?from={from}"
+    const val SETTINGS_CAFFEINE = "settings/caffeine?from={from}"
+    const val SETTINGS_FASTING = "settings/fasting?from={from}"
+    const val SETTINGS_NOTES = "settings/notes?from={from}"
+    const val SETTINGS_NOTIFICATIONS = "settings/notifications?from={from}"
+    const val SETTINGS_SYNC = "settings/sync?from={from}"
+
+    /** Cross-link route builders; `from` drives the sub-screen's back label. */
+    fun waterRoute(from: String) = "settings/water?from=$from"
+        fun nicotineRoute(from: String) = "settings/nicotine?from=$from"
+    fun caffeineRoute(from: String) = "settings/caffeine?from=$from"
+    fun fastingRoute(from: String) = "settings/fasting?from=$from"
+    fun notesRoute(from: String) = "settings/notes?from=$from"
+    fun notificationsRoute(from: String) = "settings/notifications?from=$from"
+    fun syncRoute(from: String) = "settings/sync?from=$from"
+
+    /** Uric reading editor; `-1` means "new reading" rather than an existing row. */
+    fun uricEntryRoute(recordId: Long? = null) = "health/uric-entry?recordId=${recordId ?: -1L}"
+
+    /** Pain episode editor; `-1` means "new flare" rather than an existing row. */
+    fun painEntryRoute(episodeId: Long? = null) = "health/pain-entry?episodeId=${episodeId ?: -1L}"
+
+    fun painDetailRoute(episodeId: Long) = "health/pain-detail/$episodeId"
+
+    /** Medication editor; `-1` means "new medication" rather than an existing row. */
+    fun medEditRoute(medId: Long? = null) = "health/med-edit?medId=${medId ?: -1L}"
+
+    /** "Record one dose"; `-1` when nothing is preselected (from the FAB). */
+    fun medExtraRoute(medId: Long? = null) = "health/med-extra?medId=${medId ?: -1L}"
+
+    val bottomTabs = listOf(HOME, HEALTH, PROGRESS, COACH, SETTINGS)
+
+    /**
+     * Destinations reachable via `chompass://go/<dest>` (notification taps, deep
+     * links). Only exactly these plain routes: arg-routed sub-screens
+     * (`settings/water?from=…`) cannot be built from a path-only `go` link, and an
+     * arbitrary string passed to `nav.navigate()` throws — so unknown destinations
+     * are ignored instead of navigated (any app can fire a VIEW intent).
+     */
+    fun isGoDestination(dest: String): Boolean = dest in GO_DESTINATIONS
+
+    private val GO_DESTINATIONS = setOf(
+        HOME,
+        HEALTH,
+        PROGRESS,
+        COACH,
+        SETTINGS,
+        SETTINGS_PERSONAL,
+        SETTINGS_GOALS,
+        SETTINGS_DAY_TYPES,
+        SETTINGS_APP,
+        SETTINGS_TRACKERS,
+        SETTINGS_AI,
+        SETTINGS_DATA,
+        SETTINGS_NUTRITION_TARGETS,
+        SETTINGS_SPEECH,
+        SETTINGS_COACH,
+        SETTINGS_HEALTH,
+        SETTINGS_ABOUT,
+        SETTINGS_SUPPORT,
+        SETTINGS_LEGAL,
+        OPTIONAL_NUTRIENT_GOALS,
+        HOME_DISPLAY,
+        CUSTOMIZE_PROGRESS,
+        GOAL_PHASES,
+        CALCULATION_METHODS,
+        BODY_MEASUREMENTS,
+        SETTINGS_FOOD,
+    )
+}

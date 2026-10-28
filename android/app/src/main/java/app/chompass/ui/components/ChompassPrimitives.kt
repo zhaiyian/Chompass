@@ -1,0 +1,316 @@
+package app.chompass.ui.components
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import app.chompass.R
+import app.chompass.ui.theme.AppColors
+
+@Composable
+fun isDarkTheme(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+fun translucentFill(isDark: Boolean): Color =
+    if (isDark) AppColors.TranslucentSurfaceDark else AppColors.TranslucentSurfaceLight
+
+fun hairlineBorder(isDark: Boolean): Color =
+    if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight
+
+@Composable
+fun ChompassSurface(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 16.dp,
+    padding: Dp = 16.dp,
+    contentAlignment: Alignment = Alignment.TopStart,
+    elevated: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    Card(
+        modifier = modifier,
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (elevated) 1.dp else 0.dp,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(padding),
+            contentAlignment = contentAlignment,
+            content = content,
+        )
+    }
+}
+
+@Composable
+fun ChompassSurfaceColumn(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 16.dp,
+    padding: Dp = 16.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ChompassSurface(
+        modifier = modifier,
+        cornerRadius = cornerRadius,
+        padding = 0.dp,
+    ) {
+        Column(Modifier.padding(padding), content = content)
+    }
+}
+
+@Composable
+fun ChompassIconBubble(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    size: Dp = 34.dp,
+    iconSize: Dp = 19.dp,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    Box(
+        modifier = modifier.size(size),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+@Composable
+fun ChompassTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+    ),
+    accentColor: Color? = null,
+    /** Optional field affordances (search glyph, clear button) — see AddFoodQueryRow. */
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+) {
+    val fieldAccent = accentColor ?: MaterialTheme.colorScheme.primary
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        leadingIcon = leadingIcon,
+        trailingIcon = trailingIcon,
+        placeholder = {
+            if (placeholder.isNotBlank()) {
+                Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        visualTransformation = visualTransformation,
+        textStyle = textStyle,
+        shape = MaterialTheme.shapes.small,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = fieldAccent,
+            cursorColor = fieldAccent,
+        ),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChompassDialog(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** Cap the dialog height to the window and scroll the content when it overflows. */
+    scrollable: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    BasicAlertDialog(
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .then(
+                            if (scrollable) {
+                                Modifier
+                                    .heightIn(max = maxHeight - 16.dp)
+                                    .verticalScroll(rememberScrollState())
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    content = content,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ChompassPrimaryButton(
+    text: String? = null,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    enabled: Boolean = true,
+    height: Dp = 50.dp,
+    icon: ImageVector? = null,
+    flushDrafts: Boolean = false,
+    content: (@Composable RowScope.() -> Unit)? = null,
+) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val label = text ?: androidx.compose.ui.res.stringResource(R.string.action_save)
+    Button(
+        onClick = {
+            if (flushDrafts) {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                MagnitudeDrafts.commitAll()
+            }
+            onClick()
+        },
+        enabled = enabled,
+        modifier = modifier.height(height),
+        shape = MaterialTheme.shapes.medium,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+    ) {
+        when {
+            content != null -> content()
+            icon != null -> {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.labelLarge)
+            }
+            else -> Text(label, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+fun ChompassTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.textButtonColors(contentColor = color),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+fun ChompassDialogActions(
+    primaryText: String,
+    onPrimary: () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissText: String? = null,
+    onDismiss: (() -> Unit)? = null,
+    destructive: Boolean = false,
+    primaryEnabled: Boolean = true,
+) {
+    // Typed wheel/numpad drafts must flush before the host's onPrimary reads
+    // state — same sink as SheetStickyPrimaryBar / SheetReviewToolbar.
+    val commitPrimary = {
+        MagnitudeDrafts.commitAll()
+        onPrimary()
+    }
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (dismissText != null && onDismiss != null) {
+            TextButton(onClick = onDismiss) {
+                Text(dismissText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.width(6.dp))
+        }
+        if (destructive) {
+            TextButton(
+                onClick = commitPrimary,
+                enabled = primaryEnabled,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text(primaryText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        } else {
+            TextButton(onClick = commitPrimary, enabled = primaryEnabled) {
+                Text(primaryText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}

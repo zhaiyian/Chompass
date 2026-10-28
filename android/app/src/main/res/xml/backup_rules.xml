@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup / full-backup-content (API < 31). Keep diary DataStore, exclude
+  EncryptedSharedPreferences that hold API keys (KeyStore FILE_NAME).
+  https://developer.android.com/guide/topics/data/autobackup
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="fudai_keychain.xml" />
+</full-backup-content>

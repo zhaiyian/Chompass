@@ -1,0 +1,64 @@
+{
+  "as_of": "2026-07-29",
+  "manifest": "docs/benchmarks/food_accuracy/manifest/eval_text.jsonl",
+  "status": "wip_not_production",
+  "role": "gram_rich_identity_regression_only",
+  "methodology": "Every prompt embeds explicit mass (e.g. '150 g'). Useful for identity/form regression and PortionResolver smoke; NOT the grounded ship gate — see grounded_realistic_text_thresholds.json.",
+  "pin": {
+    "provider": "openrouter",
+    "model": "google/gemini-3.5-flash-lite",
+    "mode": "grounded_tool"
+  },
+  "current_baseline": {
+    "run_dir": "results/grounded_tool_gemini35_flash_lite_text_portion_fidelity",
+    "wmape": 0.101,
+    "within_20pct_calories_rate": 0.81,
+    "parse_ok_rate": 1.0,
+    "fallback_rate": 0.0,
+    "identity_top1_rate": 0.881,
+    "silent_zero_rate": 0.0,
+    "mae_calories": 16.6,
+    "notes": "Portion-fidelity harness (2026-07-29). Ungrounded still ~2× better on this gram-rich set — expected; do not use as ship gate."
+  },
+  "prior_baseline": {
+    "run_dir": "results/grounded_tool_gemini35_flash_lite_text_post_roadmap",
+    "wmape": 0.128,
+    "within_20pct_calories_rate": 0.786,
+    "parse_ok_rate": 1.0,
+    "fallback_rate": 0.0,
+    "notes": "Post-roadmap tool-loop (2026-07-22)"
+  },
+  "ungrounded_reference": {
+    "flash_lite_compact": {
+      "run_dir": "results/quick_gemini35_flash_lite_text",
+      "wmape": 0.048,
+      "within_20pct_calories_rate": 0.929,
+      "parse_ok_rate": 1.0
+    },
+    "gemma_compact_best_free_text": {
+      "run_dir": "results/prompt_ab_gemma/compact",
+      "wmape": 0.057,
+      "within_20pct_calories_rate": 0.905,
+      "parse_ok_rate": 1.0
+    }
+  },
+  "readiness_targets": {
+    "comment": "Deprecated as ship gate — kept for identity regression floors only.",
+    "wmape_max": 0.12,
+    "within_20pct_calories_rate_min": 0.78,
+    "parse_ok_rate_min": 0.95,
+    "finalize_rate_min": 0.95,
+    "silent_zero_rate_max": 0.0,
+    "identity_top3_rate_min": 0.80
+  },
+  "regression_floors": {
+    "comment": "Fail a pinned re-run if worse than portion-fidelity + slack (identity regression).",
+    "wmape_max": 0.16,
+    "within_20pct_calories_rate_min": 0.72,
+    "parse_ok_rate_min": 0.95
+  },
+  "single_shot_reference": {
+    "wmape": 0.048,
+    "within_20pct_calories_rate": 0.93
+  }
+}

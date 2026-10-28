@@ -1,0 +1,855 @@
+package app.chompass.services.ai
+
+import app.chompass.models.AIProvider
+import app.chompass.models.CalorieSafety
+import app.chompass.models.FoodConstituent
+import app.chompass.models.FoodGroundingProvenance
+import app.chompass.models.GroundingConfidence
+import app.chompass.models.MacroPlanEdit
+import app.chompass.models.MicronutrientValues
+import app.chompass.models.ServingUnitOption
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.UserProfile
+import app.chompass.services.InputSanitizer
+import app.chompass.services.PerfLog
+import kotlinx.serialization.Serializable
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.roundToInt
+
+fun MicronutrientValues.applyTo(analysis: FoodAnalysis): FoodAnalysis = analysis.copy(
+    sugar = sugar,
+    addedSugar = addedSugar,
+    fiber = fiber,
+    saturatedFat = saturatedFat,
+    monounsaturatedFat = monounsaturatedFat,
+    polyunsaturatedFat = polyunsaturatedFat,
+    cholesterol = cholesterol,
+    sodium = sodium,
+    potassium = potassium,
+    transFat = transFat,
+    calcium = calcium,
+    iron = iron,
+    magnesium = magnesium,
+    zinc = zinc,
+    vitaminA = vitaminA,
+    vitaminC = vitaminC,
+    vitaminD = vitaminD,
+    vitaminB12 = vitaminB12,
+    vitaminE = vitaminE,
+    vitaminK = vitaminK,
+    folate = folate,
+    omega3 = omega3,
+    caffeine = caffeine,
+)
+
+fun FoodAnalysis.toMicronutrients() = MicronutrientValues(
+    sugar = sugar,
+    addedSugar = addedSugar,
+    fiber = fiber,
+    saturatedFat = saturatedFat,
+    monounsaturatedFat = monounsaturatedFat,
+    polyunsaturatedFat = polyunsaturatedFat,
+    cholesterol = cholesterol,
+    sodium = sodium,
+    potassium = potassium,
+    transFat = transFat,
+    calcium = calcium,
+    iron = iron,
+    magnesium = magnesium,
+    zinc = zinc,
+    vitaminA = vitaminA,
+    vitaminC = vitaminC,
+    vitaminD = vitaminD,
+    vitaminB12 = vitaminB12,
+    vitaminE = vitaminE,
+    vitaminK = vitaminK,
+    folate = folate,
+    omega3 = omega3,
+    caffeine = caffeine,
+)
+
+/**
+ * Words that stay lowercase mid-name (EN + DE connector words), so
+ * "Grilled Chicken Breast with Rice" reads like a menu item. The first word
+ * is always capitalized; [AI_NAME_SHORT_FORMS] covers LLM-style all-lowercase
+ * acronyms that should stay short ("bbq").
+ */
+private val AI_NAME_MINOR_WORDS = setOf(
+    // English
+    "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into",
+    "nor", "of", "on", "onto", "or", "per", "than", "the", "to", "up", "via",
+    "with", "without",
+    // German
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+    "einer", "und", "oder", "aber", "mit", "ohne", "für", "auf", "im", "am",
+    "aus", "von", "vom", "zu", "zum", "zur", "bei", "nach", "über", "unter",
+    "zwischen", "gegen", "durch", "um", "als", "wie", "sowie",
+)
+
+/** All-lowercase short forms the LLM likes to write; uppercased for polish. */
+private val AI_NAME_SHORT_FORMS = setOf("bbq")
+
+/** Capitalizes the first letter of [word], skipping leading punctuation. */
+private fun capitalizeFirstLetter(word: String): String {
+    val idx = word.indexOfFirst { it.isLetter() }
+    if (idx < 0) return word
+    return word.substring(0, idx) + word[idx].titlecase() + word.substring(idx + 1)
+}
+
+/**
+ * Capitalizes an AI-produced food name (Codeberg #7): the first letter of the
+ * name and of every word that is neither a minor connector word (with/and/mit…)
+ * nor an acronym/short form, so "grilled chicken breast with rice" renders as
+ * "Grilled Chicken Breast with Rice" and "hähnchen mit reis" as
+ * "Hähnchen mit Reis" (German nouns get capitalized, connectors stay low).
+ * Already-capitalized words ("Coca-Cola", "McDonald's") and all-caps
+ * acronyms ("BBQ") are untouched. Applied only where the LLM wrote the name
+ * (parseFood / parseRecognition / parseLabel / parseConstituents) — never to
+ * OFF/USDA/Swiss database names, history entries, or user-typed text.
+ */
+internal fun capitalizeAiFoodName(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return trimmed
+    return trimmed.split(Regex("\\s+")).mapIndexed { index, word ->
+        val isFirst = index == 0
+        val lower = word.lowercase()
+        when {
+            lower in AI_NAME_SHORT_FORMS -> word.uppercase()
+            !isFirst && lower in AI_NAME_MINOR_WORDS -> word
+            word.length > 1 && word.all { !it.isLetter() || it.isUpperCase() } -> word
+            else -> capitalizeFirstLetter(word)
+        }
+    }.joinToString(" ")
+}
+
+/** Result of AI food-photo / text analysis. */
+@Serializable
+data class FoodAnalysis(
+    val name: String,
+    val calories: Int,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    /** Recorded serving grams; null = macros are portion totals without a known serving (imports). */
+    val servingSizeGrams: Double?,
+    val emoji: String? = null,
+    val sugar: Double? = null,
+    val addedSugar: Double? = null,
+    val fiber: Double? = null,
+    val saturatedFat: Double? = null,
+    val monounsaturatedFat: Double? = null,
+    val polyunsaturatedFat: Double? = null,
+    val cholesterol: Double? = null,
+    val sodium: Double? = null,
+    val potassium: Double? = null,
+    val transFat: Double? = null,
+    val calcium: Double? = null,
+    val iron: Double? = null,
+    val magnesium: Double? = null,
+    val zinc: Double? = null,
+    val vitaminA: Double? = null,
+    val vitaminC: Double? = null,
+    val vitaminD: Double? = null,
+    val vitaminB12: Double? = null,
+    val vitaminE: Double? = null,
+    val vitaminK: Double? = null,
+    val folate: Double? = null,
+    val omega3: Double? = null,
+    val caffeine: Double? = null,
+    val servingUnitOptions: List<ServingUnitOption> = emptyList(),
+    val selectedServingUnit: String? = null,
+    val selectedServingQuantity: Double? = null,
+    val customNote: String? = null,
+    /** Present when nutrients were grounded (USDA / OFF / history) rather than free-form estimated. */
+    val grounding: FoodGroundingProvenance? = null,
+    val groundingConfidence: GroundingConfidence? = null,
+    /**
+     * Optional composite-meal breakdown. Empty means an indivisible food.
+     * When non-empty, grams/macros sum to the meal totals after reconcile.
+     */
+    val constituents: List<FoodConstituent> = emptyList(),
+    /**
+     * Optional barcode-product enrichment (Open Food Facts). Null on legacy
+     * records and every non-barcode path; display-only.
+     */
+    val productMetadata: app.chompass.models.FoodProductMetadata? = null,
+)
+
+/**
+ * Straight 1:1 mapping to a persistable [app.chompass.models.FoodEntry]
+ * (no scaling or user edits). Used by the debug entry-perf benchmark to persist an
+ * analyzed result; the interactive save path in HomeViewModel builds its own entry
+ * because it also applies serving scaling and manual field overrides.
+ */
+fun FoodAnalysis.toFoodEntry(
+    source: app.chompass.models.FoodSource,
+    mealType: String,
+): app.chompass.models.FoodEntry =
+    toMicronutrients().applyTo(
+        app.chompass.models.FoodEntry(
+            name = name,
+            calories = calories,
+            protein = protein,
+            carbs = carbs,
+            fat = fat,
+            emoji = emoji,
+            source = source,
+            mealType = mealType,
+            servingSizeGrams = servingSizeGrams,
+            servingUnitOptions = servingUnitOptions,
+            selectedServingUnit = selectedServingUnit,
+            selectedServingQuantity = selectedServingQuantity,
+            grounding = grounding,
+            constituents = constituents,
+            productMetadata = productMetadata,
+            microsCompositionSignature = app.chompass.models.microsCompositionSignature(constituents),
+        )
+    )
+
+/** Per-100g nutrition-label reading. Scaled to a real serving via [scaled]. */
+data class NutritionLabelAnalysis(
+    val name: String,
+    val caloriesPer100g: Double,
+    val proteinPer100g: Double,
+    val carbsPer100g: Double,
+    val fatPer100g: Double,
+    val servingSizeGrams: Double? = null,
+    val sugarPer100g: Double? = null,
+    val addedSugarPer100g: Double? = null,
+    val fiberPer100g: Double? = null,
+    val saturatedFatPer100g: Double? = null,
+    val monounsaturatedFatPer100g: Double? = null,
+    val polyunsaturatedFatPer100g: Double? = null,
+    val cholesterolPer100g: Double? = null,
+    val sodiumPer100g: Double? = null,
+    val potassiumPer100g: Double? = null,
+    val transFatPer100g: Double? = null,
+    val calciumPer100g: Double? = null,
+    val ironPer100g: Double? = null,
+    val magnesiumPer100g: Double? = null,
+    val zincPer100g: Double? = null,
+    val vitaminAPer100g: Double? = null,
+    val vitaminCPer100g: Double? = null,
+    val vitaminDPer100g: Double? = null,
+    val vitaminB12Per100g: Double? = null,
+    val vitaminEPer100g: Double? = null,
+    val vitaminKPer100g: Double? = null,
+    val folatePer100g: Double? = null,
+    val omega3Per100g: Double? = null,
+    val caffeinePer100g: Double? = null,
+    val servingUnitOptions: List<ServingUnitOption> = emptyList()
+) {
+    fun scaled(toGrams: Double): FoodAnalysis {
+        val scale = toGrams / 100.0
+        val selectedOption = servingUnitOptions.firstOrNull()
+        val micros = MicronutrientValues(
+            sugar = sugarPer100g,
+            addedSugar = addedSugarPer100g,
+            fiber = fiberPer100g,
+            saturatedFat = saturatedFatPer100g,
+            monounsaturatedFat = monounsaturatedFatPer100g,
+            polyunsaturatedFat = polyunsaturatedFatPer100g,
+            cholesterol = cholesterolPer100g,
+            sodium = sodiumPer100g,
+            potassium = potassiumPer100g,
+            transFat = transFatPer100g,
+            calcium = calciumPer100g,
+            iron = ironPer100g,
+            magnesium = magnesiumPer100g,
+            zinc = zincPer100g,
+            vitaminA = vitaminAPer100g,
+            vitaminC = vitaminCPer100g,
+            vitaminD = vitaminDPer100g,
+            vitaminB12 = vitaminB12Per100g,
+            vitaminE = vitaminEPer100g,
+            vitaminK = vitaminKPer100g,
+            folate = folatePer100g,
+            omega3 = omega3Per100g,
+            caffeine = caffeinePer100g,
+        ).scaled(scale, round1 = true)
+        return micros.applyTo(
+            FoodAnalysis(
+                name = name,
+                calories = (caloriesPer100g * scale).toInt(),
+                protein = proteinPer100g * scale,
+                carbs = carbsPer100g * scale,
+                fat = fatPer100g * scale,
+                servingSizeGrams = toGrams,
+                servingUnitOptions = servingUnitOptions,
+                selectedServingUnit = selectedOption?.unit,
+                selectedServingQuantity = selectedOption?.quantityFor(toGrams)
+            )
+        )
+    }
+}
+
+data class HealthEnergyGoalSuggestion(
+    val calories: Int,
+    val reason: String? = null
+)
+
+/** AI-computed daily targets returned by FoodAnalysisService.calculateGoals. */
+/**
+ * Which recalculation tier answered (picked per dispatch, not per call):
+ * cloud providers run the SMART prompt (raw series, model-side reliability
+ * judgment), the on-device model runs the SAFE prompt (aggregates only,
+ * app-side gates + deterministic snap). See docs/CALCULATION_METHODS.md § AI-RECALC.
+ */
+@Serializable
+enum class GoalRecalcTier { SMART, SAFE }
+
+/** Why the SAFE tier withheld the implied maintenance (surfaced in the result sheet). */
+@Serializable
+enum class ImpliedWithheldReason { THIN, BELOW_FLOOR, DISAGREE }
+
+/**
+ * Deterministic inputs behind one AI recalculation, for the result sheet's
+ * "formula baseline" and "data used" sections — the user can check the chain
+ * BMR → TDEE × activity multiplier → goal pace → formula target.
+ */
+@Serializable
+data class GoalCalculationReport(
+    val bmr: Int,
+    val tdee: Int,
+    val activityMultiplier: Double,
+    /** Signed goal pace in kcal/day (0 for maintain). */
+    val calorieAdjustment: Int,
+    val formulaCalories: Int,
+    val formulaProtein: Int,
+    val formulaCarbs: Int,
+    val formulaFat: Int,
+    val measuredTdee: Int? = null,
+    val weighIns: Int = 0,
+    val weightSpanDays: Int = 0,
+    val foodDays: Int = 0,
+    val loggedDayAvgCalories: Int? = null,
+    val impliedMaintenance: Int? = null,
+    val impliedWithheld: ImpliedWithheldReason? = null,
+    val trendsDisagree: Boolean = false,
+    val dayTypeActiveTypical: List<DayTypeActiveTypicalLine> = emptyList(),
+    /** Pre-clamp calories when CAL-SAFE (or the deterministic anchor snap) moved the
+     *  final number; null when the model's answer survived untouched. @Serializable
+     *  default keeps persisted sheet JSON from older builds decoding. */
+    val clampedFrom: Int? = null,
+)
+
+@Serializable
+data class DayTypeActiveTypicalLine(
+    val name: String,
+    val kcal: Int,
+    val samples: Int,
+)
+
+@Serializable
+data class GoalCalculation(
+    val calories: Int,
+    val protein: Int,
+    val carbs: Int,
+    val fat: Int,
+    val reason: String? = null,
+    /** Tier of the model that actually answered (null when a test delegate answered). */
+    val tier: GoalRecalcTier? = null,
+    /** Provider that actually answered, after any fallback. */
+    val provider: AIProvider? = null,
+    /** Model id that actually answered, after any fallback. */
+    val model: String? = null,
+    /** True when the primary provider failed and a fallback leg answered. */
+    val fallbackFired: Boolean = false,
+    /** Primary provider that failed when a fallback fired. */
+    val primaryProvider: AIProvider? = null,
+    /** Primary attempt's error message when a fallback fired (may be technical; UI decides whether to show). */
+    val primaryError: String? = null,
+    /** Deterministic inputs behind this calculation (formula baseline + data used). */
+    val report: GoalCalculationReport? = null,
+    /**
+     * Per-day-type targets from the optional `profiles[]` response (#60 phase
+     * 4): matched by id against the plan at apply time. Empty when the plan is
+     * off, the model omitted the array (older behavior, on-device tier, parse
+     * miss), or the deterministic enforcement snapped the answer — then the
+     * apply path falls back to the kcal delta implied by the base change.
+     */
+    val profiles: List<GoalCalculationProfile> = emptyList(),
+)
+
+/** One `profiles[]` row from the AI goal response (#60 phase 4). */
+@Serializable
+data class GoalCalculationProfile(
+    val id: String,
+    val calories: Int,
+    val proteinG: Int,
+    val carbsG: Int,
+    val fatG: Int,
+)
+
+/** Where a stored goal-change entry came from (drives the sheet's title/subtitle). */
+@Serializable
+enum class RecalcSheetSource { AI, ADAPTIVE }
+
+/**
+ * Structured goal-change result for the transparency sheet on the Goals screen:
+ * the AI Recalculate result or the deterministic Adaptive pass, with the
+ * before/after profiles and the time it happened. Persisted (DataStore JSON) so
+ * the sheet can be reopened on demand; the newest entry (recalc or adaptive)
+ * wins.
+ */
+@Serializable
+data class RecalcSheetData(
+    val result: GoalCalculation,
+    /** Profile before the change was applied. */
+    val before: UserProfile,
+    /** Profile after (locked fields survive; these are the sheet's "new targets"). */
+    val after: UserProfile,
+    val savedAtMillis: Long = 0L,
+    val source: RecalcSheetSource = RecalcSheetSource.AI,
+)
+
+internal object FoodJsonParser {
+    fun extractJson(text: String): String {
+        var cleaned = text.trim()
+
+        val openFence = cleaned.indexOf("```json", ignoreCase = true)
+            .takeIf { it >= 0 }
+            ?: cleaned.indexOf("```").takeIf { it >= 0 }
+        if (openFence != null) {
+            val after = if (cleaned.regionMatches(openFence, "```json", 0, 7, ignoreCase = true)) openFence + 7 else openFence + 3
+            cleaned = cleaned.substring(after)
+            val closeFence = cleaned.lastIndexOf("```")
+            if (closeFence >= 0) cleaned = cleaned.substring(0, closeFence)
+        }
+        cleaned = cleaned.trim()
+
+        val firstBrace = cleaned.indexOf('{')
+        if (firstBrace < 0) return cleaned
+        var depth = 0
+        var inString = false
+        var escape = false
+        var endIndex = -1
+        for (i in firstBrace until cleaned.length) {
+            val ch = cleaned[i]
+            if (escape) { escape = false; continue }
+            if (ch == '\\') { escape = true; continue }
+            if (ch == '"') { inString = !inString; continue }
+            if (inString) continue
+            if (ch == '{') depth++
+            else if (ch == '}') {
+                depth--
+                if (depth == 0) { endIndex = i + 1; break }
+            }
+        }
+        return if (endIndex > firstBrace) cleaned.substring(firstBrace, endIndex) else cleaned
+    }
+
+    /** What-if (and similar) calls ask for prose; some models still wrap JSON. */
+    fun proseFromMaybeJson(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return trimmed
+        val extracted = extractJson(trimmed)
+        if (!extracted.trimStart().startsWith("{")) return trimmed
+        val json = runCatching { JSONObject(extracted) }.getOrNull() ?: return trimmed
+        val keys = arrayOf("advice", "suggestion", "reason", "text", "message")
+        for (key in keys) {
+            val value = json.optString(key).trim()
+            if (value.isNotEmpty()) return value
+        }
+        return trimmed
+    }
+    /**
+     * One-line diagnostics for a reply whose JSON failed to parse (#68):
+     * reply length, whether the extracted JSON is brace-balanced (unbalanced
+     * ⇒ truncated output, the on-device token-cap signature), and newline-
+     * scrubbed head/tail snippets. Same depth-walk as [extractJson].
+     */
+    internal fun parseFailDiagnostics(raw: String): String {
+        val extracted = extractJson(raw)
+        var depth = 0
+        var inString = false
+        var escape = false
+        var balanced = false
+        for (ch in extracted) {
+            if (escape) { escape = false; continue }
+            if (ch == '\\') { escape = true; continue }
+            if (ch == '"') { inString = !inString; continue }
+            if (inString) continue
+            if (ch == '{') depth++
+            else if (ch == '}') {
+                depth--
+                if (depth == 0) { balanced = true; break }
+            }
+        }
+        fun snippet(s: String): String = s.replace('\n', ' ')
+        return "chars=${raw.length} balanced=$balanced" +
+            " head=${snippet(raw.take(40))}" +
+            " tail=${snippet(raw.takeLast(40))}"
+    }
+
+    /**
+     * #68: log parse failures in release builds (FudAIPerf), then rethrow
+     * unchanged. Garbage vs truncation is settled by `balanced` in one line.
+     */
+    private inline fun <T> logParseFailure(raw: String, block: () -> T): T = try {
+        block()
+    } catch (e: AiError.InvalidResponse) {
+        PerfLog.warnRelease("op=entryParse phase=fail ${parseFailDiagnostics(raw)}")
+        throw e
+    }
+
+    fun parseFood(
+        text: String,
+        postParse: ((FoodAnalysis, JSONObject) -> FoodAnalysis)? = null,
+    ): FoodAnalysis = logParseFailure(text) {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        // Sanitize BEFORE persistence: the model reply is untrusted output that a
+        // hostile description / OFF name / shared-meal note can steer; clamp
+        // numbers, drop NaN/Infinity, scrub text (InputSanitizer policy).
+        val name = InputSanitizer.text(
+            capitalizeAiFoodName(
+                json.optString("name").ifBlank { json.optString("food_name") }
+                    .takeIf { it.isNotEmpty() } ?: throw AiError.InvalidResponse,
+            ),
+            InputSanitizer.MAX_NAME_LENGTH,
+        ) ?: throw AiError.InvalidResponse
+        val servingSizeGrams = InputSanitizer.servingGrams(optDouble(json, "serving_size_grams")) ?: 100.0
+        val unitOptions = parseServingUnitOptions(json, servingSizeGrams)
+        val selectedOption = unitOptions.firstOrNull()
+        fun optDouble(key: String): Double? =
+            InputSanitizer.micro(optDouble(json, key))
+        val parsed = MicronutrientValues.fromJson(::optDouble).applyTo(
+            FoodAnalysis(
+                name = name,
+                calories = InputSanitizer.calories(json.optInt("calories")),
+                protein = InputSanitizer.nutrient(optDouble("protein")) ?: 0.0,
+                carbs = InputSanitizer.nutrient(optDouble("carbs")) ?: 0.0,
+                fat = InputSanitizer.nutrient(optDouble("fat")) ?: 0.0,
+                servingSizeGrams = servingSizeGrams,
+                emoji = InputSanitizer.emoji(json.optString("emoji").takeIf { it.isNotEmpty() }),
+                servingUnitOptions = unitOptions,
+                selectedServingUnit = selectedOption?.unit,
+                selectedServingQuantity = selectedOption?.quantityFor(servingSizeGrams),
+                constituents = parseConstituents(json),
+            )
+        )
+        val reconciled = ConstituentReconcile.reconcile(parsed)
+        return postParse?.invoke(reconciled, json) ?: reconciled
+    }
+
+    fun parseRecognition(text: String): app.chompass.models.FoodRecognitionResult = logParseFailure(text) {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        val mealName = InputSanitizer.text(
+            capitalizeAiFoodName(
+                json.optString("meal_name").ifBlank {
+                    json.optString("name")
+                }.takeIf { it.isNotBlank() } ?: throw AiError.InvalidResponse,
+            ),
+            InputSanitizer.MAX_NAME_LENGTH,
+        ) ?: throw AiError.InvalidResponse
+        val componentsArr = json.optJSONArray("components") ?: JSONArray()
+        val components = mutableListOf<app.chompass.models.RecognizedFoodComponent>()
+        for (i in 0 until componentsArr.length()) {
+            val raw = componentsArr.optJSONObject(i) ?: continue
+            val name = InputSanitizer.text(
+                capitalizeAiFoodName(raw.optString("name").trim().takeIf { it.isNotEmpty() } ?: continue),
+                InputSanitizer.MAX_NAME_LENGTH,
+            ) ?: continue
+            components += app.chompass.models.RecognizedFoodComponent(
+                name = name,
+                brand = InputSanitizer.text(raw.optString("brand"), InputSanitizer.MAX_NAME_LENGTH),
+                preparation = InputSanitizer.text(raw.optString("preparation"), InputSanitizer.MAX_NOTE_LENGTH),
+                estimatedGrams = InputSanitizer.servingGrams(optDouble(raw, "estimated_grams")),
+                portionHint = InputSanitizer.text(raw.optString("portion_hint"), InputSanitizer.MAX_NOTE_LENGTH),
+                barcode = raw.optString("barcode").filter { it.isDigit() }.takeIf { it.length >= 8 },
+                quantity = InputSanitizer.quantity(optDouble(raw, "quantity")),
+                unit = InputSanitizer.text(raw.optString("unit"), InputSanitizer.MAX_UNIT_LENGTH),
+            )
+        }
+        if (components.isEmpty()) {
+            components += app.chompass.models.RecognizedFoodComponent(name = mealName)
+        }
+        return app.chompass.models.FoodRecognitionResult(
+            mealName = mealName,
+            emoji = json.optString("emoji").takeIf { it.isNotBlank() && it != "null" },
+            components = components,
+            notes = json.optString("notes").takeIf { it.isNotBlank() && it != "null" },
+        )
+    }
+
+    fun parseLabel(text: String): NutritionLabelAnalysis = logParseFailure(text) {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        val name = InputSanitizer.text(
+            capitalizeAiFoodName(
+                json.optString("name").takeIf { it.isNotEmpty() } ?: throw AiError.InvalidResponse,
+            ),
+            InputSanitizer.MAX_NAME_LENGTH,
+        ) ?: throw AiError.InvalidResponse
+        fun optDouble(key: String): Double? =
+            optDouble(json, key)
+        val servingSizeGrams = optDouble("serving_size_grams")
+        val micros = MicronutrientValues.fromLabelJson(::optDouble)
+        return NutritionLabelAnalysis(
+            name = name,
+            caloriesPer100g = optDouble("calories_per_100g") ?: throw AiError.InvalidResponse,
+            proteinPer100g = optDouble("protein_per_100g") ?: throw AiError.InvalidResponse,
+            carbsPer100g = optDouble("carbs_per_100g") ?: throw AiError.InvalidResponse,
+            fatPer100g = optDouble("fat_per_100g") ?: throw AiError.InvalidResponse,
+            servingSizeGrams = servingSizeGrams,
+            sugarPer100g = micros.sugar,
+            addedSugarPer100g = micros.addedSugar,
+            fiberPer100g = micros.fiber,
+            saturatedFatPer100g = micros.saturatedFat,
+            monounsaturatedFatPer100g = micros.monounsaturatedFat,
+            polyunsaturatedFatPer100g = micros.polyunsaturatedFat,
+            cholesterolPer100g = micros.cholesterol,
+            sodiumPer100g = micros.sodium,
+            potassiumPer100g = micros.potassium,
+            transFatPer100g = micros.transFat,
+            calciumPer100g = micros.calcium,
+            ironPer100g = micros.iron,
+            magnesiumPer100g = micros.magnesium,
+            zincPer100g = micros.zinc,
+            vitaminAPer100g = micros.vitaminA,
+            vitaminCPer100g = micros.vitaminC,
+            vitaminDPer100g = micros.vitaminD,
+            vitaminB12Per100g = micros.vitaminB12,
+            vitaminEPer100g = micros.vitaminE,
+            vitaminKPer100g = micros.vitaminK,
+            folatePer100g = micros.folate,
+            omega3Per100g = micros.omega3,
+            caffeinePer100g = micros.caffeine,
+            servingUnitOptions = parseServingUnitOptions(json, servingSizeGrams)
+        )
+    }
+
+    fun parseServingUnitOptions(text: String, servingSizeGrams: Double?): List<ServingUnitOption> {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        return parseServingUnitOptions(json, servingSizeGrams)
+    }
+
+    fun parseOptionalNutrientGoals(text: String): OptionalNutrientGoals {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        fun optInt(vararg keys: String, fallback: Int): Int =
+            keys.firstNotNullOfOrNull { key ->
+                if (!json.has(key) || json.isNull(key)) null
+                else when (val value = json.opt(key)) {
+                    is Number -> value.toDouble().roundToInt()
+                    is String -> value.toDoubleOrNull()?.roundToInt()
+                    else -> null
+                }
+            }?.let { value -> value.coerceIn(0, InputSanitizer.MAX_MICRO_UNITS.toInt()) } ?: fallback
+        return OptionalNutrientGoals(
+            sugar = optInt("sugar", "sugar_g", fallback = OptionalNutrientGoals.Default.sugar),
+            addedSugar = optInt("added_sugar", "addedSugar", "added_sugar_g", fallback = OptionalNutrientGoals.Default.addedSugar),
+            fiber = optInt("fiber", "fiber_g", fallback = OptionalNutrientGoals.Default.fiber),
+            saturatedFat = optInt("saturated_fat", "saturatedFat", "saturated_fat_g", fallback = OptionalNutrientGoals.Default.saturatedFat),
+            cholesterol = optInt("cholesterol", "cholesterol_mg", fallback = OptionalNutrientGoals.Default.cholesterol),
+            sodium = optInt("sodium", "sodium_mg", fallback = OptionalNutrientGoals.Default.sodium),
+            potassium = optInt("potassium", "potassium_mg", fallback = OptionalNutrientGoals.Default.potassium),
+            transFat = optInt("trans_fat", "transFat", "trans_fat_g", fallback = OptionalNutrientGoals.Default.transFat),
+            calcium = optInt("calcium", "calcium_mg", fallback = OptionalNutrientGoals.Default.calcium),
+            iron = optInt("iron", "iron_mg", fallback = OptionalNutrientGoals.Default.iron),
+            magnesium = optInt("magnesium", "magnesium_mg", fallback = OptionalNutrientGoals.Default.magnesium),
+            zinc = optInt("zinc", "zinc_mg", fallback = OptionalNutrientGoals.Default.zinc),
+            vitaminA = optInt("vitamin_a", "vitaminA", "vitamin_a_mcg", fallback = OptionalNutrientGoals.Default.vitaminA),
+            vitaminC = optInt("vitamin_c", "vitaminC", "vitamin_c_mg", fallback = OptionalNutrientGoals.Default.vitaminC),
+            vitaminD = optInt("vitamin_d", "vitaminD", "vitamin_d_mcg", fallback = OptionalNutrientGoals.Default.vitaminD),
+            vitaminB12 = optInt("vitamin_b12", "vitaminB12", "vitamin_b12_mcg", fallback = OptionalNutrientGoals.Default.vitaminB12),
+            vitaminE = optInt("vitamin_e", "vitaminE", "vitamin_e_mg", fallback = OptionalNutrientGoals.Default.vitaminE),
+            vitaminK = optInt("vitamin_k", "vitaminK", "vitamin_k_mcg", fallback = OptionalNutrientGoals.Default.vitaminK),
+            folate = optInt("folate", "folate_mcg", fallback = OptionalNutrientGoals.Default.folate),
+            omega3 = optInt("omega_3", "omega3", "omega_3_g", fallback = OptionalNutrientGoals.Default.omega3),
+            caffeine = optInt("caffeine", "caffeine_mg", fallback = OptionalNutrientGoals.Default.caffeine)
+        )
+    }
+
+    fun parseHealthEnergyGoalSuggestion(text: String): HealthEnergyGoalSuggestion {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        val calories = when (val value = json.opt("calories")) {
+            is Number -> value.toDouble().roundToInt()
+            is String -> value.toDoubleOrNull()?.roundToInt()
+            else -> null
+        } ?: throw AiError.InvalidResponse
+        return HealthEnergyGoalSuggestion(
+            calories = calories.coerceIn(
+                CalorieSafety.ABSOLUTE_FLOOR_KCAL,
+                CalorieSafety.PARSER_CEILING_KCAL,
+            ),
+            reason = json.optString("reason").takeIf { it.isNotBlank() }
+        )
+    }
+
+    fun parseGoalCalculation(text: String): GoalCalculation {
+        val json = runCatching { JSONObject(extractJson(text)) }.getOrNull()
+            ?: throw AiError.InvalidResponse
+        fun intOf(key: String): Int? = when (val value = json.opt(key)) {
+            is Number -> value.toDouble().roundToInt()
+            is String -> value.toDoubleOrNull()?.roundToInt()
+            else -> null
+        }
+        val calories = intOf("calories") ?: throw AiError.InvalidResponse
+        fun macro(key: String, cap: Int): Int = (intOf(key) ?: 0).coerceIn(0, cap)
+        return GoalCalculation(
+            calories = calories.coerceIn(
+                CalorieSafety.ABSOLUTE_FLOOR_KCAL,
+                CalorieSafety.PARSER_CEILING_KCAL,
+            ),
+            protein = macro("protein", 500),
+            carbs = macro("carbs", 1200),
+            fat = macro("fat", 400),
+            reason = json.optString("reason").takeIf { it.isNotBlank() },
+            profiles = parseGoalProfiles(json),
+        )
+    }
+
+    /**
+     * Optional `profiles[]` for macro day plans (#60 phase 4): one row per day
+     * type, matched by id at apply time. Accepts both `protein` and `protein_g`
+     * key styles; unknown rows are dropped by the apply path, so a garbage id
+     * is harmless. Capped at the plan's max profile count.
+     */
+    private fun parseGoalProfiles(json: JSONObject): List<GoalCalculationProfile> {
+        val raw = json.optJSONArray("profiles") ?: return emptyList()
+        fun intOf(row: JSONObject, key: String, fallbackKey: String): Int? =
+            when (val value = row.opt(key)) {
+                is Number -> value.toDouble().roundToInt()
+                is String -> value.toDoubleOrNull()?.roundToInt()
+                else -> when (val other = row.opt(fallbackKey)) {
+                    is Number -> other.toDouble().roundToInt()
+                    is String -> other.toDoubleOrNull()?.roundToInt()
+                    else -> null
+                }
+            }
+        val out = mutableListOf<GoalCalculationProfile>()
+        for (i in 0 until raw.length()) {
+            if (out.size >= MacroPlanEdit.MAX_PROFILES) break
+            val row = raw.optJSONObject(i) ?: continue
+            val id = row.optString("id").trim().takeIf { it.isNotEmpty() } ?: continue
+            val calories = intOf(row, "calories", "calories") ?: continue
+            out += GoalCalculationProfile(
+                id = id,
+                calories = calories.coerceIn(
+                    CalorieSafety.ABSOLUTE_FLOOR_KCAL,
+                    CalorieSafety.PARSER_CEILING_KCAL,
+                ),
+                proteinG = (intOf(row, "protein_g", "protein") ?: 0).coerceIn(0, 500),
+                carbsG = (intOf(row, "carbs_g", "carbs") ?: 0).coerceIn(0, 1200),
+                fatG = (intOf(row, "fat_g", "fat") ?: 0).coerceIn(0, 400),
+            )
+        }
+        return out
+    }
+
+    private fun parseConstituents(json: JSONObject): List<FoodConstituent> {
+        val raw = json.optJSONArray("constituents")
+            ?: json.optJSONArray("ingredients")
+            ?: json.optJSONArray("components")
+            ?: json.optJSONArray("items")
+            ?: return emptyList()
+        val out = mutableListOf<FoodConstituent>()
+        for (i in 0 until raw.length()) {
+            if (out.size >= ConstituentReconcile.MAX_CONSTITUENTS) break
+            val row = raw.optJSONObject(i) ?: continue
+            val name = InputSanitizer.text(
+                capitalizeAiFoodName(row.optString("name").trim().takeIf { it.isNotEmpty() } ?: continue),
+                InputSanitizer.MAX_NAME_LENGTH,
+            ) ?: continue
+            val grams = InputSanitizer.servingGrams(optDouble(row, "serving_size_grams")) ?: continue
+            val rawCalories = when (val value = row.opt("calories")) {
+                is Number -> value.toDouble().roundToInt()
+                is String -> value.toDoubleOrNull()?.roundToInt()
+                else -> null
+            } ?: continue
+            val calories = InputSanitizer.calories(rawCalories)
+            val protein = optDouble(row, "protein") ?: continue
+            val carbs = optDouble(row, "carbs") ?: continue
+            val fat = optDouble(row, "fat") ?: continue
+            if (grams <= 0 || protein < 0 || carbs < 0 || fat < 0) continue
+            if (!grams.isFinite() || !protein.isFinite() || !carbs.isFinite() || !fat.isFinite()) continue
+            val unitOptions = parseServingUnitOptions(row, grams)
+            val selected = unitOptions.firstOrNull()
+            out += FoodConstituent(
+                name = name,
+                calories = calories,
+                protein = protein,
+                carbs = carbs,
+                fat = fat,
+                servingSizeGrams = grams,
+                // Per-row micros (#86): same short snake_case keys as the meal
+                // level, minus caffeine (entry-level / wire only; not in the
+                // constituent AI schema). Absent/non-finite → null; negatives
+                // clamp to 0 via InputSanitizer.micro.
+                sugar = InputSanitizer.micro(optDouble(row, "sugar")),
+                addedSugar = InputSanitizer.micro(optDouble(row, "added_sugar")),
+                fiber = InputSanitizer.micro(optDouble(row, "fiber")),
+                saturatedFat = InputSanitizer.micro(optDouble(row, "saturated_fat")),
+                monounsaturatedFat = InputSanitizer.micro(optDouble(row, "monounsaturated_fat")),
+                polyunsaturatedFat = InputSanitizer.micro(optDouble(row, "polyunsaturated_fat")),
+                cholesterol = InputSanitizer.micro(optDouble(row, "cholesterol")),
+                sodium = InputSanitizer.micro(optDouble(row, "sodium")),
+                potassium = InputSanitizer.micro(optDouble(row, "potassium")),
+                transFat = InputSanitizer.micro(optDouble(row, "trans_fat")),
+                calcium = InputSanitizer.micro(optDouble(row, "calcium")),
+                iron = InputSanitizer.micro(optDouble(row, "iron")),
+                magnesium = InputSanitizer.micro(optDouble(row, "magnesium")),
+                zinc = InputSanitizer.micro(optDouble(row, "zinc")),
+                vitaminA = InputSanitizer.micro(optDouble(row, "vitamin_a")),
+                vitaminC = InputSanitizer.micro(optDouble(row, "vitamin_c")),
+                vitaminD = InputSanitizer.micro(optDouble(row, "vitamin_d")),
+                vitaminB12 = InputSanitizer.micro(optDouble(row, "vitamin_b12")),
+                vitaminE = InputSanitizer.micro(optDouble(row, "vitamin_e")),
+                vitaminK = InputSanitizer.micro(optDouble(row, "vitamin_k")),
+                folate = InputSanitizer.micro(optDouble(row, "folate")),
+                omega3 = InputSanitizer.micro(optDouble(row, "omega_3")),
+                emoji = InputSanitizer.emoji(row.optString("emoji").takeIf { it.isNotBlank() && it != "null" }),
+                servingUnitOptions = unitOptions,
+                selectedServingUnit = selected?.unit,
+                selectedServingQuantity = selected?.quantityFor(grams),
+            )
+        }
+        return out
+    }
+
+    private fun parseServingUnitOptions(
+        json: JSONObject,
+        servingSizeGrams: Double?
+    ): List<ServingUnitOption> {
+        val rawOptions = json.optJSONArray("unit_options")
+            ?: json.optJSONArray("serving_unit_options")
+            ?: JSONArray()
+        val seen = mutableSetOf<String>()
+        val options = mutableListOf<ServingUnitOption>()
+        for (i in 0 until rawOptions.length()) {
+            val raw = rawOptions.optJSONObject(i) ?: continue
+            val unit = InputSanitizer.text(raw.optString("unit"), InputSanitizer.MAX_UNIT_LENGTH)
+                ?: continue
+            val gramsPerUnit = InputSanitizer.gramsPerUnit(
+                optDouble(raw, "grams_per_unit") ?: optDouble(raw, "gramsPerUnit"),
+            ) ?: continue
+            val quantity = InputSanitizer.quantity(optDouble(raw, "quantity"))
+            val option = ServingUnitOption(
+                unit = unit,
+                gramsPerUnit = gramsPerUnit,
+                quantity = quantity ?: servingSizeGrams
+                    ?.takeIf { gramsPerUnit > 0 }
+                    ?.let { it / gramsPerUnit }
+            )
+            if (!option.isValid || option.isGramUnit || option.id in seen) continue
+            seen.add(option.id)
+            options.add(option)
+        }
+        return options.take(4)
+    }
+
+    private fun optDouble(json: JSONObject, key: String): Double? {
+        if (!json.has(key) || json.isNull(key)) return null
+        return when (val value = json.opt(key)) {
+            is Number -> value.toDouble()
+            is String -> value.toDoubleOrNull()
+            else -> null
+        }?.takeUnless { it.isNaN() || it.isInfinite() }
+    }
+}

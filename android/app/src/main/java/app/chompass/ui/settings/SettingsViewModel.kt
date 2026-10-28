@@ -1,0 +1,2761 @@
+package app.chompass.ui.settings
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.debug.DebugTrace
+import app.chompass.models.AIProvider
+import app.chompass.models.AiProfile
+import app.chompass.models.AutoBalanceMacro
+import app.chompass.models.BodyFatEntry
+import app.chompass.models.BodyFatMethod
+import app.chompass.models.CalorieSafety
+import app.chompass.models.DietMode
+import app.chompass.models.FoodLogMacroChip
+import app.chompass.models.HeuristicRuleOverride
+import app.chompass.models.HeuristicServingUnitSettings
+import app.chompass.models.HomeCalorieDisplayMode
+import app.chompass.models.HomeCalorieHeroLayout
+import app.chompass.models.HomeMacroCardLayout
+import app.chompass.models.HomeFoodLogLayout
+import app.chompass.models.HomeDisplayPreferences
+import app.chompass.models.HomeTopNutrient
+import app.chompass.models.KetoCarbMode
+import app.chompass.models.MacroDayProfile
+import app.chompass.models.MacroPlan
+import app.chompass.models.MacroPlanEdit
+import app.chompass.models.MacroPlanResolver
+import app.chompass.models.GoalJournal
+import app.chompass.models.GoalPhase
+import app.chompass.models.GoalPhaseEdit
+import app.chompass.models.GoalSource
+import app.chompass.models.PhaseEditError
+import app.chompass.ui.progress.ProgressAdherence
+import app.chompass.ui.progress.buildCalorieSlots
+import app.chompass.models.MacroPlanMode
+import app.chompass.models.CaffeineKind
+import app.chompass.models.HabitPresetCatalog
+import app.chompass.models.HabitPresetDomain
+import app.chompass.models.NicotineKind
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.ProteinTargetMode
+import app.chompass.models.ServingUnitInferenceMode
+import app.chompass.models.SpeechLanguage
+import app.chompass.models.SpeechProvider
+import app.chompass.models.UserProfile
+import app.chompass.models.ActivityLevel
+import app.chompass.models.WaterGoalBreakdown
+import app.chompass.models.WaterGoalCalculator
+import app.chompass.models.WaterQuickPresets
+import app.chompass.models.WeightEntry
+import app.chompass.services.ai.RecalcSheetData
+import app.chompass.services.ai.RecalcSheetSource
+import app.chompass.services.FastingAutoPlanner
+import app.chompass.services.FastingGoalPlanner
+import app.chompass.services.FastingReminderPlanner
+import app.chompass.services.LauncherShortcuts
+import app.chompass.services.PerfLog
+import app.chompass.data.SettingsPrefsHydration
+import app.chompass.data.loadLastGoalChangeSheet
+import app.chompass.data.saveLastGoalChangeSheet
+import app.chompass.data.GoalRecalcTierOverride
+import app.chompass.data.OpenRouterReasoningEffort
+import app.chompass.data.WeatherRepository
+import app.chompass.data.readSettingsHydration
+import app.chompass.services.ondevice.ModelCatalog
+import app.chompass.services.ondevice.OnDeviceCapability
+import app.chompass.models.WeightGoal
+import app.chompass.services.KetoCarbRecommendationService
+import app.chompass.services.WaterReminderPlanner
+import app.chompass.services.WeightAnalysisService
+import app.chompass.services.ai.AiError
+import app.chompass.services.ai.GoalCalculation
+import app.chompass.services.ai.userMessage
+import app.chompass.services.ai.AiHttp
+import app.chompass.services.ai.AnthropicClient
+import app.chompass.services.ai.FoodAnalysisService
+import app.chompass.services.ai.GeminiClient
+import app.chompass.services.ai.OpenAiModelsClient
+import app.chompass.data.effectiveMaxResponseTokens
+import app.chompass.data.effectiveReadTimeoutSeconds
+import app.chompass.services.health.HealthConnectManager
+import app.chompass.services.health.HealthSyncWorker
+import app.chompass.services.weather.OmCity
+import app.chompass.ui.home.FoodLogSortOrder
+import app.chompass.ui.components.PlanField
+import app.chompass.ui.navigation.ChompassRoutes
+import app.chompass.ui.theme.AppThemeColor
+import java.time.Instant
+import java.time.LocalDate
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+data class SettingsUiState(
+    /** All saved AI profiles; [activeProfile] drives every AI feature. */
+    val profiles: List<AiProfile> = emptyList(),
+    val activeProfile: AiProfile? = null,
+    /** Profile used when the active one fails; null = no fallback. */
+    val fallbackProfileId: String? = null,
+    val maxResponseTokens: Int = app.chompass.data.DEFAULT_MAX_RESPONSE_TOKENS,
+    val aiReadTimeoutSeconds: Int = app.chompass.data.DEFAULT_AI_READ_TIMEOUT_SECONDS,
+    val servingUnitInferenceMode: ServingUnitInferenceMode = ServingUnitInferenceMode.Default,
+    val heuristicServingUnitSettings: HeuristicServingUnitSettings = HeuristicServingUnitSettings.Default,
+    val selectedSpeech: SpeechProvider = SpeechProvider.NATIVE,
+    val selectedSpeechLanguage: SpeechLanguage = SpeechLanguage.defaultFor(SpeechProvider.NATIVE),
+    /** "cm" | "ftin" — governs all length display/input. */
+    val heightUnit: String = "cm",
+    /** "kg" | "lbs" — governs all mass display/input. */
+    val weightUnit: String = "kg",
+    /** "kcal" | "kj" — display-only energy unit. Storage stays kcal. */
+    val energyUnit: String = "kcal",
+    val preferGramsByDefault: Boolean = false,
+    val profile: UserProfile? = null,
+    val notificationsEnabled: Boolean = false,
+    val streakReminderEnabled: Boolean = false,
+    val streakReminderHour: Int = 19,
+    val streakReminderMinute: Int = 0,
+    val dailySummaryEnabled: Boolean = false,
+    val dailySummaryHour: Int = 21,
+    val dailySummaryMinute: Int = 0,
+    val weightReminderEnabled: Boolean = true,
+    val weightReminderHour: Int = 8,
+    val weightReminderMinute: Int = 0,
+    val bodyFatReminderEnabled: Boolean = true,
+    val bodyFatReminderHour: Int = 8,
+    val bodyFatReminderMinute: Int = 0,
+    val waterTrackingEnabled: Boolean = false,
+    val waterDailyGoalMl: Int = 2_000,
+    val waterQuickPresetsMl: List<Int> = WaterQuickPresets.DEFAULT_AMOUNTS_ML,
+    val nicotineTrackingEnabled: Boolean = false,
+    val nicotineDailyLimit: Int = 0,
+    val nicotineQuickKinds: List<String> = HabitPresetDomain.NICOTINE.defaultQuickKindIds,
+    val nicotinePresets: HabitPresetCatalog = HabitPresetDomain.NICOTINE.defaultCatalog,
+    /** Logged-entry count per kind id (preset delete confirms with N). */
+    val nicotineKindUsage: Map<String, Int> = emptyMap(),
+    val dailyNotesEnabled: Boolean = false,
+    val mealTimesEnabled: Boolean = true,
+    val mealPlanningEnabled: Boolean = false,
+    val caffeineTrackingEnabled: Boolean = false,
+    val caffeineQuickKinds: List<String> = HabitPresetDomain.CAFFEINE.defaultQuickKindIds,
+    val caffeinePresets: HabitPresetCatalog = HabitPresetDomain.CAFFEINE.defaultCatalog,
+    /** Logged-entry count per kind id (preset delete confirms with N). */
+    val caffeineKindUsage: Map<String, Int> = emptyMap(),
+    val fastingEnabled: Boolean = false,
+    val fastingGoalHours: Int = 16,
+    val fastingEatHours: Int = 8,
+    val fastingGoalNotificationEnabled: Boolean = true,
+    val fastingEndReminderLeadMinutes: Int = 15,
+    val fastingAutoWindows: Boolean = true,
+    val fastingStartHour: Int = 20,
+    val fastingStartMinute: Int = 0,
+    val fastingStartReminderEnabled: Boolean = true,
+    val fastingStartReminderLeadMinutes: Int = 15,
+    val waterReminderEnabled: Boolean = false,
+    val waterDynamicEnabled: Boolean = false,
+    val waterBaseSource: String = WaterGoalCalculator.BASE_SOURCE_WEIGHT,
+    val waterManualTempC: Int = 25,
+    val weatherSource: String = WeatherRepository.SOURCE_MANUAL,
+    val weatherOmCity: OmCity? = null,
+    val weatherOmHighC: Int? = null,
+    val weatherOmUpdatedAtMillis: Long? = null,
+    val waterUseProfileActivity: Boolean = true,
+    val waterFoodWaterEnabled: Boolean = false,
+    val waterAwakeStartMinutes: Int = 8 * 60,
+    val waterAwakeEndMinutes: Int = 21 * 60,
+    val waterCupSizeMl: Int = WaterGoalCalculator.DEFAULT_CUP_SIZE_ML,
+    /** Today's computed dynamic goal + breakdown; null while the feature is off. */
+    val waterDynamicGoalPreview: WaterGoalBreakdown? = null,
+    val goalReachedNotificationsEnabled: Boolean = true,
+    val appUpdateNotificationsEnabled: Boolean = true,
+    val healthConnectEnabled: Boolean = false,
+    val healthEnergyGoalsEnabled: Boolean = false,
+    val healthBackgroundSyncEnabled: Boolean = false,
+    val healthBackgroundReadAvailable: Boolean = false,
+    val healthBackgroundReadGranted: Boolean = false,
+    val adaptiveGoalsEnabled: Boolean = false,
+    val applyingHealthEnergyGoals: Boolean = false,
+    val applyingAdaptiveGoals: Boolean = false,
+    val recalculatingGoals: Boolean = false,
+    val healthEnergyGoalAlertTitle: String? = null,
+    val healthEnergyGoalAlertMessage: String? = null,
+    val adaptiveGoalAlertTitle: String? = null,
+    val adaptiveGoalAlertMessage: String? = null,
+    /** Recalculate transparency sheet (structured result); null = not shown. */
+    val recalcSheet: RecalcSheetData? = null,
+    /** Confirmed-but-not-saved AI Recalculate (edit-before-apply); non-null while the
+     *  confirm sheet is up and its editable = true. Null after Apply/Discard. */
+    val pendingRecalc: PendingRecalc? = null,
+    /** Latest persisted goal-change explanation (AI or Adaptive) for the on-demand details row. */
+    val lastRecalcSheet: RecalcSheetData? = null,
+    /** Settings → Other Nutrient Goals: in-flight flag for the opt-in "Estimate with AI" call. */
+    val estimatingOptionalNutrientGoals: Boolean = false,
+    /** Localized error for the "Estimate with AI" call; null = no alert shown. */
+    val optionalNutrientEstimateAlertMessage: String? = null,
+    val apiKeyMasked: String = "",
+    val speechApiKeyMasked: String = "",
+    /** Settings key-test probe: in-flight flag + last result; reset on profile/provider change. */
+    val apiKeyTesting: Boolean = false,
+    val apiKeyTestOk: Boolean? = null,
+    val apiKeyTestMessage: String? = null,
+    /** Rollout gate + device capability — whether ON_DEVICE should appear as a selectable provider. */
+    val onDeviceAvailable: Boolean = false,
+    /** ON_DEVICE model ids this device can actually run (E4B gated by the 7 GiB usable-RAM floor). */
+    val onDeviceModels: List<String> = emptyList(),
+    val ollamaModels: List<app.chompass.services.ai.OllamaModel>? = null,
+    val ollamaModelsLoading: Boolean = false,
+    val ollamaModelsError: Boolean = false,
+    /** #103: model ids fetched from a custom OpenAI-compatible endpoint; null = never fetched. */
+    val customModels: List<String>? = null,
+    val customModelsLoading: Boolean = false,
+    val customModelsError: Boolean = false,
+    /** #107/#132: runtime lineup from the active provider's /models; null = no key, no fetch yet, or fetch failed (curated list shows). */
+    val runtimeModels: List<String>? = null,
+    val appearanceMode: String = "system",
+    /** "" = system default, or locale tag like "de", "zh-CN". */
+    val appLanguage: String = "",
+    /** Codeberg #20 phase 1: show the coach tab in the bottom bar; default ON. */
+    val coachTabEnabled: Boolean = true,
+    /** Codeberg #20 phase 2: master AI-features switch; default ON. */
+    val aiFeaturesEnabled: Boolean = true,
+    /** Issue #8 follow-up: release cleartext opt-in for user-entered endpoints; default OFF. */
+    val allowInsecureHttp: Boolean = false,
+    val appThemeColor: AppThemeColor = AppThemeColor.SYSTEM,
+    /** Opt-in: launcher icon stays the brand teal and never swaps aliases (#21). */
+    val fixedLauncherIcon: Boolean = false,
+    /** Codeberg #77: meal date/time uses the system pickers. */
+    val useSystemDateTimePickers: Boolean = false,
+    val foodLogSortOrder: FoodLogSortOrder = FoodLogSortOrder.STANDARD,
+    val weekStartsOnMonday: Boolean = true,
+    val weekStartDay: app.chompass.models.WeekStartDay = app.chompass.models.WeekStartDay.MONDAY,
+    /** Settings default Progress range id (`1W`…`All`). */
+    val progressDefaultRangeId: String = "1W",
+    /** Body-measurement sites with a Progress-tab trend plot; empty = plots off. */
+    val progressMeasurementSites: Set<String> = emptySet(),
+    /** Progress nutrient averages; default off. */
+    val progressNutrientAverages: Boolean = false,
+    /** #75: which nutrients the Progress averages card shows (non-macro storage keys). */
+    val progressNutrientAveragesSelection: Set<String> =
+        app.chompass.models.HomeTopNutrient.DefaultAveragesStorage,
+
+    val userContext: String = "",
+    val fallbackEnabled: Boolean = true,
+    val geminiGoogleSearchEnabled: Boolean = false,
+    val openRouterReasoningEffort: OpenRouterReasoningEffort = OpenRouterReasoningEffort.AUTO,
+    val goalRecalcTier: GoalRecalcTierOverride = GoalRecalcTierOverride.AUTO,
+    val mealConstituentsEnabled: Boolean = true,
+    val fillMissingRemindersEnabled: Boolean = true,
+    /** Per-source switches for the Add Food database search. Open Food Facts is
+     * the one that reaches the network; it ships on like the bundled indexes,
+     * and either this row or the sheet's databases chip turns it off. */
+    val foodSearchOpenFoodFactsEnabled: Boolean = true,
+    val foodSearchUsdaEnabled: Boolean = true,
+    val foodSearchSwissEnabled: Boolean = true,
+    /** Inverted in UI: “Ask for a photo note” = !skipPhotoNotePrompt. */
+    val skipPhotoNotePrompt: Boolean = false,
+    val optionalNutrientGoals: OptionalNutrientGoals = OptionalNutrientGoals.Default,
+    val homeDisplay: HomeDisplayPreferences = HomeDisplayPreferences(),
+    val mealSchedule: app.chompass.models.MealSchedule = app.chompass.models.MealSchedule.Default,
+    val mealCatalog: app.chompass.models.MealCatalog = app.chompass.models.MealCatalog.Default,
+    /** A goal-relevant input changed since the last Recalculate. Drives a soft nudge on the
+     *  Recalculate row; the button stays tappable at all times — this never disables it. */
+    val goalsNeedRecalc: Boolean = false,
+    /** Dismissible hub suggestions toward beneficial-but-optional setups (§6.3 of the plan). */
+    val suggestions: List<SettingsSuggestion> = emptyList(),
+    /** Increments each time a keto switch pauses a live day-type plan (#60); the Goals screen shows a snackbar on change. */
+    val dayTypesKetoPausedTick: Int = 0,
+) {
+    val heightMetric: Boolean get() = heightUnit == "cm"
+    val weightMetric: Boolean get() = weightUnit == "kg"
+
+    /** Provider of the active profile (Gemini only as the no-profiles default). */
+    val activeProvider: AIProvider get() = activeProfile?.provider ?: AIProvider.GEMINI
+
+    /** Resolved model of the active profile; null model falls back to the provider default. */
+    val activeModel: String
+        get() = activeProfile?.model ?: activeProvider.defaultModel
+
+    /** Profile configured as fallback; null = fallback disabled-by-absence. */
+    val fallbackProfile: AiProfile? get() = profiles.firstOrNull { it.id.toString() == fallbackProfileId }
+}
+
+/** One row of the Settings hub Suggestions card. */
+data class SettingsSuggestion(
+    val id: String,
+    val title: String,
+    val actionLabel: String,
+    val targetRoute: String,
+)
+
+/**
+ * AI Recalculate outcome held for user review before anything is persisted
+ * (edit-before-apply): the raw model result, the profile it was computed from,
+ * and the profile that Apply would write ([UserProfile.applyingAiGoalsToPlan]
+ * of [result] — recomputed after every field edit).
+ */
+data class PendingRecalc(
+    val result: GoalCalculation,
+    val before: UserProfile,
+    val preview: UserProfile,
+)
+
+/**
+ * Snapshot + on-device resolution from the first (off-main) hydration phase of
+ * [SettingsViewModel]. Kept separate from the slow tail (Health Connect,
+ * weather, profile, water preview) so the provider picker paints the resolved
+ * On-Device/Gemini availability before that tail finishes. The AI profile
+ * slice itself is not carried here: it comes from the store collector.
+ */
+private data class EarlyHydration(
+    val snap: SettingsPrefsHydration,
+    val onDeviceAvailable: Boolean,
+    val onDeviceModels: List<String>,
+)
+
+internal fun commitSettingsHydrate(
+    current: SettingsUiState,
+    incoming: SettingsUiState,
+    writeGenAtStart: Int,
+    writeGenNow: Int,
+): SettingsUiState {
+    val hydrated = if (writeGenAtStart == writeGenNow) incoming
+    else current.copy(
+        healthConnectEnabled = incoming.healthConnectEnabled,
+        healthEnergyGoalsEnabled = incoming.healthEnergyGoalsEnabled,
+        healthBackgroundSyncEnabled = incoming.healthBackgroundSyncEnabled,
+        healthBackgroundReadAvailable = incoming.healthBackgroundReadAvailable,
+        healthBackgroundReadGranted = incoming.healthBackgroundReadGranted,
+        profile = current.profile ?: incoming.profile,
+        weatherSource = incoming.weatherSource,
+        weatherOmCity = incoming.weatherOmCity,
+        weatherOmHighC = incoming.weatherOmHighC,
+        weatherOmUpdatedAtMillis = incoming.weatherOmUpdatedAtMillis,
+        waterDynamicGoalPreview = incoming.waterDynamicGoalPreview,
+        speechApiKeyMasked = incoming.speechApiKeyMasked.ifEmpty { current.speechApiKeyMasked },
+        onDeviceAvailable = incoming.onDeviceAvailable,
+        onDeviceModels = incoming.onDeviceModels.ifEmpty { current.onDeviceModels },
+    )
+    // The AI profile slice is store-driven: profile operations run from this
+    // screen (add, provider, key, select) and a hydrate that started before them
+    // must never repaint the pre-action profile. The init snapshot is only a
+    // first paint, so anything the live state already holds wins.
+    return hydrated.copy(
+        profiles = current.profiles.ifEmpty { incoming.profiles },
+        activeProfile = current.activeProfile ?: incoming.activeProfile,
+        fallbackProfileId = current.fallbackProfileId ?: incoming.fallbackProfileId,
+        apiKeyMasked = current.apiKeyMasked.ifEmpty { incoming.apiKeyMasked },
+    )
+}
+
+/** One phase's adherence line for the phases screen ("avg −412/day · net −18,400"). */
+data class PhaseAdherenceLine(
+    val overlapDays: Int,
+    val avgDelta: Int?,
+    val netKcal: Long?,
+)
+
+class SettingsViewModel(val container: AppContainer) : ViewModel() {
+    private val _ui = MutableStateFlow(
+        // Capability is cheap and sync. Defaulting this to false hid On-Device
+        // in the provider picker until the slow Settings hydration finished
+        // (Health Connect, weather, profile), which after a download crash
+        // looked like the option had vanished.
+        SettingsUiState(onDeviceAvailable = OnDeviceCapability.isSupported(container.appContext)),
+    )
+    val ui: StateFlow<SettingsUiState> = _ui.asStateFlow()
+
+    /** Cached inputs for the Suggestions engine (see refreshSuggestions). */
+    private var firstLaunchAt: Long = 0L
+    private var webDavUrl: String = ""
+    private var dismissedSuggestionIds: Set<String> = emptySet()
+
+    /** Goal-input fingerprint captured at the last Recalculate (or seeded on first load). */
+    private var lastRecalcSignature: String? = null
+
+    private var settingsWriteGen = 0
+
+    /** True when [profile]'s goal inputs differ from the last-recalculated baseline. */
+    private fun needsRecalc(profile: app.chompass.models.UserProfile?): Boolean =
+        lastRecalcSignature != null && profile != null && lastRecalcSignature != profile.goalInputSignature
+
+    init {
+        viewModelScope.launch {
+            container.prefs.optionalNutrientGoals.collect { goals ->
+                _ui.value = _ui.value.copy(optionalNutrientGoals = goals)
+            }
+        }
+
+        viewModelScope.launch {
+            // The AI profile slice follows the store rather than the one-shot
+            // hydration snapshot: profile operations run from this screen, and the
+            // slow hydrate (Health Connect, KeyStore, weather) can otherwise land
+            // after them and repaint the profile they just replaced. This also
+            // paints the AI selection within a frame of VM creation, which is what
+            // the early hydrate paint used to do.
+            combine(
+                container.prefs.aiProfiles,
+                container.prefs.activeAiProfile,
+                container.prefs.fallbackAiProfileId,
+            ) { profiles, active, fallbackId -> Triple(profiles, active, fallbackId) }
+                .collect { (profiles, active, fallbackId) ->
+                    val masked = runCatching {
+                        maskKey(active?.let { container.keyStore.profileApiKey(it.id) })
+                    }.getOrDefault("")
+                    _ui.update {
+                        it.copy(
+                            profiles = profiles,
+                            activeProfile = active,
+                            fallbackProfileId = fallbackId,
+                            apiKeyMasked = masked,
+                        )
+                    }
+                }
+        }
+
+        viewModelScope.launch {
+            container.prefs.heuristicServingUnitSettings.collect { settings ->
+                _ui.value = _ui.value.copy(heuristicServingUnitSettings = settings)
+            }
+        }
+
+        viewModelScope.launch {
+            val hydrateGen = settingsWriteGen
+            // Hydration touches the DataStore snapshot decode, the encrypted
+            // KeyStore (synchronous AES file I/O), Health Connect IPC, and a
+            // food-bucket read for the water preview. Run the whole chain
+            // off-main so the first Settings frame is never held up; only the
+            // final state writes touch the main thread.
+            val early = withContext(Dispatchers.IO) {
+                PerfLog.measure("settingsInit", "early", block = {
+                    val snap = container.prefs.readSettingsHydration()
+                    // Only the provider drives the on-device model list here; the
+                    // profile slice itself is store-collected, not snapshotted.
+                    val active = container.prefs.activeAiProfile.first()
+                    val onDeviceAvailable = snap.onDeviceFeatureVisible &&
+                        OnDeviceCapability.isSupported(container.appContext)
+                    val onDeviceModels = if (active?.provider == AIProvider.ON_DEVICE && onDeviceAvailable) {
+                        supportedOnDeviceModels()
+                    } else {
+                        emptyList()
+                    }
+                    EarlyHydration(
+                        snap = snap,
+                        onDeviceAvailable = onDeviceAvailable,
+                        onDeviceModels = onDeviceModels,
+                    )
+                })
+            }
+            // Paint the on-device availability + list before Health Connect /
+            // weather so a slow hydrate cannot hide On-Device. The AI profile
+            // slice is painted by its own store collector, not from this snapshot.
+            _ui.update {
+                it.copy(
+                    onDeviceAvailable = early.onDeviceAvailable,
+                    onDeviceModels = early.onDeviceModels,
+                    aiFeaturesEnabled = early.snap.aiFeaturesEnabled,
+                )
+            }
+            // Device walk #3 (2026-08-24): Goals & Nutrition rendered empty
+            // cards ("only descriptions and related topics") until the
+            // wholesale hydrate below finished, and on a cold start that chain
+            // (Health Connect IPC, KeyStore, weather, bucket reads) could lag
+            // long enough to look broken. Paint the Goals-relevant fields from
+            // the already-decoded snapshot first; the wholesale state below
+            // supersedes it with the same values.
+            runCatching {
+                val snap = early.snap
+                val profile = container.profileRepository.current()
+                lastRecalcSignature = snap.lastRecalcGoalSignature ?: profile?.goalInputSignature
+                _ui.update {
+                    it.copy(
+                        profile = profile,
+                        weightUnit = snap.weightUnit,
+                        optionalNutrientGoals = snap.optionalNutrientGoals,
+                        goalsNeedRecalc = needsRecalc(profile),
+                    )
+                }
+            }
+            val (state, sheet) = withContext(Dispatchers.IO) {
+                val snap = container.prefs.readSettingsHydration()
+                val speech = snap.selectedSpeech
+                val weather = container.weatherRepository.state.first()
+                // Fragile, non-essential calls are guarded so a single failure
+                // (Health Connect binder, KeyStore) can never kill the hydrate
+                // and leave the settings UI stuck on defaults.
+                val hc = PerfLog.measure("settingsInit", "healthConnect", block = {
+                    runCatching { reconcileHealthConnectState() }.getOrDefault(false)
+                })
+                val profile = PerfLog.measure("settingsInit", "profile", block = { container.profileRepository.current() })
+                val energyGoals = snap.healthEnergyGoalsEnabled && hc
+                var backgroundSync = snap.healthBackgroundSyncEnabled && hc
+                if (backgroundSync &&
+                    !(container.health.isBackgroundReadAvailable() && container.health.hasBackgroundRead())
+                ) {
+                    container.prefs.setHealthBackgroundSyncEnabled(false)
+                    HealthSyncWorker.cancel(container.appContext)
+                    backgroundSync = false
+                }
+                val profiles = container.prefs.aiProfiles.first()
+                val active = container.prefs.activeAiProfile.first()
+                val fallbackProfileId = container.prefs.fallbackAiProfileId.first()
+                val masked = runCatching { maskKey(active?.let { container.keyStore.profileApiKey(it.id) }) }.getOrDefault("")
+                val speechMasked = runCatching { maskKey(container.keyStore.speechApiKey(speech)) }.getOrDefault("")
+                lastRecalcSignature = snap.lastRecalcGoalSignature ?: profile?.goalInputSignature
+                if (snap.lastRecalcGoalSignature == null && profile != null) {
+                    container.prefs.setLastRecalcGoalSignature(profile.goalInputSignature)
+                }
+                // One-time re-baseline for signature-format v1 (bodyFatUpdatedAt joined
+                // goalInputSignature). Baselines stored before the change would otherwise
+                // mismatch every existing profile and nudge the whole user base to
+                // recalculate once; re-capture instead. New recalcs keep updating the
+                // baseline as today, always writing version 1.
+                if (snap.lastRecalcSignatureVersion < 1 && profile != null) {
+                    if (snap.lastRecalcGoalSignature != null) {
+                        container.prefs.setLastRecalcGoalSignature(profile.goalInputSignature)
+                    }
+                    container.prefs.setLastRecalcSignatureVersion(1)
+                }
+                val state = SettingsUiState(
+                    profiles = profiles,
+                    activeProfile = active,
+                    fallbackProfileId = fallbackProfileId,
+                    maxResponseTokens = snap.maxResponseTokens,
+                    aiReadTimeoutSeconds = snap.aiReadTimeoutSeconds,
+                    servingUnitInferenceMode = snap.servingUnitInferenceMode,
+                    heuristicServingUnitSettings = snap.heuristicServingUnitSettings,
+                    selectedSpeech = speech,
+                    selectedSpeechLanguage = snap.selectedSpeechLanguage,
+                    heightUnit = snap.heightUnit,
+                    weightUnit = snap.weightUnit,
+                    energyUnit = snap.energyUnit,
+                    preferGramsByDefault = snap.preferGramsByDefault,
+                    profile = profile,
+                    notificationsEnabled = snap.notificationsEnabled,
+                    streakReminderEnabled = snap.streakReminderEnabled,
+                    streakReminderHour = snap.streakReminderHour,
+                    streakReminderMinute = snap.streakReminderMinute,
+                    dailySummaryEnabled = snap.dailySummaryEnabled,
+                    dailySummaryHour = snap.dailySummaryHour,
+                    dailySummaryMinute = snap.dailySummaryMinute,
+                    weightReminderEnabled = snap.weightReminderEnabled,
+                    weightReminderHour = snap.weightReminderHour,
+                    weightReminderMinute = snap.weightReminderMinute,
+                    bodyFatReminderEnabled = snap.bodyFatReminderEnabled,
+                    bodyFatReminderHour = snap.bodyFatReminderHour,
+                    bodyFatReminderMinute = snap.bodyFatReminderMinute,
+                    waterTrackingEnabled = snap.waterTrackingEnabled,
+                    waterDailyGoalMl = snap.waterDailyGoalMl,
+                    waterQuickPresetsMl = snap.waterQuickPresetsMl,
+                    nicotineTrackingEnabled = snap.nicotineTrackingEnabled,
+                    nicotineDailyLimit = snap.nicotineDailyLimit,
+                    nicotineQuickKinds = snap.nicotineQuickKinds,
+                    nicotinePresets = snap.nicotinePresets,
+                    dailyNotesEnabled = snap.dailyNotesEnabled,
+                    mealTimesEnabled = snap.mealTimesEnabled,
+                    mealPlanningEnabled = snap.mealPlanningEnabled,
+                    caffeineTrackingEnabled = snap.caffeineTrackingEnabled,
+                    caffeineQuickKinds = snap.caffeineQuickKinds,
+                    caffeinePresets = snap.caffeinePresets,
+                    fastingEnabled = snap.fastingEnabled,
+                    fastingGoalHours = snap.fastingGoalHours,
+                    fastingEatHours = snap.fastingEatHours,
+                    fastingGoalNotificationEnabled = snap.fastingGoalNotificationEnabled,
+                    fastingEndReminderLeadMinutes = snap.fastingEndReminderLeadMinutes,
+                    fastingAutoWindows = snap.fastingAutoWindows,
+                    fastingStartHour = snap.fastingStartHour,
+                    fastingStartMinute = snap.fastingStartMinute,
+                    fastingStartReminderEnabled = snap.fastingStartReminderEnabled,
+                    fastingStartReminderLeadMinutes = snap.fastingStartReminderLeadMinutes,
+                    waterReminderEnabled = snap.waterReminderEnabled,
+                    waterDynamicEnabled = snap.waterDynamicEnabled,
+                    waterBaseSource = snap.waterBaseSource,
+                    waterManualTempC = snap.waterManualTempC,
+                    weatherSource = weather.source,
+                    weatherOmCity = weather.omCity,
+                    weatherOmHighC = weather.omHighC,
+                    weatherOmUpdatedAtMillis = weather.omUpdatedAtMillis,
+                    waterUseProfileActivity = snap.waterUseProfileActivity,
+                    waterFoodWaterEnabled = snap.waterFoodWaterEnabled,
+                    waterAwakeStartMinutes = snap.waterAwakeStartMinutes,
+                    waterAwakeEndMinutes = snap.waterAwakeEndMinutes,
+                    waterCupSizeMl = snap.waterCupSizeMl,
+                    waterDynamicGoalPreview = if (snap.waterDynamicEnabled) computeWaterGoalPreview(
+                    manualGoalMl = snap.waterDailyGoalMl,
+                    source = snap.waterBaseSource,
+                    tempC = snap.waterManualTempC,
+                    useActivity = snap.waterUseProfileActivity,
+                    foodWater = snap.waterFoodWaterEnabled,
+                    ) else null,
+                    goalReachedNotificationsEnabled = snap.goalReachedNotificationsEnabled,
+                    appUpdateNotificationsEnabled = snap.appUpdateNotificationsEnabled,
+                    healthConnectEnabled = hc,
+                    healthEnergyGoalsEnabled = energyGoals,
+                    healthBackgroundSyncEnabled = backgroundSync,
+                    healthBackgroundReadAvailable = container.health.isBackgroundReadAvailable(),
+                    healthBackgroundReadGranted = container.health.hasBackgroundRead(),
+                    adaptiveGoalsEnabled = snap.adaptiveGoalsEnabled,
+                    apiKeyMasked = masked,
+                    speechApiKeyMasked = speechMasked,
+                    onDeviceAvailable = early.onDeviceAvailable,
+                    onDeviceModels = early.onDeviceModels,
+                    appearanceMode = snap.appearanceMode,
+                    appLanguage = snap.appLanguage,
+                    coachTabEnabled = snap.coachTabEnabled,
+                    aiFeaturesEnabled = snap.aiFeaturesEnabled,
+                    allowInsecureHttp = snap.allowInsecureHttp,
+                    appThemeColor = AppThemeColor.fromKey(snap.appThemeColorKey),
+                    fixedLauncherIcon = snap.fixedLauncherIcon,
+                    useSystemDateTimePickers = snap.useSystemDateTimePickers,
+                    foodLogSortOrder = FoodLogSortOrder.fromStorage(snap.foodLogSortOrderRaw),
+                    weekStartsOnMonday = snap.weekStartDay == app.chompass.models.WeekStartDay.MONDAY,
+                    weekStartDay = snap.weekStartDay,
+                    progressDefaultRangeId = snap.progressDefaultRangeId,
+                    progressMeasurementSites = snap.progressMeasurementSites,
+                    progressNutrientAverages = snap.progressNutrientAverages,
+                    progressNutrientAveragesSelection = snap.progressNutrientAveragesSelection,
+
+                    userContext = snap.userContext,
+                    fallbackEnabled = snap.fallbackEnabled,
+                    geminiGoogleSearchEnabled = snap.geminiGoogleSearchEnabled,
+                    openRouterReasoningEffort = snap.openRouterReasoningEffort,
+                    goalRecalcTier = snap.goalRecalcTier,
+                    mealConstituentsEnabled = snap.mealConstituentsEnabled,
+                    fillMissingRemindersEnabled = snap.fillMissingRemindersEnabled,
+                    foodSearchOpenFoodFactsEnabled = snap.foodSearchOpenFoodFactsEnabled,
+                    foodSearchUsdaEnabled = snap.foodSearchUsdaEnabled,
+                    foodSearchSwissEnabled = snap.foodSearchSwissEnabled,
+                    skipPhotoNotePrompt = snap.skipPhotoNotePrompt,
+                    optionalNutrientGoals = snap.optionalNutrientGoals,
+                    homeDisplay = snap.homeDisplay,
+                    mealSchedule = snap.mealSchedule,
+                    mealCatalog = snap.mealCatalog,
+                    goalsNeedRecalc = needsRecalc(profile)
+                )
+                // The hydration rebuild above is wholesale; re-apply the persisted
+                // goal-change explanation (AI Recalculate or Adaptive) for the on-demand
+                // details row. DataStore is cached, so this second read is cheap and
+                // race-free (same coroutine).
+                val sheet = runCatching { container.prefs.loadLastGoalChangeSheet() }.getOrNull()
+                state to sheet
+            }
+            _ui.value = commitSettingsHydrate(_ui.value, state, hydrateGen, settingsWriteGen)
+            if (hydrateGen == settingsWriteGen) {
+                _ui.update { it.copy(lastRecalcSheet = sheet) }
+            } else {
+                _ui.update { it.copy(lastRecalcSheet = it.lastRecalcSheet ?: sheet) }
+            }
+        }
+
+        container.prefs.homeDisplayPreferences
+            .onEach { display -> _ui.value = _ui.value.copy(homeDisplay = display) }
+            .launchIn(viewModelScope)
+
+        // Weather input state (source, shared-app cache, Open-Meteo cache).
+        // Single reactive collector keeps the water preview + status rows live
+        // when a weather app broadcasts or Open-Meteo refreshes.
+        viewModelScope.launch {
+            container.weatherRepository.state.collect { weather ->
+                _ui.update {
+                    it.copy(
+                        weatherSource = weather.source,
+                        weatherOmCity = weather.omCity,
+                        weatherOmHighC = weather.omHighC,
+                        weatherOmUpdatedAtMillis = weather.omUpdatedAtMillis,
+                    )
+                }
+                refreshWaterDynamicPreview()
+            }
+        }
+
+        // Preset delete confirms need entry counts per kind id (#55 follow-up).
+        viewModelScope.launch {
+            container.caffeineRepository.entries.collect { entries ->
+                _ui.update { it.copy(caffeineKindUsage = entries.groupingBy { it.kind }.eachCount()) }
+            }
+        }
+        viewModelScope.launch {
+            container.nicotineRepository.entries.collect { entries ->
+                _ui.update { it.copy(nicotineKindUsage = entries.groupingBy { it.kind }.eachCount()) }
+            }
+        }
+
+        // Suggestions engine: re-derive whenever the ui state or its inputs change.
+        viewModelScope.launch {
+            _ui.collect { refreshSuggestions() }
+        }
+        viewModelScope.launch {
+            container.prefs.firstLaunchAt.collect { firstLaunchAt = it; refreshSuggestions() }
+        }
+        viewModelScope.launch {
+            container.prefs.webDavUrl.collect { webDavUrl = it; refreshSuggestions() }
+        }
+        viewModelScope.launch {
+            container.prefs.dismissedSuggestionIds.collect {
+                dismissedSuggestionIds = it
+                refreshSuggestions()
+            }
+        }
+    }
+
+    /**
+     * Derives the hub Suggestions list (max 3, priority order). Each row is
+     * dismissible and auto-hides once its condition resolves. Gated by install
+     * age so fresh users are never nagged; nothing is enabled here — rows only
+     * navigate to the owning screen where the user taps the real toggle.
+     */
+    private fun refreshSuggestions() {
+        val state = _ui.value
+        val ageDays = if (firstLaunchAt > 0L) {
+            (System.currentTimeMillis() - firstLaunchAt) / MILLIS_PER_DAY
+        } else {
+            Long.MAX_VALUE
+        }
+        val appContext = container.appContext
+        fun suggest(
+            id: String,
+            titleRes: Int,
+            actionRes: Int,
+            route: String,
+            show: Boolean,
+        ): SettingsSuggestion? {
+            if (!show || id in dismissedSuggestionIds) return null
+            return SettingsSuggestion(
+                id = id,
+                title = appContext.getString(titleRes),
+                actionLabel = appContext.getString(actionRes),
+                targetRoute = route,
+            )
+        }
+        _ui.value = state.copy(
+            suggestions = listOfNotNull(
+                suggest(
+                    id = "water_reminders",
+                    titleRes = R.string.settings_suggestion_water_reminders,
+                    actionRes = R.string.settings_suggestion_action_setup,
+                    route = ChompassRoutes.waterRoute("app"),
+                    show = state.waterTrackingEnabled && !state.waterReminderEnabled,
+                ),
+                suggest(
+                    id = "water_tracking",
+                    titleRes = R.string.settings_suggestion_water_tracking,
+                    actionRes = R.string.settings_suggestion_action_turn_on,
+                    route = ChompassRoutes.waterRoute("app"),
+                    show = !state.waterTrackingEnabled && ageDays >= SUGGEST_WATER_TRACKING_DAYS,
+                ),
+                suggest(
+                    id = "adaptive_goals",
+                    titleRes = R.string.settings_suggestion_adaptive_goals,
+                    actionRes = R.string.settings_suggestion_action_turn_on,
+                    route = ChompassRoutes.SETTINGS_GOALS,
+                    show = !state.adaptiveGoalsEnabled && ageDays >= SUGGEST_OPTIMIZATION_DAYS &&
+                        state.profile != null,
+                ),
+                suggest(
+                    id = "health_connect",
+                    titleRes = R.string.settings_suggestion_health_connect,
+                    actionRes = R.string.settings_suggestion_action_connect,
+                    route = ChompassRoutes.SETTINGS_HEALTH,
+                    show = !state.healthConnectEnabled && ageDays >= SUGGEST_OPTIMIZATION_DAYS &&
+                        state.profile != null,
+                ),
+                suggest(
+                    id = "notifications",
+                    titleRes = R.string.settings_suggestion_notifications,
+                    actionRes = R.string.settings_suggestion_action_turn_on,
+                    route = ChompassRoutes.notificationsRoute("app"),
+                    show = !state.notificationsEnabled && ageDays >= SUGGEST_OPTIMIZATION_DAYS,
+                ),
+                suggest(
+                    id = "backup",
+                    titleRes = R.string.settings_suggestion_backup,
+                    actionRes = R.string.settings_suggestion_action_setup,
+                    route = ChompassRoutes.syncRoute("data"),
+                    show = webDavUrl.isBlank() && ageDays >= SUGGEST_BACKUP_DAYS,
+                ),
+            ).take(MAX_SUGGESTIONS),
+        )
+    }
+
+    fun dismissSuggestion(id: String) = viewModelScope.launch {
+        container.prefs.setSuggestionDismissed(id)
+    }
+
+    private companion object {
+        const val MILLIS_PER_DAY = 86_400_000L
+        const val SUGGEST_WATER_TRACKING_DAYS = 3L
+        const val SUGGEST_OPTIMIZATION_DAYS = 7L
+        const val SUGGEST_BACKUP_DAYS = 14L
+        const val MAX_SUGGESTIONS = 3
+    }
+
+    fun setHomeTopNutrients(selection: List<HomeTopNutrient>) = launchPref {
+        container.prefs.setHomeTopNutrients(HomeTopNutrient.toStorage(selection))
+    }
+
+    fun setHomeShowSteps(enabled: Boolean) = launchPref {
+        container.prefs.setHomeShowSteps(enabled)
+    }
+
+    fun setHomeFullNutrientNames(enabled: Boolean) = launchPref {
+        container.prefs.setHomeFullNutrientNames(enabled)
+    }
+
+    fun setHomeShowActiveCalories(enabled: Boolean) = launchPref {
+        container.prefs.setHomeShowActiveCalories(enabled)
+    }
+
+    fun setHomeStepGoal(goal: Int) = launchPref {
+        container.prefs.setHomeStepGoal(goal)
+    }
+
+    fun setHomeCalorieDisplayMode(mode: HomeCalorieDisplayMode) = launchPref {
+        container.prefs.setHomeCalorieDisplayMode(mode.storageKey)
+    }
+
+    fun setHomeCalorieFullCredit(enabled: Boolean) = launchPref {
+        container.prefs.setHomeCalorieFullCredit(enabled)
+    }
+
+    fun setHomeCalorieHeroLayout(layout: HomeCalorieHeroLayout?) = launchPref {
+        container.prefs.setHomeCalorieHeroLayout(layout?.storageKey)
+    }
+
+    fun setHomeMacroCardLayout(layout: HomeMacroCardLayout?) = launchPref {
+        container.prefs.setHomeMacroCardLayout(layout?.storageKey)
+    }
+
+    fun setHomeFoodLogLayout(layout: HomeFoodLogLayout?) = launchPref {
+        container.prefs.setHomeFoodLogLayout(layout?.storageKey)
+    }
+
+    fun setFoodLogMacroChips(chips: List<FoodLogMacroChip>) = launchPref {
+        container.prefs.setFoodLogMacroChips(FoodLogMacroChip.toStorage(chips))
+    }
+
+    fun setOptionalNutrientGoals(goals: OptionalNutrientGoals) = updateUiPref(
+        { container.prefs.setOptionalNutrientGoals(goals) },
+        { copy(optionalNutrientGoals = goals) },
+    )
+
+    /**
+     * Settings → Other Nutrient Goals → "Estimate with AI": one user-initiated
+     * Gemini round-trip (the same prompt the old Recalculate auto-call used).
+     * Runs only when tapped, never in the background and never from Recalculate,
+     * so manually set optional goals stay durable. Replaces every optional goal
+     * on success; on failure the existing values are left untouched.
+     */
+    fun estimateOptionalNutrientGoals() {
+        viewModelScope.launch {
+            if (_ui.value.estimatingOptionalNutrientGoals) return@launch
+            _ui.value = _ui.value.copy(estimatingOptionalNutrientGoals = true)
+            val profile = container.profileRepository.current()
+            val result = try {
+                container.foodAnalysis.estimateOptionalNutrientGoals(profile)
+            } catch (e: AiError) {
+                Log.e("Chompass", "estimateOptionalNutrientGoals failed", e)
+                _ui.value = _ui.value.copy(
+                    estimatingOptionalNutrientGoals = false,
+                    optionalNutrientEstimateAlertMessage = e.userMessage(container.appContext)
+                )
+                return@launch
+            } catch (e: Throwable) {
+                Log.e("Chompass", "estimateOptionalNutrientGoals failed", e)
+                _ui.value = _ui.value.copy(
+                    estimatingOptionalNutrientGoals = false,
+                    optionalNutrientEstimateAlertMessage = container.appContext.getString(R.string.ai_error_provider_error)
+                )
+                return@launch
+            }
+            container.prefs.setOptionalNutrientGoals(result)
+            _ui.value = _ui.value.copy(
+                estimatingOptionalNutrientGoals = false,
+                optionalNutrientGoals = result
+            )
+        }
+    }
+
+    fun dismissOptionalNutrientEstimateAlert() {
+        _ui.value = _ui.value.copy(optionalNutrientEstimateAlertMessage = null)
+    }
+
+    fun setUserContext(value: String) = updateUiPref(
+        { container.prefs.setUserContext(value) },
+        { copy(userContext = value.trim()) },
+    )
+
+    /** Advanced knobs write the ACTIVE PROFILE's override field; global prefs stay as fallback. */
+    fun setMaxResponseTokens(v: Int) {
+        val clamped = app.chompass.data.clampMaxResponseTokens(v)
+        viewModelScope.launch {
+            container.prefs.editActiveProfile { it.copy(maxResponseTokens = clamped) }
+            refreshAiState()
+        }
+    }
+
+    fun setAiReadTimeoutSeconds(v: Int) {
+        val clamped = app.chompass.data.clampAiReadTimeoutSeconds(v)
+        viewModelScope.launch {
+            container.prefs.editActiveProfile { it.copy(readTimeoutSeconds = clamped) }
+            refreshAiState()
+        }
+    }
+
+    fun setGeminiGoogleSearchEnabled(v: Boolean) {
+        viewModelScope.launch {
+            container.prefs.editActiveProfile { it.copy(geminiGoogleSearch = v) }
+            refreshAiState()
+        }
+    }
+
+    fun setFillMissingRemindersEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setFillMissingBannerDisabled(!v) },
+        { copy(fillMissingRemindersEnabled = v) },
+    )
+
+    fun setOpenRouterReasoningEffort(e: OpenRouterReasoningEffort) {
+        viewModelScope.launch {
+            container.prefs.editActiveProfile { it.copy(reasoningEffort = e.storageKey) }
+            refreshAiState()
+        }
+    }
+
+    fun setGoalRecalcTier(v: GoalRecalcTierOverride) = updateUiPref(
+        { container.prefs.setGoalRecalcTier(v) },
+        { copy(goalRecalcTier = v) },
+    )
+
+    fun setAskPhotoNotePrompt(ask: Boolean) = updateUiPref(
+        {
+            container.prefs.setSkipPhotoNotePrompt(!ask)
+            if (ask) container.prefs.setPhotoNoteSkipCount(0)
+        },
+        { copy(skipPhotoNotePrompt = !ask) },
+    )
+
+    fun setMealConstituentsEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setMealConstituentsEnabled(v) },
+        { copy(mealConstituentsEnabled = v) },
+    )
+
+    fun setFoodSearchOpenFoodFactsEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setFoodSearchOpenFoodFactsEnabled(v) },
+        { copy(foodSearchOpenFoodFactsEnabled = v) },
+    )
+
+    fun setFoodSearchUsdaEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setFoodSearchUsdaEnabled(v) },
+        { copy(foodSearchUsdaEnabled = v) },
+    )
+
+    fun setFoodSearchSwissEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setFoodSearchSwissEnabled(v) },
+        { copy(foodSearchSwissEnabled = v) },
+    )
+
+    fun setServingUnitInferenceMode(mode: ServingUnitInferenceMode) = updateUiPref(
+        { container.prefs.setServingUnitInferenceMode(mode) },
+        { copy(servingUnitInferenceMode = mode) },
+    )
+
+    fun setHeuristicRuleEnabled(ruleId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val current = _ui.value.heuristicServingUnitSettings
+            val existing = current.overrides[ruleId] ?: HeuristicRuleOverride()
+            val updated = current.copy(overrides = current.overrides + (ruleId to existing.copy(enabled = enabled)))
+            container.prefs.setHeuristicServingUnitSettings(updated)
+        }
+    }
+
+    /** [gramsPerUnit] null (or blank in the UI) resets the rule back to its built-in default. */
+    fun setHeuristicRuleGramsPerUnit(ruleId: String, gramsPerUnit: Double?) {
+        viewModelScope.launch {
+            val current = _ui.value.heuristicServingUnitSettings
+            val existing = current.overrides[ruleId] ?: HeuristicRuleOverride()
+            val updated = current.copy(
+                overrides = current.overrides + (ruleId to existing.copy(gramsPerUnit = gramsPerUnit))
+            )
+            container.prefs.setHeuristicServingUnitSettings(updated)
+        }
+    }
+
+    fun setFallbackEnabled(v: Boolean) {
+        viewModelScope.launch {
+            container.prefs.setFallbackEnabled(v)
+            _ui.value = _ui.value.copy(fallbackEnabled = v)
+        }
+    }
+
+    fun setFallbackProfile(id: String?) {
+        viewModelScope.launch {
+            container.prefs.setFallbackAiProfileId(id)
+            _ui.value = _ui.value.copy(fallbackProfileId = id)
+        }
+    }
+
+    fun setAppearanceMode(mode: String) = updateUiPref(
+        { container.prefs.setAppearanceMode(mode) },
+        { copy(appearanceMode = mode) },
+    )
+
+    fun setAppLanguage(languageTag: String) = updateUiPref(
+        { container.prefs.setAppLanguage(languageTag) },
+        { copy(appLanguage = languageTag) },
+    )
+
+    fun setCoachTabEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setCoachTabEnabled(v) },
+        { copy(coachTabEnabled = v) },
+    )
+
+    /** Codeberg #20 phase 2: master AI-features switch. Off = no data to any LLM provider. */
+    fun setAiFeaturesEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setAiFeaturesEnabled(v) },
+        { copy(aiFeaturesEnabled = v) },
+    )
+
+    /** Issue #8 follow-up: allow http:// URLs for user-entered endpoints in release builds. */
+    fun setAllowInsecureHttp(v: Boolean) = updateUiPref(
+        { container.prefs.setAllowInsecureHttp(v) },
+        { copy(allowInsecureHttp = v) },
+    )
+
+    fun setAppThemeColor(themeColor: AppThemeColor) = updateUiPref(
+        { container.prefs.setAppThemeColor(themeColor.key) },
+        { copy(appThemeColor = themeColor) },
+    )
+
+    fun setFixedLauncherIcon(enabled: Boolean) = updateUiPref(
+        { container.prefs.setFixedLauncherIcon(enabled) },
+        { copy(fixedLauncherIcon = enabled) },
+    )
+
+    fun setUseSystemDateTimePickers(enabled: Boolean) = updateUiPref(
+        { container.prefs.setUseSystemDateTimePickers(enabled) },
+        { copy(useSystemDateTimePickers = enabled) },
+    )
+
+    fun setWeekStartsOnMonday(monday: Boolean) = setWeekStartDay(
+        if (monday) app.chompass.models.WeekStartDay.MONDAY else app.chompass.models.WeekStartDay.SUNDAY,
+    )
+
+    fun setWeekStartDay(day: app.chompass.models.WeekStartDay) = updateUiPref(
+        { container.prefs.setWeekStartDay(day) },
+        { copy(weekStartDay = day, weekStartsOnMonday = day == app.chompass.models.WeekStartDay.MONDAY) },
+    )
+
+    fun setProgressDefaultRangeId(rangeId: String) = updateUiPref(
+        { container.prefs.setProgressDefaultRangeId(rangeId) },
+        { copy(progressDefaultRangeId = rangeId) },
+    )
+
+    fun setProgressMeasurementSites(sites: Set<String>) = updateUiPref(
+        { container.prefs.setProgressMeasurementSites(sites) },
+        { copy(progressMeasurementSites = sites) },
+    )
+
+    fun setProgressNutrientAverages(v: Boolean) = updateUiPref(
+        { container.prefs.setProgressNutrientAverages(v) },
+        { copy(progressNutrientAverages = v) },
+    )
+
+    fun setProgressNutrientAveragesSelection(keys: Set<String>) = updateUiPref(
+        { container.prefs.setProgressNutrientAveragesSelection(keys) },
+        { copy(progressNutrientAveragesSelection = keys) },
+    )
+
+    fun setMealSchedule(schedule: app.chompass.models.MealSchedule) {
+        val validated = schedule.validatedOrDefault()
+        updateUiPref(
+            { container.prefs.setMealSchedule(validated) },
+            { copy(mealSchedule = validated, mealCatalog = app.chompass.models.MealCatalog.fromLegacySchedule(validated)) },
+        )
+    }
+
+    fun setMealCatalog(catalog: app.chompass.models.MealCatalog) {
+        val validated = catalog.validatedOrDefault()
+        updateUiPref(
+            { container.prefs.setMealCatalog(validated) },
+            { copy(mealCatalog = validated, mealSchedule = validated.toLegacySchedule()) },
+        )
+    }
+
+    fun setFoodLogSortOrder(order: FoodLogSortOrder) = updateUiPref(
+        { container.prefs.setFoodLogSortOrder(order.storageValue) },
+        { copy(foodLogSortOrder = order) },
+    )
+
+    // -- Named AI profiles ---------------------------------------------------------
+    // Every op below mutates the profile store and re-reads the AI slice so the
+    // Settings rows (name, model, masked key, on-device list) never drift from disk.
+
+    /** Re-reads profiles/active/fallback id + the active profile's masked key into [SettingsUiState]. */
+    private suspend fun refreshAiState(onDeviceModels: List<String>? = null) {
+        val active = container.prefs.activeAiProfile.first()
+        val models = onDeviceModels
+            ?: if (active?.provider == AIProvider.ON_DEVICE) supportedOnDeviceModels() else emptyList()
+        _ui.value = _ui.value.copy(
+            profiles = container.prefs.aiProfiles.first(),
+            activeProfile = active,
+            fallbackProfileId = container.prefs.fallbackAiProfileId.first(),
+            apiKeyMasked = runCatching {
+                maskKey(active?.let { container.keyStore.profileApiKey(it.id) })
+            }.getOrDefault(""),
+            maxResponseTokens = effectiveMaxResponseTokens(active, container.prefs.maxResponseTokens.first()),
+            aiReadTimeoutSeconds = effectiveReadTimeoutSeconds(active, container.prefs.aiReadTimeoutSeconds.first()),
+            geminiGoogleSearchEnabled = active?.geminiGoogleSearch
+                ?: container.prefs.geminiGoogleSearchEnabled.first(),
+            openRouterReasoningEffort = active?.reasoningEffort?.let(OpenRouterReasoningEffort::fromStorage)
+                ?: container.prefs.openRouterReasoningEffort.first(),
+            apiKeyTesting = false,
+            apiKeyTestOk = null,
+            apiKeyTestMessage = null,
+            onDeviceModels = models,
+            // Fetched lists belong to the endpoint they came from: drop them on every
+            // profile/endpoint change so a second custom or Ollama profile never shows
+            // the previous host's ids while its own fetch is pending.
+            customModels = null,
+            customModelsError = false,
+            ollamaModels = null,
+            ollamaModelsError = false,
+            runtimeModels = null,
+        )
+    }
+
+    /** Switches the active profile; the profile keeps its own model, key and URL. */
+    fun selectProfile(id: String) {
+        viewModelScope.launch {
+            container.prefs.setActiveAiProfileId(id)
+            refreshAiState()
+        }
+    }
+
+    /** Adds a profile named [name] (blank → provider display name) and activates it in ONE
+     *  store edit, so the provider picker that opens next edits the new profile. [onCommitted]
+     *  runs after the UI state refresh — i.e. once the new row is active and visible. */
+    fun addProfile(name: String, provider: AIProvider, onCommitted: () -> Unit = {}) {
+        viewModelScope.launch {
+            val profile = AiProfile(
+                id = UUID.randomUUID(),
+                name = name.ifBlank { container.appContext.getString(provider.displayNameRes) },
+                provider = provider,
+                model = provider.defaultModel,
+                createdAt = Instant.now(),
+            )
+            container.prefs.addAndActivateProfile(profile)
+            refreshAiState()
+            onCommitted()
+        }
+    }
+
+    fun renameActiveProfile(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            container.prefs.editActiveProfile { it.copy(name = trimmed) }
+            refreshAiState()
+        }
+    }
+
+    /** Deletes the active profile with its API key; activates the first remaining profile. */
+    fun deleteActiveProfile() {
+        viewModelScope.launch {
+            val id = _ui.value.activeProfile?.id ?: return@launch
+            container.prefs.mutateProfiles { list -> list.removeAll { it.id == id } }
+            container.keyStore.setProfileApiKey(id, null)
+            if (_ui.value.fallbackProfileId == id.toString()) {
+                container.prefs.setFallbackAiProfileId(null)
+            }
+            val remaining = container.prefs.aiProfiles.first()
+            if (remaining.isNotEmpty()) {
+                container.prefs.setActiveAiProfileId(remaining.first().id.toString())
+            }
+            refreshAiState()
+        }
+    }
+
+    /** Retargets the active profile's provider: model resets to the provider default (each
+     *  profile keeps its own), per-profile slots clear so stale values can't leak, and the
+     *  profile's own saved key is dropped (it belongs to the old provider's host). Re-tapping
+     *  the already-selected provider is a no-op — it must not reset model/URL/vision/key. */
+    fun setProfileProvider(p: AIProvider) {
+        viewModelScope.launch {
+            if (_ui.value.activeProfile?.provider == p) return@launch
+            val onDeviceModels = if (p == AIProvider.ON_DEVICE) supportedOnDeviceModels() else emptyList()
+            val model = if (onDeviceModels.isNotEmpty()) onDeviceModels.first() else p.defaultModel
+            container.prefs.switchActiveProfileProvider(container.keyStore, p, model)
+            refreshAiState(onDeviceModels = onDeviceModels)
+        }
+    }
+
+    fun setProfileModel(m: String) {
+        viewModelScope.launch {
+            val active = _ui.value.activeProfile ?: return@launch
+            val provider = active.provider
+            val model = provider.supportedModelOrDefault(AIProvider.normalizeModelId(m))
+            val prev = active.model
+            container.prefs.editActiveProfile { it.copy(model = model) }
+            if (provider == AIProvider.ON_DEVICE && prev != model) {
+                container.onDeviceLlmGateway.unload()
+            }
+            refreshAiState()
+        }
+    }
+
+    fun setProfileApiKey(raw: String) {
+        viewModelScope.launch {
+            val active = _ui.value.activeProfile ?: return@launch
+            val trimmed = raw.trim().takeIf { it.isNotEmpty() }
+            container.keyStore.setProfileApiKey(active.id, trimmed)
+            _ui.value = _ui.value.copy(apiKeyMasked = maskKey(trimmed))
+        }
+    }
+
+    /** Stored key of the active profile, for the key sheet's prefill (synchronous read). */
+    fun currentProfileApiKey(): String? =
+        _ui.value.activeProfile?.let { container.keyStore.profileApiKey(it.id) }
+
+    /**
+     * Settings-side API-key probe, routed by the active provider's API format:
+     * GeminiClient / AnthropicClient validate, or a /v1/models fetch for every
+     * OpenAI-compatible host (profile base URL for Custom/Ollama).
+     */
+    fun testProfileApiKey(raw: String) {
+        val key = raw.trim()
+        val active = _ui.value.activeProfile
+        if (key.isEmpty() || active == null) return
+        val provider = active.provider
+        if (provider.apiFormat == AIProvider.ApiFormat.ON_DEVICE) return
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(apiKeyTesting = true, apiKeyTestOk = null, apiKeyTestMessage = null)
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    when (provider.apiFormat) {
+                        AIProvider.ApiFormat.GEMINI -> GeminiClient.validateApiKey(
+                            client = FoodAnalysisService.defaultClient,
+                            baseUrl = AIProvider.GEMINI.baseUrl,
+                            apiKey = key,
+                        )
+                        AIProvider.ApiFormat.ANTHROPIC -> AnthropicClient.validateApiKey(
+                            client = FoodAnalysisService.defaultClient,
+                            baseUrl = AIProvider.ANTHROPIC.baseUrl,
+                            apiKey = key,
+                        )
+                        else -> {
+                            val base = active.baseUrl?.takeIf { it.isNotEmpty() }
+                                ?.let(AiHttp::normalizeCustomBaseUrl) ?: provider.baseUrl
+                            OpenAiModelsClient.listModelsWithMeta(base, key, _ui.value.allowInsecureHttp)
+                        }
+                    }
+                }
+            }
+            if (result.isSuccess) {
+                _ui.value = _ui.value.copy(
+                    apiKeyTesting = false,
+                    apiKeyTestOk = true,
+                    apiKeyTestMessage = container.appContext.getString(R.string.onboarding_api_key_works),
+                )
+            } else {
+                val err = result.exceptionOrNull()
+                val message = if (err is AiError.Network) {
+                    container.appContext.getString(R.string.onboarding_api_key_network)
+                } else {
+                    val detail = (err as? AiError)?.userMessage(container.appContext)
+                        ?: err?.message?.takeIf { it.isNotBlank() }
+                    container.appContext.getString(
+                        R.string.settings_ai_key_test_failed,
+                        detail ?: container.appContext.getString(R.string.ai_error_provider_error),
+                    )
+                }
+                _ui.value = _ui.value.copy(apiKeyTesting = false, apiKeyTestOk = false, apiKeyTestMessage = message)
+            }
+        }
+    }
+
+    /** [url] null/blank clears the profile's custom endpoint override. */
+    fun setProfileBaseUrl(url: String?) {
+        viewModelScope.launch {
+            val stored = url?.trim()?.takeIf { it.isNotBlank() }
+            container.prefs.editActiveProfile { it.copy(baseUrl = stored) }
+            refreshAiState()
+        }
+    }
+
+    /** Sets the per-profile vision-model slot; null/blank clears it back to "same as Model". */
+    fun setProfileVisionModel(m: String?) {
+        viewModelScope.launch {
+            val active = _ui.value.activeProfile ?: return@launch
+            val model = m?.takeIf { it.isNotBlank() }?.let { active.provider.supportedModelOrDefault(it) }
+            container.prefs.editActiveProfile { it.copy(visionModel = model) }
+            refreshAiState()
+        }
+    }
+
+    /** E4B is the OOM-risk model; 6 GB devices get E2B only. */
+    private fun supportedOnDeviceModels(): List<String> =
+        AIProvider.ON_DEVICE.models.filter { modelId ->
+            OnDeviceCapability.isModelSupported(container.appContext, ModelCatalog.forModelId(modelId))
+        }
+
+    /** Frees the resident on-device engine (~1-2GB) — Settings "Unload model" action. */
+    fun unloadOnDeviceModel() {
+        viewModelScope.launch { container.onDeviceLlmGateway.unload() }
+    }
+
+    fun deleteOnDeviceModel() {
+        viewModelScope.launch {
+            container.onDeviceLlmGateway.unload()
+            withContext(Dispatchers.IO) {
+                container.onDeviceModelDownloadManager.deleteAll()
+            }
+            container.prefs.setOnDeviceModelDownloadedVersion(null)
+        }
+    }
+
+    fun startOnDeviceModelDownload() {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Codeberg #20 phase 2: with the master AI switch off, don't even
+            // schedule the model download (the worker skips it as a backstop).
+            if (container.prefs.aiFeaturesEnabled.first() == false) return@launch
+            val entry = ModelCatalog.forModelId(_ui.value.activeModel)
+            val overWifiOnly = container.prefs.onDeviceDownloadOverWifiOnly.first()
+            container.onDeviceModelDownloadManager.startDownload(entry, overWifiOnly)
+        }
+    }
+
+    fun cancelOnDeviceModelDownload() {
+        container.onDeviceModelDownloadManager.cancelDownload()
+    }
+
+    fun setOnDeviceDownloadOverWifiOnly(v: Boolean) {
+        viewModelScope.launch { container.prefs.setOnDeviceDownloadOverWifiOnly(v) }
+    }
+
+    fun setOnDeviceHeadroomPercent(v: Int) {
+        viewModelScope.launch { container.prefs.setOnDeviceHeadroomPercent(v) }
+    }
+
+    fun fetchOllamaModels() {
+        val active = _ui.value.activeProfile ?: return
+        if (active.provider != AIProvider.OLLAMA) return
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(ollamaModels = null, ollamaModelsLoading = true, ollamaModelsError = false)
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.chompass.services.ai.OllamaClient.listModels(
+                        baseUrl = active.baseUrl?.takeIf { it.isNotBlank() } ?: AIProvider.OLLAMA.baseUrl,
+                        allowInsecureHttp = _ui.value.allowInsecureHttp,
+                    )
+                }
+            }
+            _ui.value = result.fold(
+                onSuccess = { models ->
+                    _ui.value.copy(
+                        ollamaModels = models,
+                        ollamaModelsLoading = false,
+                        ollamaModelsError = false,
+                    )
+                },
+                onFailure = {
+                    _ui.value.copy(
+                        ollamaModelsLoading = false,
+                        ollamaModelsError = true,
+                    )
+                },
+            )
+        }
+    }
+
+    fun fetchCustomModels() {
+        val active = _ui.value.activeProfile ?: return
+        if (active.provider != AIProvider.CUSTOM_OPENAI) return
+        viewModelScope.launch {
+            val baseUrl = active.baseUrl?.takeIf { it.isNotBlank() }
+            if (baseUrl == null) {
+                _ui.value = _ui.value.copy(customModels = null, customModelsLoading = false, customModelsError = true)
+                return@launch
+            }
+            _ui.value = _ui.value.copy(customModels = null, customModelsLoading = true, customModelsError = false)
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.chompass.services.ai.OpenAiModelsClient.listModels(
+                        baseUrl = baseUrl,
+                        apiKey = container.keyStore.profileApiKey(active.id),
+                        allowInsecureHttp = _ui.value.allowInsecureHttp,
+                    )
+                }
+            }
+            _ui.value = result.fold(
+                onSuccess = { models -> _ui.value.copy(customModels = models, customModelsLoading = false) },
+                onFailure = { _ui.value.copy(customModels = null, customModelsLoading = false, customModelsError = true) },
+            )
+        }
+    }
+
+    /** #107/#132: refresh the active provider's lineup from its /models endpoint; silent fallback to the curated list. */
+    fun fetchRuntimeModels() {
+        val active = _ui.value.activeProfile ?: return
+        val provider = active.provider
+        if (!provider.supportsRuntimeLineup) return
+        val key = container.keyStore.profileApiKey(active.id)
+        if (key.isNullOrBlank()) {
+            _ui.value = _ui.value.copy(runtimeModels = null)
+            return
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (provider == AIProvider.OPENAI) {
+                        app.chompass.services.ai.OpenAiModelsClient.filterGptLineup(
+                            app.chompass.services.ai.OpenAiModelsClient.listModelsWithMeta(
+                                baseUrl = provider.baseUrl,
+                                apiKey = key,
+                                allowInsecureHttp = false,
+                            ),
+                        )
+                    } else {
+                        app.chompass.services.ai.OpenAiModelsClient.filterChatLineup(
+                            app.chompass.services.ai.OpenAiModelsClient.listModels(
+                                baseUrl = provider.baseUrl,
+                                apiKey = key,
+                                allowInsecureHttp = false,
+                            ),
+                        )
+                    }
+                }
+            }
+            _ui.value = _ui.value.copy(
+                runtimeModels = result.fold(onSuccess = { it }, onFailure = { null }),
+            )
+        }
+    }
+
+    fun selectSpeech(p: SpeechProvider) {
+        viewModelScope.launch {
+            container.prefs.setSelectedSpeechProvider(p)
+            // Re-pull the masked key for the new provider so the API Key row
+            // reflects whether the freshly selected provider has a key saved.
+            val masked = maskKey(container.keyStore.speechApiKey(p))
+            val language = container.prefs.selectedSpeechLanguage(p).first()
+            _ui.value = _ui.value.copy(
+                selectedSpeech = p,
+                selectedSpeechLanguage = language,
+                speechApiKeyMasked = masked
+            )
+        }
+    }
+
+    fun selectSpeechLanguage(language: SpeechLanguage) {
+        viewModelScope.launch {
+            val provider = _ui.value.selectedSpeech
+            container.prefs.setSelectedSpeechLanguage(provider, language)
+            _ui.value = _ui.value.copy(selectedSpeechLanguage = language)
+        }
+    }
+
+    fun setSpeechApiKey(raw: String) {
+        viewModelScope.launch {
+            val p = _ui.value.selectedSpeech
+            val trimmed = raw.trim().takeIf { it.isNotEmpty() }
+            container.keyStore.setSpeechApiKey(p, trimmed)
+            _ui.value = _ui.value.copy(speechApiKeyMasked = maskKey(trimmed))
+        }
+    }
+
+    fun setHeightUnit(v: String) = updateUiPref(
+        { container.prefs.setHeightUnit(v) },
+        { copy(heightUnit = v) },
+    )
+
+    fun setWeightUnit(v: String) = updateUiPref(
+        { container.prefs.setWeightUnit(v) },
+        { copy(weightUnit = v) },
+    )
+
+    fun setEnergyUnit(v: String) = updateUiPref(
+        { container.prefs.setEnergyUnit(v) },
+        { copy(energyUnit = v) },
+    )
+
+    fun setDietMode(mode: DietMode) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            var next = current.copy(dietMode = mode)
+            // Keto transition (settled Q4): pause a live day-type plan, keep the
+            // data; switching back to STANDARD re-shows the row with the plan intact.
+            var pausedPlan = false
+            if (mode == DietMode.KETO && current.macroPlan?.enabled == true) {
+                next = next.copy(macroPlan = MacroPlanEdit.pausedForKeto(current.macroPlan))
+                pausedPlan = true
+            }
+            container.profileRepository.save(next)
+            applyProfile(next)
+            if (pausedPlan) {
+                _ui.update { it.copy(dayTypesKetoPausedTick = it.dayTypesKetoPausedTick + 1) }
+            }
+        }
+    }
+
+    fun setKetoCarbMode(mode: KetoCarbMode) {
+        updateProfile { it.copy(ketoCarbMode = mode) }
+    }
+
+    fun setKetoCarbManualTarget(target: Int?) {
+        updateProfile {
+            it.copy(ketoCarbManualTarget = target?.let(KetoCarbRecommendationService::clampManualNetCarbs))
+        }
+    }
+
+    fun setPreferGramsByDefault(v: Boolean) = updateUiPref(
+        { container.prefs.setPreferGramsByDefault(v) },
+        { copy(preferGramsByDefault = v) },
+    )
+
+    fun setNotificationsEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setNotificationsEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(notificationsEnabled = v) },
+    )
+
+    fun setStreakReminderEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setStreakReminderEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(streakReminderEnabled = v) },
+    )
+
+    fun setStreakReminderTime(hour: Int, minute: Int) = updateUiPref(
+        {
+            container.prefs.setStreakReminderHour(hour)
+            container.prefs.setStreakReminderMinute(minute)
+            syncNotificationSchedules()
+        },
+        { copy(streakReminderHour = hour, streakReminderMinute = minute) },
+    )
+
+    fun setDailySummaryEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setDailySummaryEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(dailySummaryEnabled = v) },
+    )
+
+    fun setDailySummaryTime(hour: Int, minute: Int) = updateUiPref(
+        {
+            container.prefs.setDailySummaryHour(hour)
+            container.prefs.setDailySummaryMinute(minute)
+            syncNotificationSchedules()
+        },
+        { copy(dailySummaryHour = hour, dailySummaryMinute = minute) },
+    )
+
+    fun setWeightReminderEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWeightReminderEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(weightReminderEnabled = v) },
+    )
+
+    fun setWeightReminderTime(hour: Int, minute: Int) = updateUiPref(
+        {
+            container.prefs.setWeightReminderHour(hour)
+            container.prefs.setWeightReminderMinute(minute)
+            syncNotificationSchedules()
+        },
+        { copy(weightReminderHour = hour, weightReminderMinute = minute) },
+    )
+
+    fun setBodyFatReminderEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setBodyFatReminderEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(bodyFatReminderEnabled = v) },
+    )
+
+    fun setBodyFatReminderTime(hour: Int, minute: Int) = updateUiPref(
+        {
+            container.prefs.setBodyFatReminderHour(hour)
+            container.prefs.setBodyFatReminderMinute(minute)
+            syncNotificationSchedules()
+        },
+        { copy(bodyFatReminderHour = hour, bodyFatReminderMinute = minute) },
+    )
+
+    fun setGoalReachedNotificationsEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setGoalReachedNotificationsEnabled(v) },
+        { copy(goalReachedNotificationsEnabled = v) },
+    )
+
+    fun setAppUpdateNotificationsEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setAppUpdateNotificationsEnabled(v) },
+        { copy(appUpdateNotificationsEnabled = v) },
+    )
+
+    private suspend fun syncNotificationSchedules() {
+        withContext(Dispatchers.Default) {
+            try {
+                val enabled = container.prefs.notificationsEnabled.first()
+                if (!enabled || !container.notifications.canPostNotifications()) {
+                    container.notifications.cancelStreakReminder()
+                    container.notifications.cancelDailySummary()
+                    container.notifications.cancelWeightReminder()
+                    container.notifications.cancelBodyFatReminder()
+                    container.notifications.cancelWaterReminder()
+                    return@withContext
+                }
+
+                if (container.prefs.streakReminderEnabled.first()) {
+                    container.notifications.scheduleStreakReminder(
+                        container.prefs.streakReminderHour.first(),
+                        container.prefs.streakReminderMinute.first()
+                    )
+                } else {
+                    container.notifications.cancelStreakReminder()
+                }
+
+                if (container.prefs.dailySummaryEnabled.first()) {
+                    container.notifications.scheduleDailySummary(
+                        container.prefs.dailySummaryHour.first(),
+                        container.prefs.dailySummaryMinute.first()
+                    )
+                } else {
+                    container.notifications.cancelDailySummary()
+                }
+
+                if (container.prefs.weightReminderEnabled.first()) {
+                    container.notifications.scheduleWeightReminder(
+                        container.prefs.weightReminderHour.first(),
+                        container.prefs.weightReminderMinute.first(),
+                    )
+                } else {
+                    container.notifications.cancelWeightReminder()
+                }
+
+                val profile = container.profileRepository.current()
+                if (container.prefs.bodyFatReminderEnabled.first() && profile?.bodyFatPercentage != null) {
+                    container.notifications.scheduleBodyFatReminder(
+                        container.prefs.bodyFatReminderHour.first(),
+                        container.prefs.bodyFatReminderMinute.first(),
+                    )
+                } else {
+                    container.notifications.cancelBodyFatReminder()
+                }
+                // Water uses the adaptive chain (interval from goal ÷ cup ÷ awake window,
+                // recomputed after every entry, issue #3). rearm cancels when off.
+                WaterReminderPlanner.rearm(container)
+            } catch (t: Throwable) {
+                android.util.Log.w("Chompass", "notification rearm failed", t)
+            }
+        }
+    }
+
+    fun setWaterTrackingEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWaterTrackingEnabled(v)
+            if (!v) {
+                container.prefs.setWaterReminderEnabled(false)
+                container.notifications.cancelWaterReminder()
+            }
+        },
+        { copy(waterTrackingEnabled = v, waterReminderEnabled = if (v) waterReminderEnabled else false) },
+    )
+
+    fun setWaterDailyGoalMl(v: Int) = updateUiPref(
+        {
+            container.prefs.setWaterDailyGoalMl(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterDailyGoalMl = v) },
+    )
+
+    fun setNicotineTrackingEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setNicotineTrackingEnabled(v) },
+        { copy(nicotineTrackingEnabled = v) },
+    )
+
+    fun setNicotineDailyLimit(v: Int) = updateUiPref(
+        { container.prefs.setNicotineDailyLimit(v) },
+        { copy(nicotineDailyLimit = v) },
+    )
+
+    fun setDailyNotesEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setDailyNotesEnabled(v) },
+        { copy(dailyNotesEnabled = v) },
+    )
+
+    fun setMealTimesEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setMealTimesEnabled(v) },
+        { copy(mealTimesEnabled = v) },
+    )
+
+    fun setMealPlanningEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setMealPlanningEnabled(v) },
+        { copy(mealPlanningEnabled = v) },
+    )
+
+    fun setCaffeineTrackingEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setCaffeineTrackingEnabled(v) },
+        { copy(caffeineTrackingEnabled = v) },
+    )
+
+    fun setCaffeineQuickKinds(ids: List<String>) {
+        val validated = HabitPresetDomain.CAFFEINE.quickKindIdsFromStorage(HabitPresetDomain.CAFFEINE.quickKindIdsToStorage(ids))
+        updateUiPref(
+            { container.prefs.setCaffeineQuickKinds(validated) },
+            { copy(caffeineQuickKinds = validated) },
+        )
+    }
+
+    /** Preset manager edits (rename, defaults, order, add) land as whole catalogs. */
+    fun setCaffeinePresets(catalog: HabitPresetCatalog) {
+        val previous = _ui.value.caffeinePresets
+        updateUiPref(
+            { container.prefs.setCaffeinePresets(catalog) },
+            { copy(caffeinePresets = catalog.validatedOrDefault(HabitPresetDomain.CAFFEINE)) },
+        )
+        // Newly added customs join the hub chips without an extra toggle.
+        val added = catalog.addedCustomIds(previous)
+        if (added.isNotEmpty()) setCaffeineQuickKinds(_ui.value.caffeineQuickKinds + added)
+    }
+
+    /**
+     * Deletes a caffeine preset (custom or built-in): entries logged with it
+     * move to Other (mg preserved), and the id drops from the catalog + hub
+     * chip selection.
+     */
+    fun deleteCaffeinePreset(id: String) {
+        launchPref {
+            container.caffeineRepository.reassignKind(id, CaffeineKind.OTHER.storageKey)
+            val nextCatalog = _ui.value.caffeinePresets.without(id)
+            val nextKinds = _ui.value.caffeineQuickKinds.filterNot { it == id }
+            container.prefs.setCaffeinePresets(nextCatalog)
+            container.prefs.setCaffeineQuickKinds(nextKinds)
+            // Bump the write gen like updateUiPref so a racing settings
+            // hydrate cannot resurrect the delete (reseed storms).
+            settingsWriteGen++
+            _ui.update { it.copy(caffeinePresets = nextCatalog, caffeineQuickKinds = nextKinds) }
+        }
+    }
+
+    fun setFastingEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setFastingEnabled(v)
+            if (!v) {
+                // Tearing the tracker down cancels the goal alarm; the running
+                // session (if any) is left intact so re-enabling resumes it.
+                container.notifications.cancelFastingGoal()
+            }
+            // The #182 launcher quick action only exists while enabled.
+            LauncherShortcuts.publish(container.appContext)
+        },
+        { copy(fastingEnabled = v) },
+    )
+
+    fun setFastingGoalHours(v: Int) = updateUiPref(
+        {
+            container.prefs.setFastingGoalHours(v)
+            // Goal change re-arms (or cancels) the one-shot goal alarm.
+            FastingGoalPlanner.rearm(container)
+        },
+        { copy(fastingGoalHours = v) },
+    )
+
+    fun setFastingEatHours(v: Int) = updateUiPref(
+        {
+            container.prefs.setFastingEatHours(v)
+            // The eating window anchors the start nudge; re-arm it.
+            FastingReminderPlanner.rearmStartReminder(container)
+        },
+        { copy(fastingEatHours = v) },
+    )
+
+    fun setFastingGoalNotificationEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setFastingGoalNotificationEnabled(v)
+            FastingGoalPlanner.rearm(container)
+        },
+        { copy(fastingGoalNotificationEnabled = v) },
+    )
+
+    fun setFastingEndReminderLeadMinutes(v: Int) = updateUiPref(
+        {
+            container.prefs.setFastingEndReminderLeadMinutes(v)
+            FastingGoalPlanner.rearm(container)
+        },
+        { copy(fastingEndReminderLeadMinutes = v) },
+    )
+
+    fun setFastingStartReminderEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setFastingStartReminderEnabled(v)
+            FastingReminderPlanner.rearmStartReminder(container)
+        },
+        { copy(fastingStartReminderEnabled = v) },
+    )
+
+    fun setFastingAutoWindows(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setFastingAutoWindows(v)
+            FastingAutoPlanner.rearm(container)
+            FastingAutoPlanner.heal(container)
+            FastingReminderPlanner.rearmStartReminder(container)
+        },
+        { copy(fastingAutoWindows = v) },
+    )
+
+    fun setFastingStartTime(hour: Int, minute: Int) = updateUiPref(
+        {
+            container.prefs.setFastingStartHour(hour)
+            container.prefs.setFastingStartMinute(minute)
+            FastingAutoPlanner.rearm(container)
+            FastingReminderPlanner.rearmStartReminder(container)
+        },
+        { copy(fastingStartHour = hour, fastingStartMinute = minute) },
+    )
+
+    fun setFastingStartReminderLeadMinutes(v: Int) = updateUiPref(
+        {
+            container.prefs.setFastingStartReminderLeadMinutes(v)
+            FastingReminderPlanner.rearmStartReminder(container)
+        },
+        { copy(fastingStartReminderLeadMinutes = v) },
+    )
+
+    fun setNicotineQuickKinds(ids: List<String>) {
+        val validated = HabitPresetDomain.NICOTINE.quickKindIdsFromStorage(HabitPresetDomain.NICOTINE.quickKindIdsToStorage(ids))
+        updateUiPref(
+            { container.prefs.setNicotineQuickKinds(validated) },
+            { copy(nicotineQuickKinds = validated) },
+        )
+    }
+
+    /** Preset manager edits (rename, defaults, order, add) land as whole catalogs. */
+    fun setNicotinePresets(catalog: HabitPresetCatalog) {
+        val previous = _ui.value.nicotinePresets
+        updateUiPref(
+            { container.prefs.setNicotinePresets(catalog) },
+            { copy(nicotinePresets = catalog.validatedOrDefault(HabitPresetDomain.NICOTINE)) },
+        )
+        // Newly added customs join the hub chips without an extra toggle.
+        val added = catalog.addedCustomIds(previous)
+        if (added.isNotEmpty()) setNicotineQuickKinds(_ui.value.nicotineQuickKinds + added)
+    }
+
+    /**
+     * Deletes a nicotine preset (custom or built-in): entries logged with it
+     * move to Other (count/mg preserved), and the id drops from the catalog +
+     * hub chips.
+     */
+    fun deleteNicotinePreset(id: String) {
+        launchPref {
+            container.nicotineRepository.reassignKind(id, NicotineKind.OTHER.storageKey)
+            val nextCatalog = _ui.value.nicotinePresets.without(id)
+            val nextKinds = _ui.value.nicotineQuickKinds.filterNot { it == id }
+            container.prefs.setNicotinePresets(nextCatalog)
+            container.prefs.setNicotineQuickKinds(nextKinds)
+            // Bump the write gen like updateUiPref so a racing settings
+            // hydrate cannot resurrect the delete (reseed storms).
+            settingsWriteGen++
+            _ui.update { it.copy(nicotinePresets = nextCatalog, nicotineQuickKinds = nextKinds) }
+        }
+    }
+
+    fun setWaterQuickPresetsMl(amountsMl: List<Int>) {
+        val validated = WaterQuickPresets(amountsMl).validatedOrDefault().amountsMl
+        updateUiPref(
+            { container.prefs.setWaterQuickPresetsMl(validated) },
+            { copy(waterQuickPresetsMl = validated) },
+        )
+    }
+
+    fun setWaterReminderEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWaterReminderEnabled(v)
+            syncNotificationSchedules()
+        },
+        { copy(waterReminderEnabled = v) },
+    )
+
+    fun setWaterDynamicEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWaterDynamicEnabled(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterDynamicEnabled = v) },
+    )
+
+    fun setWaterBaseSource(v: String) = updateUiPref(
+        {
+            container.prefs.setWaterBaseSource(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterBaseSource = v) },
+    )
+
+    fun setWaterManualTempC(v: Int) = updateUiPref(
+        {
+            container.prefs.setWaterManualTempC(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterManualTempC = v) },
+    )
+
+    fun setWeatherSource(v: String) {
+        updateUiPref(
+            {
+                container.weatherRepository.setSource(v)
+                syncNotificationSchedules()
+                refreshWaterDynamicPreview()
+            },
+            { copy(weatherSource = v) },
+        )
+    }
+
+    /** Picks an Open-Meteo city and fetches today's high immediately. */
+    fun selectWeatherCity(city: OmCity) {
+        viewModelScope.launch {
+            container.weatherRepository.selectOmCity(city)
+            syncNotificationSchedules()
+            refreshWaterDynamicPreview()
+        }
+    }
+
+    /** Re-fetches today's high from Open-Meteo and re-arms the reminder chain. */
+    fun refreshWeatherNow() {
+        viewModelScope.launch {
+            container.weatherRepository.refreshOpenMeteo()
+            syncNotificationSchedules()
+            refreshWaterDynamicPreview()
+        }
+    }
+
+    suspend fun searchWeatherCities(query: String): List<OmCity> =
+        container.openMeteo.searchCities(query)
+
+    fun setWaterUseProfileActivity(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWaterUseProfileActivity(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterUseProfileActivity = v) },
+    )
+
+    fun setWaterFoodWaterEnabled(v: Boolean) = updateUiPref(
+        {
+            container.prefs.setWaterFoodWaterEnabled(v)
+            refreshWaterDynamicPreview()
+        },
+        { copy(waterFoodWaterEnabled = v) },
+    )
+
+    fun setWaterAwakeStartMinutes(v: Int) = updateUiPref(
+        {
+            container.prefs.setWaterAwakeStartHour(v / 60)
+            container.prefs.setWaterAwakeStartMinute(v % 60)
+            syncNotificationSchedules()
+        },
+        { copy(waterAwakeStartMinutes = v) },
+    )
+
+    fun setWaterAwakeEndMinutes(v: Int) = updateUiPref(
+        {
+            container.prefs.setWaterAwakeEndHour(v / 60)
+            container.prefs.setWaterAwakeEndMinute(v % 60)
+            syncNotificationSchedules()
+        },
+        { copy(waterAwakeEndMinutes = v) },
+    )
+
+    fun setWaterCupSizeMl(v: Int) = updateUiPref(
+        {
+            container.prefs.setWaterCupSizeMl(v)
+            syncNotificationSchedules()
+        },
+        { copy(waterCupSizeMl = v) },
+    )
+
+    fun setWaterReminderPlan(startMinutes: Int, endMinutes: Int, cupMl: Int) = updateUiPref(
+        {
+            container.prefs.setWaterAwakeStartHour(startMinutes / 60)
+            container.prefs.setWaterAwakeStartMinute(startMinutes % 60)
+            container.prefs.setWaterAwakeEndHour(endMinutes / 60)
+            container.prefs.setWaterAwakeEndMinute(endMinutes % 60)
+            container.prefs.setWaterCupSizeMl(cupMl)
+            syncNotificationSchedules()
+        },
+        {
+            copy(
+                waterAwakeStartMinutes = startMinutes,
+                waterAwakeEndMinutes = endMinutes,
+                waterCupSizeMl = cupMl,
+            )
+        },
+    )
+
+    /** Recomputes the Settings preview of today's dynamic goal after any input change. */
+    private suspend fun refreshWaterDynamicPreview() {
+        if (!container.prefs.waterDynamicEnabled.first()) {
+            _ui.value = _ui.value.copy(waterDynamicGoalPreview = null)
+            return
+        }
+        _ui.value = _ui.value.copy(
+            waterDynamicGoalPreview = computeWaterGoalPreview(
+                manualGoalMl = container.prefs.waterDailyGoalMl.first(),
+                source = container.prefs.waterBaseSource.first(),
+                tempC = container.weatherRepository.state.first().effectiveHighC,
+                useActivity = container.prefs.waterUseProfileActivity.first(),
+                foodWater = container.prefs.waterFoodWaterEnabled.first(),
+            ),
+        )
+    }
+
+    private suspend fun computeWaterGoalPreview(
+        manualGoalMl: Int,
+        source: String,
+        tempC: Int,
+        useActivity: Boolean,
+        foodWater: Boolean,
+    ): WaterGoalBreakdown {
+        val foodGrams = container.foodRepository.entriesForDate(LocalDate.now()).first()
+            .let(WaterGoalCalculator::estimateDiaryGrams)
+        val profile = container.profileRepository.current()
+        return WaterGoalCalculator.breakdown(
+            baseSource = source,
+            weightKg = profile?.weightKg,
+            manualBaseMl = manualGoalMl,
+            expectedHighC = tempC,
+            activityLevel = profile?.activityLevel ?: ActivityLevel.SEDENTARY,
+            useProfileActivity = useActivity,
+            foodGramsToday = foodGrams,
+            foodWaterEnabled = foodWater,
+        )
+    }
+
+    fun setHealthConnectEnabled(v: Boolean) {
+        viewModelScope.launch {
+            if (!v) {
+                val restored = if (container.prefs.healthEnergyGoalsEnabled.first()) {
+                    container.profileRepository.current()
+                        ?.let { container.prefs.restoreHealthEnergyGoalPreviousTargets(it) }
+                } else {
+                    null
+                }
+                if (restored != null) {
+                    container.profileRepository.save(restored)
+                    container.prefs.clearHealthEnergyGoalPreviousTargets()
+                }
+                container.prefs.setHealthConnectEnabled(false)
+                container.prefs.setHealthEnergyGoalsEnabled(false)
+                container.prefs.clearHealthEnergyMeasuredActive()
+                // Disconnecting Health Connect stops any background sync too.
+                container.prefs.setHealthBackgroundSyncEnabled(false)
+                HealthSyncWorker.cancel(container.appContext)
+                _ui.value = _ui.value.copy(
+                    profile = restored ?: _ui.value.profile,
+                    healthConnectEnabled = false,
+                    healthEnergyGoalsEnabled = false,
+                    healthBackgroundSyncEnabled = false
+                )
+                return@launch
+            }
+
+            val enabled = container.health.isAvailable() && container.health.hasAnyPermission()
+            container.prefs.setHealthConnectEnabled(enabled)
+            if (enabled) {
+                backfillHealthConnect()
+                container.syncHealthConnectReads()
+                container.prefs.setHealthPermissionsVersion(HealthConnectManager.CURRENT_TYPES_VERSION)
+            }
+            if (!enabled) {
+                container.prefs.setHealthEnergyGoalsEnabled(false)
+                container.prefs.clearHealthEnergyMeasuredActive()
+            }
+            _ui.value = _ui.value.copy(
+                healthConnectEnabled = enabled,
+                healthEnergyGoalsEnabled = if (enabled) _ui.value.healthEnergyGoalsEnabled else false
+            )
+        }
+    }
+
+    /** Opt-in periodic background sync. Requires Health Connect to already be
+     *  connected and [HealthConnectManager.isBackgroundReadAvailable]; the Settings
+     *  UI requests [HealthConnectManager.backgroundReadPermission] before calling this.
+     *  Enabling schedules the worker, disabling cancels it. Default OFF. */
+    fun setHealthBackgroundSyncEnabled(v: Boolean) {
+        viewModelScope.launch {
+            if (v && !container.prefs.healthConnectEnabled.first()) return@launch
+            if (v && !container.health.isBackgroundReadAvailable()) return@launch
+            if (v && !container.health.hasBackgroundRead()) return@launch
+            container.prefs.setHealthBackgroundSyncEnabled(v)
+            if (v) HealthSyncWorker.schedule(container.appContext)
+            else HealthSyncWorker.cancel(container.appContext)
+            _ui.value = _ui.value.copy(healthBackgroundSyncEnabled = v)
+        }
+    }
+
+    private suspend fun reconcileHealthConnectState(): Boolean {
+        if (!container.health.isAvailable()) {
+            container.prefs.setHealthConnectEnabled(false)
+            return false
+        }
+
+        val granted = container.health.hasAnyPermission()
+        val stored = container.prefs.healthConnectEnabled.first()
+        val version = container.prefs.healthPermissionsVersion.first()
+        container.prefs.setHealthConnectEnabled(granted)
+        if (!granted) {
+            if (container.prefs.healthEnergyGoalsEnabled.first()) {
+                container.profileRepository.current()?.let { current ->
+                    val restored = container.prefs.restoreHealthEnergyGoalPreviousTargets(current)
+                    container.profileRepository.save(restored)
+                }
+                container.prefs.clearHealthEnergyGoalPreviousTargets()
+            }
+            container.prefs.setHealthEnergyGoalsEnabled(false)
+            container.prefs.clearHealthEnergyMeasuredActive()
+            // Losing all permissions also stops background sync.
+            container.prefs.setHealthBackgroundSyncEnabled(false)
+            HealthSyncWorker.cancel(container.appContext)
+        }
+
+        // "Connected" is now any-permission, so revoking ONLY the energy reads leaves granted=true
+        // and skips the block above. Tear Energy Burn down independently on its own capability so
+        // the toggle doesn't lie about an anchor that can no longer refresh.
+        if (granted && container.prefs.healthEnergyGoalsEnabled.first() && !container.health.hasEnergyRead()) {
+            container.profileRepository.current()?.let { current ->
+                val restored = container.prefs.restoreHealthEnergyGoalPreviousTargets(current)
+                container.profileRepository.save(restored)
+            }
+            container.prefs.clearHealthEnergyGoalPreviousTargets()
+            container.prefs.setHealthEnergyGoalsEnabled(false)
+            container.prefs.clearHealthEnergyMeasuredActive()
+        }
+
+        if (granted && (!stored || version < HealthConnectManager.CURRENT_TYPES_VERSION)) {
+            backfillHealthConnect()
+            container.prefs.setHealthPermissionsVersion(HealthConnectManager.CURRENT_TYPES_VERSION)
+        }
+
+        // Pull external weigh-ins / body-fat readings whenever Settings reloads while connected.
+        if (granted) container.syncHealthConnectReads()
+
+        return granted
+    }
+
+    /**
+     * Energy Burn toggle. It owns no targets — it just flips a flag that the goal calc consults:
+     * when on, the calc anchors maintenance to the measured Health Connect burn instead of the
+     * formula TDEE. Turning it on requires Health Connect with enough energy data. Either way we
+     * re-run the calc so the new (or removed) anchor applies immediately.
+     */
+    fun setHealthEnergyGoalsEnabled(v: Boolean) {
+        viewModelScope.launch {
+            if (v) {
+                val granted = container.health.isAvailable() && container.health.hasEnergyRead()
+                if (!granted) {
+                    showHealthEnergyGoalAlert(
+                        title = container.appContext.getString(R.string.vm_health_connect_needed),
+                        message = container.appContext.getString(R.string.vm_health_connect_needed_msg)
+                    )
+                    return@launch
+                }
+                container.prefs.setHealthConnectEnabled(true)
+                container.prefs.setHealthPermissionsVersion(HealthConnectManager.CURRENT_TYPES_VERSION)
+                val energySummary = container.health.readRecentEnergySummary(days = 14)
+                if (energySummary == null) {
+                    showHealthEnergyGoalAlert(
+                        title = container.appContext.getString(R.string.vm_not_enough_energy),
+                        message = container.appContext.getString(R.string.vm_not_enough_energy_msg)
+                    )
+                    return@launch
+                }
+                if (energySummary.dailyActiveKcal.isNotEmpty()) {
+                    val today = java.time.LocalDate.now()
+                    val merged = app.chompass.models.DayTypeActiveStats.pruneHistory(
+                        container.prefs.healthEnergyActiveByDay.first() + energySummary.dailyActiveKcal,
+                        today,
+                    )
+                    container.prefs.setHealthEnergyActiveByDay(merged)
+                }
+            }
+            container.prefs.setHealthEnergyGoalsEnabled(v)
+            if (!v) container.prefs.clearHealthEnergyMeasuredActive()
+            _ui.value = _ui.value.copy(
+                healthEnergyGoalsEnabled = v,
+                healthConnectEnabled = if (v) true else _ui.value.healthConnectEnabled
+            )
+            // Re-run the goal calc so the new (or removed) measured anchor takes effect now.
+            recalculateGoals()
+        }
+    }
+
+    fun dismissHealthEnergyGoalAlert() {
+        _ui.value = _ui.value.copy(
+            healthEnergyGoalAlertTitle = null,
+            healthEnergyGoalAlertMessage = null
+        )
+    }
+
+    fun setAdaptiveGoalsEnabled(v: Boolean) {
+        viewModelScope.launch {
+            container.prefs.setAdaptiveGoalsEnabled(v)
+            if (!v) {
+                val current = container.profileRepository.current()
+                val restored = current?.let { container.prefs.restoreAdaptiveGoalPreviousTargets(it) }
+                if (restored != null) {
+                    container.profileRepository.save(restored)
+                }
+                container.prefs.clearAdaptiveGoalPreviousTargets()
+                _ui.value = _ui.value.copy(
+                    profile = restored ?: _ui.value.profile,
+                    adaptiveGoalsEnabled = false,
+                    applyingAdaptiveGoals = false
+                )
+                return@launch
+            }
+
+            _ui.value = _ui.value.copy(
+                adaptiveGoalsEnabled = true,
+                applyingAdaptiveGoals = true
+            )
+            val result = container.refreshAdaptiveGoalsIfNeeded(force = true)
+            _ui.value = _ui.value.copy(
+                profile = result?.profile ?: container.profileRepository.current() ?: _ui.value.profile,
+                adaptiveGoalsEnabled = true,
+                applyingAdaptiveGoals = false,
+                adaptiveGoalAlertTitle = container.appContext.getString(R.string.settings_adaptive_goals),
+                adaptiveGoalAlertMessage = result?.message
+                    ?: container.appContext.getString(R.string.vm_adaptive_on_message)
+            )
+            // The adaptive pass persists its own transparency-sheet entry; surface it
+            // for the on-demand details row without re-reading DataStore.
+            container.prefs.loadLastGoalChangeSheet()?.let { stored ->
+                _ui.update { it.copy(lastRecalcSheet = stored) }
+            }
+        }
+    }
+
+    fun dismissRecalcSheet() {
+        _ui.update { it.copy(recalcSheet = null) }
+    }
+
+    /** Reopen the persisted goal-change explanation sheet on demand. */
+    fun openRecalcSheet() {
+        _ui.update { it.copy(recalcSheet = it.lastRecalcSheet) }
+    }
+
+    fun dismissAdaptiveGoalAlert() {
+        _ui.value = _ui.value.copy(
+            adaptiveGoalAlertTitle = null,
+            adaptiveGoalAlertMessage = null
+        )
+    }
+
+    private fun showHealthEnergyGoalAlert(title: String, message: String) {
+        _ui.value = _ui.value.copy(
+            healthEnergyGoalsEnabled = false,
+            healthEnergyGoalAlertTitle = title,
+            healthEnergyGoalAlertMessage = message
+        )
+    }
+
+    /** Push existing local entries OUT to Health Connect. Each section is gated on its own
+     *  WRITE permission, so a partial grant (e.g. weight-write only) still backfills what it can. */
+    private suspend fun backfillHealthConnect() {
+        val caps = container.health.capabilities()
+        if (caps.nutritionWrite) {
+            container.foodRepository.entries.first().forEach { entry ->
+                container.health.updateNutrition(entry)
+            }
+        }
+        if (caps.weightWrite) {
+            container.weightRepository.entries.first().forEach { entry ->
+                container.health.deleteWeight(entry.id)
+                container.health.writeWeight(entry)
+            }
+        }
+        if (caps.bodyFatWrite) {
+            container.bodyFatRepository.entries.first().forEach { entry ->
+                container.health.deleteBodyFat(entry.id)
+                container.health.writeBodyFat(entry)
+            }
+        }
+        if (caps.heightWrite) {
+            container.profileRepository.current()?.heightCm?.let { container.health.writeHeight(it) }
+        }
+        if (caps.hydrationWrite) {
+            // Water entries are immutable (no edit path), but insertRecords doesn't
+            // dedupe on clientRecordId — delete-then-write keeps a re-connect from
+            // stacking duplicates, same as the weight backfill.
+            container.waterRepository.entries.first().forEach { entry ->
+                container.health.deleteHydration(entry.id)
+                container.health.writeHydration(entry)
+            }
+        }
+    }
+
+    fun deleteAllData(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            container.notifications.cancelRemindersForDataWipe()
+            val tombs = container.syncRepository.tombstonesForWipe()
+            container.prefs.clearAll()
+            container.keyStore.clearAll()
+            container.imageStore.clearAll()
+            if (tombs.isNotEmpty()) container.prefs.setSyncRevisions(tombs)
+            onComplete()
+        }
+    }
+
+    fun clearFoodLog() {
+        viewModelScope.launch {
+            container.foodRepository.clear()
+        }
+    }
+
+    fun recalculateGoals() {
+        viewModelScope.launch {
+            if (_ui.value.recalculatingGoals) return@launch
+            _ui.value = _ui.value.copy(recalculatingGoals = true)
+            try {
+                // Everything from the DataStore reads through the model call and
+                // the save is guarded: a stalled read (observed 2026-08-22: the
+                // busy rings spun for minutes after the model had already
+                // answered) or any other failure must always clear the flag and
+                // tell the user, never leave Recalculate spinning forever.
+                val current = withTimeout(60_000) { container.profileRepository.current() }
+                if (current == null) {
+                    _ui.value = _ui.value.copy(recalculatingGoals = false)
+                    return@launch
+                }
+                val heightMetric = withTimeout(30_000) { container.prefs.heightUnit.first() == "cm" }
+                val weightMetric = withTimeout(30_000) { container.prefs.weightUnit.first() == "kg" }
+                // Empirical signal: recent logged intake + observed weight trend, so the AI can
+                // estimate true maintenance (hit-and-trial) instead of trusting the formula alone.
+                // The raw lists also feed the SMART tier's raw weigh-in series + intake table.
+                val weights = withTimeout(60_000) { container.weightRepository.entries.first() }
+                val foods = withTimeout(60_000) { container.foodRepository.entries.first() }
+                val forecast = withTimeout(60_000) {
+                    WeightAnalysisService.compute(
+                        weights = weights,
+                        foods = foods,
+                        profile = current,
+                        untrackedDates = app.chompass.models.UntrackedDays.parseIsoSet(
+                            container.prefs.untrackedDays.first(),
+                        ),
+                    )
+                }
+                // Energy Burn toggle: anchor maintenance to the user's measured Health Connect burn.
+                val measuredTdee = withTimeout(60_000) { container.measuredEnergyTdeeIfEnabled(current) }
+                val measurement = withTimeout(60_000) { container.bodyMeasurementRepository.latestSnapshot() }
+                // AI-only — no formula fallback. If the AI provider is unavailable, leave the
+                // existing goals untouched and tell the user so they can fix their key and retry.
+                Log.d("Chompass", "recalculateGoals: calling calculateGoals")
+                val result = container.foodAnalysis.calculateGoals(
+                    current, forecast, heightMetric, weightMetric, measuredTdee, measurement,
+                    weights = weights, foods = foods,
+                )
+                Log.d("Chompass", "recalculateGoals: got ${result.calories} kcal")
+                // Edit-before-apply: compute what Apply would write but save nothing
+                // yet. The sheet opens in confirm mode (editable) — Save persists,
+                // Cancel discards, and each field stays tappable until then.
+                val preview = current.applyingAiGoalsToPlan(result)
+                _ui.value = _ui.value.copy(
+                    recalculatingGoals = false,
+                    pendingRecalc = PendingRecalc(result = result, before = current, preview = preview),
+                    recalcSheet = RecalcSheetData(
+                        result = result, before = current, after = preview,
+                        source = RecalcSheetSource.AI,
+                    ),
+                )
+                // Optional-nutrient AI is a separate Gemini call. Do not run it here:
+                // it kept the screen feeling busy after Recalculate had already finished.
+            } catch (e: Throwable) {
+                Log.e("Chompass", "recalculateGoals failed", e)
+                _ui.value = _ui.value.copy(
+                    recalculatingGoals = false,
+                    adaptiveGoalAlertTitle = container.appContext.getString(R.string.settings_recalc_failed_title),
+                    adaptiveGoalAlertMessage = container.appContext.getString(R.string.settings_recalc_failed_message)
+                )
+            }
+        }
+    }
+
+    /** Edit one field of the pending (not yet saved) recalculate result. Day-type rows
+     *  shift by the implied kcal delta — the same fallback the apply path uses when the
+     *  model returns no explicit rows; the sheet's before → after shows the result. */
+    internal fun editPendingRecalc(field: PlanField, value: Int) {
+        val pending = _ui.value.pendingRecalc ?: return
+        val edited = when (field) {
+            PlanField.CALORIES -> pending.result.copy(calories = value)
+            PlanField.PROTEIN -> pending.result.copy(protein = value)
+            PlanField.CARBS -> pending.result.copy(carbs = value)
+            PlanField.FAT -> pending.result.copy(fat = value)
+        }
+        val preview = pending.before.applyingAiGoalsToPlan(edited)
+        _ui.value = _ui.value.copy(
+            pendingRecalc = PendingRecalc(result = edited, before = pending.before, preview = preview),
+            recalcSheet = RecalcSheetData(
+                result = edited, before = pending.before, after = preview,
+                source = RecalcSheetSource.AI,
+            ),
+        )
+    }
+
+    /** Persist the pending recalculate result (unedited or edited) and keep the
+     *  transparency sheet as the reopenable record, now read-only. */
+    fun applyPendingRecalc() {
+        val pending = _ui.value.pendingRecalc ?: return
+        viewModelScope.launch {
+            // Write unlocked fields only. Locked calories/macros survive Recalculate.
+            val next = pending.preview
+            container.profileRepository.save(next)
+            lastRecalcSignature = next.goalInputSignature
+            container.prefs.setLastRecalcGoalSignature(next.goalInputSignature)
+            val sheet = RecalcSheetData(
+                result = pending.result, before = pending.before, after = next,
+                savedAtMillis = System.currentTimeMillis(),
+                source = RecalcSheetSource.AI,
+            )
+            container.prefs.saveLastGoalChangeSheet(sheet)
+            _ui.value = _ui.value.copy(
+                pendingRecalc = null,
+                profile = next,
+                recalcSheet = sheet,
+                lastRecalcSheet = sheet,
+                goalsNeedRecalc = false
+            )
+        }
+    }
+
+    /** Throw the pending recalculate away — nothing was ever saved. */
+    fun discardPendingRecalc() {
+        _ui.value = _ui.value.copy(pendingRecalc = null, recalcSheet = null)
+    }
+
+    /**
+     * Settings → Weight save: writes a WeightEntry (so the chart, Coach forecast,
+     * and Health Connect sync see the change) and clears goalWeightKg if the new
+     * current weight makes the goal direction impossible. Does NOT recompute calorie
+     * or macro goals — those change only via Recalculate Goals (AI) or the weekly
+     * Adaptive pass. Mirrors iOS ContentView.swift `case .editWeight`.
+     */
+    fun saveCurrentWeight(newKg: Double) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val gw = current.goalWeightKg
+            val mismatch = gw != null && (
+                (current.goal == WeightGoal.LOSE && gw >= newKg) ||
+                (current.goal == WeightGoal.GAIN && gw <= newKg)
+            )
+            // WeightRepository.addEntry syncs profile.weightKg to the new value internally.
+            container.weightRepository.addEntry(WeightEntry(weightKg = newKg))
+            val refreshed = container.profileRepository.current() ?: return@launch
+            val next = refreshed.copy(
+                goalWeightKg = if (mismatch) null else refreshed.goalWeightKg
+            )
+            container.profileRepository.save(next)
+            applyProfile(next)
+        }
+    }
+
+    /** Settings → Body Fat save. A value writes a dated history entry through
+     *  BodyFatRepository (forceProfile: the explicit user value drives the profile
+     *  row and bodyFatUpdatedAt); null clears the whole body-fat track — profile
+     *  value, its date stamp, and the goal. Method + accuracy ride the same save
+     *  so the new trust width applies to this reading immediately. */
+    fun setBodyFatMeasurement(fraction: Double?, method: BodyFatMethod?, accuracyPoints: Double?) {
+        if (fraction == null) {
+            updateProfile {
+                it.copy(
+                    bodyFatMethod = method,
+                    bodyFatAccuracyPoints = accuracyPoints,
+                    bodyFatPercentage = null,
+                    bodyFatUpdatedAt = null,
+                    goalBodyFatPercentage = null,
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val withTrust = current.copy(bodyFatMethod = method, bodyFatAccuracyPoints = accuracyPoints)
+            container.profileRepository.save(withTrust)
+            applyProfile(withTrust)
+            container.bodyFatRepository.addEntry(
+                BodyFatEntry(bodyFatFraction = fraction, date = Instant.now()),
+                forceProfile = true,
+            )
+            applyProfile(container.profileRepository.current() ?: return@launch)
+        }
+    }
+
+    fun updateProfile(update: (app.chompass.models.UserProfile) -> app.chompass.models.UserProfile) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val next = update(current)
+            container.profileRepository.save(next)
+            applyProfile(next)
+        }
+    }
+
+    /**
+     * Mirrors a just-saved profile into [SettingsUiState], re-deriving the
+     * recalculate nudge. Every path that persists a profile ends here, so the
+     * nudge can never fall out of sync with what was written.
+     */
+    private fun applyProfile(next: app.chompass.models.UserProfile) {
+        _ui.value = _ui.value.copy(profile = next, goalsNeedRecalc = needsRecalc(next))
+    }
+
+    /** Persist a preference then mirror it into [SettingsUiState]. */
+    private inline fun updateUiPref(
+        crossinline persist: suspend () -> Unit,
+        crossinline reduce: SettingsUiState.() -> SettingsUiState,
+    ) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.reduce()
+            settingsWriteGen++
+            try {
+                persist()
+            } catch (t: Throwable) {
+                android.util.Log.w("Chompass", "settings persist failed", t)
+            }
+        }
+    }
+
+    private inline fun launchPref(crossinline block: suspend () -> Unit) {
+        viewModelScope.launch { block() }
+    }
+
+    /** Applies a calorie-goal edit: locked macros stay, unlocked macros rescale to the new total.
+     *  Saving a value the user chose locks it (the lock icon / Reset button then releases it). */
+    fun editCaloriesGoal(newCalories: Int) {
+        updateProfile { it.applyCaloriesEdit(newCalories).copy(caloriesLocked = true, goalSource = GoalSource.MANUAL) }
+    }
+
+    /** Applies a macro-goal edit through the rebalance engine, then locks the macro the user just
+     *  set (honoring the max-2 cap — silently left unlocked if two macros are already locked).
+     *  Invokes [onBlocked] and changes nothing when calories is locked and neither other macro can
+     *  absorb the change (both locked). */
+    fun editMacroGoal(macro: AutoBalanceMacro, newGrams: Int, onBlocked: () -> Unit) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val rebalanced = current.applyMacroEdit(macro, newGrams)
+            if (rebalanced == null) {
+                onBlocked()
+                return@launch
+            }
+            val next = if (rebalanced.isMacroLocked(macro)) rebalanced else rebalanced.toggledMacroLock(macro)
+            val manual = next.copy(goalSource = GoalSource.MANUAL)
+            container.profileRepository.save(manual)
+            applyProfile(manual)
+        }
+    }
+
+    /** "Reset to Auto-balance" from the picker: release the macro's lock and re-derive it as the
+     *  balancing remainder. */
+    fun resetMacroLock(macro: AutoBalanceMacro) {
+        updateProfile { it.resetMacroToBalance(macro) }
+    }
+
+    /** "Reset to Auto-balance" from the calories picker: release the calories lock and snap the
+     *  total to the sum of the macros. */
+    fun resetCaloriesLock() {
+        updateProfile { it.resetCaloriesToBalance().copy(goalSource = GoalSource.MANUAL) }
+    }
+
+    /** Chip toggle on the calories row: pin the current number, or release it without snapping. */
+    fun toggleCaloriesLock() {
+        updateProfile { if (it.caloriesLocked) it.unpinCalories() else it.pinCalories() }
+    }
+
+    /** Chip toggle on a macro row. A protein g/kg pin has no honest "keep grams" Auto, so Auto
+     *  resets it. A third lock is refused and [onBlocked] runs. */
+    fun toggleMacroLock(macro: AutoBalanceMacro, onBlocked: () -> Unit) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val ratePinned = macro == AutoBalanceMacro.PROTEIN &&
+                current.proteinTargetMode.usesRate && current.proteinGramsPerKg != null
+            val next = when {
+                ratePinned -> current.resetMacroToBalance(macro)
+                current.isMacroLocked(macro) -> current.unpinMacro(macro)
+                else -> current.pinMacro(macro)
+            }
+            if (next === current) {
+                if (!current.isMacroLocked(macro) && !ratePinned) onBlocked()
+                return@launch
+            }
+            container.profileRepository.save(next)
+            applyProfile(next)
+        }
+    }
+
+    fun setProteinTargetMode(mode: ProteinTargetMode) {
+        updateProfile { it.withProteinTargetMode(mode) }
+    }
+
+    // -- Macro day types (#60 phase 2) --------------------------------------------
+    // All writes go through MacroPlanEdit (pure invariants) and land in the
+    // profile; GoalJournalService.observe + the widget writer follow the
+    // profile flow, so today's journal entry and snapshot refresh for free.
+
+    private fun editPlan(transform: (MacroPlan?) -> MacroPlan?) {
+        updateProfile { profile -> profile.copy(macroPlan = transform(profile.macroPlan)) }
+    }
+
+    fun setDayTypesEnabled(enabled: Boolean) = editPlan {
+        MacroPlanEdit.setEnabled(it, enabled, LocalDate.now())
+    }
+
+    fun saveDayTypeProfile(profile: MacroDayProfile) {
+        updateProfile { p ->
+            p.copy(macroPlan = MacroPlanEdit.upsertProfile(p.macroPlan, profile, p.bmr, p.tdee, LocalDate.now()))
+        }
+    }
+
+    fun deleteDayTypeProfile(id: String, replacementId: String?) = editPlan {
+        it?.let { plan -> MacroPlanEdit.deleteProfile(plan, id, replacementId, LocalDate.now()) }
+    }
+
+    fun reorderDayTypeProfiles(orderedIds: List<String>) = editPlan {
+        it?.let { plan -> MacroPlanEdit.reorder(plan, orderedIds) }
+    }
+
+    fun setDayTypesMode(mode: MacroPlanMode) = editPlan {
+        it?.let { plan -> MacroPlanEdit.setMode(plan, mode, LocalDate.now()) }
+    }
+
+    fun setDayTypesDefault(profileId: String) = editPlan {
+        it?.let { plan -> MacroPlanEdit.setDefault(plan, profileId) }
+    }
+
+    fun setDayTypesWeekday(day: java.time.DayOfWeek, profileId: String?) = editPlan {
+        it?.let { plan -> MacroPlanEdit.setWeekday(plan, day, profileId) }
+    }
+
+    fun setDayTypesCyclePattern(pattern: List<String>) = editPlan {
+        it?.let { plan -> MacroPlanEdit.setCyclePattern(plan, pattern) }
+    }
+
+    fun restartDayTypesCycle() = editPlan {
+        it?.let { plan -> MacroPlanEdit.restartCycle(plan, LocalDate.now()) }
+    }
+
+    fun setDayTypesAssignment(date: LocalDate, profileId: String?) = editPlan {
+        it?.let { plan -> MacroPlanEdit.setDayAssignment(plan, date, profileId) }
+    }
+
+    // -- Goal phases (Progress v2) ------------------------------------------------
+    // Phases ride the same write path as day types (MacroPlanEdit invariants +
+    // profile save); GoalJournalService.observe refreshes today's entry for free.
+
+    /**
+     * Validates + applies [draft] (day-type profile + range assignments) and
+     * saves. [onResult] carries the typed validation error, null on success —
+     * the editor sheet surfaces it inline.
+     */
+    fun saveGoalPhase(draft: GoalPhase, onResult: (PhaseEditError?) -> Unit) {
+        viewModelScope.launch {
+            val profile = container.profileRepository.current()
+            if (profile == null) {
+                onResult(null)
+                return@launch
+            }
+            val error = GoalPhaseEdit.validate(profile, draft)
+            if (error != null) {
+                onResult(error)
+                return@launch
+            }
+            val next = GoalPhaseEdit.applyPhase(profile, draft, LocalDate.now())
+            container.profileRepository.save(next)
+            val floor = CalorieSafety.floorKcal(profile.bmr)
+            val ceiling = CalorieSafety.ceilingKcal(profile.tdee, floor)
+            val stored = next.goalPhases.firstOrNull { it.id == draft.id }
+            DebugTrace.event(
+                "op=goalPhase phase=save id=${draft.id} requested=${draft.calories} " +
+                    "stored=${stored?.calories ?: -1} floor=$floor ceiling=$ceiling " +
+                    "clamped=${stored?.calories != draft.calories}",
+            )
+            applyProfile(next)
+            onResult(null)
+        }
+    }
+
+    fun deleteGoalPhase(id: UUID) {
+        viewModelScope.launch {
+            val profile = container.profileRepository.current() ?: return@launch
+            val next = GoalPhaseEdit.removePhase(profile, id, LocalDate.now())
+            container.profileRepository.save(next)
+            applyProfile(next)
+        }
+    }
+
+    /**
+     * Adherence read-out for one phase ("avg −412 kcal/day · net −18,400"):
+     * diary totals in the phase window against journal-resolved per-day goals
+     * (MACRO-CYCLE-D). Null when the window has no logged days.
+     */
+    suspend fun phaseAdherence(phase: GoalPhase): PhaseAdherenceLine? {
+        val today = LocalDate.now()
+        val start = GoalJournal.parseDateOrNull(phase.startDate) ?: return null
+        val end = GoalJournal.parseDateOrNull(phase.endDate) ?: return null
+        if (end.isBefore(start)) return null
+        val profile = container.profileRepository.current()
+        val journal = container.prefs.goalJournal.first()
+        val untracked = container.prefs.untrackedDays.first()
+        val totals = container.foodRepository.dailyTotalsBetween(start, end).first()
+        val slots = buildCalorieSlots(
+            start = start,
+            end = end,
+            logged = totals.associate { it.date to it.calories },
+            untracked = untracked,
+        )
+        val goals = HashMap<LocalDate, Int>()
+        var day = start
+        while (!day.isAfter(end)) {
+            goals[day] = MacroPlanResolver
+                .targetsForJournaled(journal, profile, day, today)
+                .targets.calories
+            day = day.plusDays(1)
+        }
+        val summary = ProgressAdherence.computeAdherence(
+            slots = slots,
+            goals = goals,
+            dayTypeByDay = emptyMap(),
+            untrackedDays = untracked,
+            phases = listOf(phase),
+            range = start..end,
+            today = today,
+        )
+        return summary.byPhase.firstOrNull()?.let {
+            PhaseAdherenceLine(it.overlapDays, it.avgDelta, it.netKcal)
+        }
+    }
+
+    private fun maskKey(key: String?): String =
+        if (key.isNullOrBlank()) "" else key.take(4) + "..." + key.takeLast(4)
+
+    class Factory(private val container: AppContainer) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            SettingsViewModel(container) as T
+    }
+}

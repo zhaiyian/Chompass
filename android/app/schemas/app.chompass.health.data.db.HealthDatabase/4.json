@@ -1,0 +1,1016 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "5278b7c2e94fd6670f6723aa829bbd82",
+    "entities": [
+      {
+        "tableName": "uric_record",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `value_umol` INTEGER NOT NULL, `input_value` REAL NOT NULL, `input_unit` TEXT NOT NULL, `measured_at` INTEGER NOT NULL, `measured_date` TEXT NOT NULL, `measure_method` TEXT NOT NULL, `fasting` INTEGER NOT NULL, `note` TEXT, `deleted_at` INTEGER, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "valueUmol",
+            "columnName": "value_umol",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputValue",
+            "columnName": "input_value",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputUnit",
+            "columnName": "input_unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measuredAt",
+            "columnName": "measured_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measuredDate",
+            "columnName": "measured_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measureMethod",
+            "columnName": "measure_method",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fasting",
+            "columnName": "fasting",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deleted_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_uric_record_measured_at",
+            "unique": false,
+            "columnNames": [
+              "measured_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_uric_record_measured_at` ON `${TABLE_NAME}` (`measured_at`)"
+          },
+          {
+            "name": "index_uric_record_measured_date",
+            "unique": false,
+            "columnNames": [
+              "measured_date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_uric_record_measured_date` ON `${TABLE_NAME}` (`measured_date`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pain_episode",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `started_at` INTEGER NOT NULL, `ended_at` INTEGER, `site_code` TEXT NOT NULL, `side` TEXT NOT NULL, `nrs` INTEGER NOT NULL, `natures` TEXT, `triggers` TEXT, `affect_walk` INTEGER NOT NULL, `affect_sleep` INTEGER NOT NULL, `note` TEXT, `deleted_at` INTEGER, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "started_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAt",
+            "columnName": "ended_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "siteCode",
+            "columnName": "site_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "side",
+            "columnName": "side",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nrs",
+            "columnName": "nrs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "natures",
+            "columnName": "natures",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "triggers",
+            "columnName": "triggers",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "affectWalk",
+            "columnName": "affect_walk",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "affectSleep",
+            "columnName": "affect_sleep",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deleted_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pain_episode_started_at",
+            "unique": false,
+            "columnNames": [
+              "started_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pain_episode_started_at` ON `${TABLE_NAME}` (`started_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pain_update",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `episode_id` INTEGER NOT NULL, `at` INTEGER NOT NULL, `nrs` INTEGER NOT NULL, `note` TEXT, `deleted_at` INTEGER, `created_at` INTEGER NOT NULL, FOREIGN KEY(`episode_id`) REFERENCES `pain_episode`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "episodeId",
+            "columnName": "episode_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "at",
+            "columnName": "at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nrs",
+            "columnName": "nrs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deleted_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pain_update_episode_id",
+            "unique": false,
+            "columnNames": [
+              "episode_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pain_update_episode_id` ON `${TABLE_NAME}` (`episode_id`)"
+          },
+          {
+            "name": "index_pain_update_at",
+            "unique": false,
+            "columnNames": [
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pain_update_at` ON `${TABLE_NAME}` (`at`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "pain_episode",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "episode_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "pain_joint",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`joint_id` TEXT NOT NULL, `region_id` TEXT NOT NULL, `region_name` TEXT NOT NULL, `region_order` INTEGER NOT NULL, `digit_id` TEXT, `digit_name` TEXT, `digit_order` INTEGER, `display_name` TEXT NOT NULL, `anatomy_name` TEXT NOT NULL, `disease_tag` TEXT NOT NULL, `side_required` INTEGER NOT NULL, `sort_order` INTEGER NOT NULL, PRIMARY KEY(`joint_id`))",
+        "fields": [
+          {
+            "fieldPath": "jointId",
+            "columnName": "joint_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "regionId",
+            "columnName": "region_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "regionName",
+            "columnName": "region_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "regionOrder",
+            "columnName": "region_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "digitId",
+            "columnName": "digit_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "digitName",
+            "columnName": "digit_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "digitOrder",
+            "columnName": "digit_order",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anatomyName",
+            "columnName": "anatomy_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diseaseTag",
+            "columnName": "disease_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sideRequired",
+            "columnName": "side_required",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "joint_id"
+          ]
+        }
+      },
+      {
+        "tableName": "medication",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `category` TEXT NOT NULL, `is_prn` INTEGER NOT NULL, `strength_value` REAL, `strength_unit` TEXT, `intake_units` REAL NOT NULL, `unit_label` TEXT NOT NULL, `freq_per_day` INTEGER NOT NULL, `meal_relation` TEXT NOT NULL, `stock_units` REAL, `stock_alert_days` INTEGER NOT NULL, `reminder_enabled` INTEGER NOT NULL, `status` TEXT NOT NULL, `started_on` TEXT, `stopped_on` TEXT, `note` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPrn",
+            "columnName": "is_prn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strengthValue",
+            "columnName": "strength_value",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "strengthUnit",
+            "columnName": "strength_unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "intakeUnits",
+            "columnName": "intake_units",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitLabel",
+            "columnName": "unit_label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "freqPerDay",
+            "columnName": "freq_per_day",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mealRelation",
+            "columnName": "meal_relation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stockUnits",
+            "columnName": "stock_units",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "stockAlertDays",
+            "columnName": "stock_alert_days",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reminderEnabled",
+            "columnName": "reminder_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedOn",
+            "columnName": "started_on",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stoppedOn",
+            "columnName": "stopped_on",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_medication_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_medication_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ]
+      },
+      {
+        "tableName": "med_schedule",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `medication_id` INTEGER NOT NULL, `time_of_day` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, FOREIGN KEY(`medication_id`) REFERENCES `medication`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medicationId",
+            "columnName": "medication_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeOfDay",
+            "columnName": "time_of_day",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_med_schedule_medication_id_time_of_day",
+            "unique": true,
+            "columnNames": [
+              "medication_id",
+              "time_of_day"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_med_schedule_medication_id_time_of_day` ON `${TABLE_NAME}` (`medication_id`, `time_of_day`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "medication",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "medication_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dose_instance",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `medication_id` INTEGER NOT NULL, `schedule_id` INTEGER, `plan_at` INTEGER NOT NULL, `plan_date` TEXT NOT NULL, `drug_name` TEXT NOT NULL, `strength_value` REAL, `strength_unit` TEXT, `intake_units` REAL NOT NULL, `unit_label` TEXT NOT NULL, `meal_relation` TEXT NOT NULL, `status` TEXT NOT NULL, `skip_reason` TEXT, `generated_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, FOREIGN KEY(`medication_id`) REFERENCES `medication`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`schedule_id`) REFERENCES `med_schedule`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medicationId",
+            "columnName": "medication_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduleId",
+            "columnName": "schedule_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "planAt",
+            "columnName": "plan_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planDate",
+            "columnName": "plan_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "drugName",
+            "columnName": "drug_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strengthValue",
+            "columnName": "strength_value",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "strengthUnit",
+            "columnName": "strength_unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "intakeUnits",
+            "columnName": "intake_units",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitLabel",
+            "columnName": "unit_label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mealRelation",
+            "columnName": "meal_relation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skipReason",
+            "columnName": "skip_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "generatedAt",
+            "columnName": "generated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dose_instance_medication_id_plan_at",
+            "unique": true,
+            "columnNames": [
+              "medication_id",
+              "plan_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dose_instance_medication_id_plan_at` ON `${TABLE_NAME}` (`medication_id`, `plan_at`)"
+          },
+          {
+            "name": "index_dose_instance_plan_date_status",
+            "unique": false,
+            "columnNames": [
+              "plan_date",
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_instance_plan_date_status` ON `${TABLE_NAME}` (`plan_date`, `status`)"
+          },
+          {
+            "name": "index_dose_instance_plan_at",
+            "unique": false,
+            "columnNames": [
+              "plan_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_instance_plan_at` ON `${TABLE_NAME}` (`plan_at`)"
+          },
+          {
+            "name": "index_dose_instance_schedule_id",
+            "unique": false,
+            "columnNames": [
+              "schedule_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_instance_schedule_id` ON `${TABLE_NAME}` (`schedule_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "medication",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "medication_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "med_schedule",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "schedule_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dose_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `instance_id` INTEGER, `medication_id` INTEGER, `actual_at` INTEGER NOT NULL, `actual_date` TEXT NOT NULL, `plan_at` INTEGER, `deviation_minutes` INTEGER, `drug_name` TEXT NOT NULL, `strength_value` REAL, `strength_unit` TEXT, `intake_units` REAL NOT NULL, `unit_label` TEXT NOT NULL DEFAULT '片', `kind` TEXT NOT NULL, `note` TEXT, `revoked_at` INTEGER, `created_at` INTEGER NOT NULL, FOREIGN KEY(`instance_id`) REFERENCES `dose_instance`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION , FOREIGN KEY(`medication_id`) REFERENCES `medication`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceId",
+            "columnName": "instance_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "medicationId",
+            "columnName": "medication_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "actualAt",
+            "columnName": "actual_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualDate",
+            "columnName": "actual_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planAt",
+            "columnName": "plan_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "deviationMinutes",
+            "columnName": "deviation_minutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "drugName",
+            "columnName": "drug_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strengthValue",
+            "columnName": "strength_value",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "strengthUnit",
+            "columnName": "strength_unit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "intakeUnits",
+            "columnName": "intake_units",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitLabel",
+            "columnName": "unit_label",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'片'"
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revokedAt",
+            "columnName": "revoked_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dose_log_actual_at",
+            "unique": false,
+            "columnNames": [
+              "actual_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_log_actual_at` ON `${TABLE_NAME}` (`actual_at`)"
+          },
+          {
+            "name": "index_dose_log_medication_id_actual_at",
+            "unique": false,
+            "columnNames": [
+              "medication_id",
+              "actual_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_log_medication_id_actual_at` ON `${TABLE_NAME}` (`medication_id`, `actual_at`)"
+          },
+          {
+            "name": "index_dose_log_instance_id",
+            "unique": false,
+            "columnNames": [
+              "instance_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dose_log_instance_id` ON `${TABLE_NAME}` (`instance_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dose_instance",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "instance_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "medication",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "medication_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "app_setting",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      },
+      {
+        "tableName": "dict_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, `code` TEXT NOT NULL, `label` TEXT NOT NULL, `short_label` TEXT, `sort_order` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `builtin` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortLabel",
+            "columnName": "short_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "builtin",
+            "columnName": "builtin",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dict_item_type_code",
+            "unique": true,
+            "columnNames": [
+              "type",
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_dict_item_type_code` ON `${TABLE_NAME}` (`type`, `code`)"
+          },
+          {
+            "name": "index_dict_item_type_enabled_sort_order",
+            "unique": false,
+            "columnNames": [
+              "type",
+              "enabled",
+              "sort_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dict_item_type_enabled_sort_order` ON `${TABLE_NAME}` (`type`, `enabled`, `sort_order`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5278b7c2e94fd6670f6723aa829bbd82')"
+    ]
+  }
+}

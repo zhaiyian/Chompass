@@ -1,0 +1,30 @@
+# Commit hygiene guard: reject non-human attribution trailers in pushed commit messages.
+# Mirrors scripts/git-hooks/commit-msg so commits made without the local hook
+# (web UI edits, machines without devenv) are caught at push time.
+name: Commit hygiene
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject non-human attribution trailers
+        run: |
+          set -euo pipefail
+          RANGE="origin/main..HEAD"
+          if git log "$RANGE" --format='%b' 2>/dev/null | grep -qiE \
+            -e '^[[:space:]]*(Co-authored-by|Assisted-by|Made-with|Generated-by|Generated-with):[[:space:]].*(Cursor|Claude|ChatGPT|GPT-[0-9]|Copilot|Codium|OpenAI|Anthropic|Gemini|DeepSeek|GLM|Qwen|Grok|Aider|Windsurf|Cline|Codex)' \
+            -e '^[[:space:]]*(Made|Generated|Assisted)[[:space:]]+(with|by)[[:space:]].*(Cursor|Claude|ChatGPT|GPT-[0-9]|Copilot|Codium|OpenAI|Anthropic|Gemini|DeepSeek|GLM|Qwen|Grok|Aider|Windsurf|Cline|Codex)' \
+            -e '🤖'
+          then
+            echo "::error::Non-human attribution trailer found in commit message(s) in range $RANGE"
+            echo "Remove Co-authored-by / Assisted-by / Made-with / Generated-by trailers and \"Generated with <tool>\" lines, then retry."
+            exit 1
+          fi
+          echo "No non-human attribution trailers in $RANGE"

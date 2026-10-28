@@ -1,0 +1,10 @@
+inputs:
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixos-unstable
+  devenv:
+    url: github:cachix/devenv/ea3d94ac9d6bf6a1313773170122ca4e2ef5a0be
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+
+allowUnfree: true

@@ -1,0 +1,257 @@
+package app.chompass.ui.settings
+
+import app.chompass.ui.components.ChompassPrimaryButton
+import android.app.ActivityManager
+import android.content.Context
+import android.os.StatFs
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.services.ondevice.ModelCatalog
+import app.chompass.services.ondevice.OnDeviceCapability
+import app.chompass.services.ondevice.OnDeviceDownloadState
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.models.LocaleFormat
+
+private fun gb(bytes: Long): String = "${LocaleFormat.decimal(bytes / 1_073_741_824.0, 1)} GB"
+
+/**
+ * Model download/management sheet for [SettingsSheet.ON_DEVICE_MODEL]. Shows
+ * the Hugging Face disclosure before the first download (not repeated once a
+ * model is present), a storage pre-check, download progress, and
+ * delete/unload/clear actions. Interrupted downloads resume from the partial
+ * file via HTTP Range (see [ModelDownloadWorker]); cancel stops the worker
+ * but keeps the partial file so Download can continue. Clear wipes the
+ * leftover `.part`, any finished model, and the LiteRT cache.
+ */
+@Composable
+internal fun OnDeviceModelSheet(
+    container: AppContainer,
+    selectedModelId: String,
+    onUnload: () -> Unit,
+    onDelete: () -> Unit,
+    onStartDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onSetOverWifiOnly: (Boolean) -> Unit,
+    onSetHeadroomPercent: (Int) -> Unit,
+) {
+    val manager = container.onDeviceModelDownloadManager
+    val entry = remember(selectedModelId) { ModelCatalog.forModelId(selectedModelId) }
+    val state by manager.state(selectedModelId).collectAsState(initial = OnDeviceDownloadState.NotDownloaded)
+    val overWifiOnly by container.prefs.onDeviceDownloadOverWifiOnly.collectAsState(initial = true)
+    val storageEpoch by manager.storageEpoch.collectAsState()
+    val isLoaded = container.onDeviceLlmGateway.isLoaded
+    val occupiedBytes = remember(entry, state, storageEpoch) { manager.occupiedBytes() }
+    val freeBytes = remember(entry, storageEpoch) {
+        manager.modelsDir().mkdirs()
+        StatFs(manager.modelsDir().path).availableBytes
+    }
+    val hasEnoughSpace = freeBytes >= entry.sizeBytes + 200L * 1024 * 1024
+
+    Column(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
+        Text(
+            stringResource(R.string.on_device_model_sheet_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        Text(
+            "${entry.displayName} · ${gb(entry.sizeBytes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.on_device_model_accuracy_notice),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+        )
+        if (entry.modelId == ModelCatalog.E4B.modelId) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.on_device_model_e4b_notice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Subtle)
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        when (val current = state) {
+            is OnDeviceDownloadState.NotDownloaded -> {
+                Text(
+                    stringResource(R.string.on_device_model_privacy_notice, entry.modelCardUrl),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.on_device_model_device_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                )
+                Spacer(Modifier.height(12.dp))
+                if (!hasEnoughSpace) {
+                    Text(
+                        stringResource(
+                            R.string.on_device_model_storage_short,
+                            gb(entry.sizeBytes),
+                            gb(freeBytes)
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                ToggleRow(
+                    label = stringResource(R.string.on_device_model_wifi_only),
+                    checked = overWifiOnly,
+                    onChange = onSetOverWifiOnly
+                )
+                Spacer(Modifier.height(8.dp))
+                ChompassPrimaryButton(flushDrafts = true,
+                    text = stringResource(R.string.on_device_model_download),
+                    enabled = hasEnoughSpace,
+                    onClick = onStartDownload
+                )
+            }
+            is OnDeviceDownloadState.Downloading -> {
+                Text(
+                    stringResource(R.string.on_device_model_downloading, current.progressPercent),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { current.progressPercent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = AppColors.Calorie
+                )
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onCancelDownload, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+            is OnDeviceDownloadState.Verifying -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.on_device_model_verifying), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            is OnDeviceDownloadState.Downloaded -> {
+                Text(stringResource(R.string.on_device_model_ready), style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (isLoaded) {
+                        stringResource(R.string.on_device_model_loaded)
+                    } else {
+                        stringResource(R.string.on_device_model_not_loaded)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Subtle)
+                )
+            }
+            is OnDeviceDownloadState.Failed -> {
+                Text(
+                    current.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(12.dp))
+                ChompassPrimaryButton(flushDrafts = true,
+                    text = stringResource(R.string.on_device_model_retry),
+                    onClick = onStartDownload
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+        val context = LocalContext.current
+        val headroomPercent by container.prefs.onDeviceHeadroomPercent.collectAsState(initial = 0)
+        val totalMemBytes = remember {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val info = ActivityManager.MemoryInfo()
+            am?.getMemoryInfo(info)
+            info.totalMem
+        }
+        val effectivePercent = headroomPercent.takeIf { it in 1..20 } ?: 5
+        val reserveBytes = OnDeviceCapability.visionMemoryHeadroomBytes(
+            totalMemBytes,
+            headroomPercentOverride = headroomPercent.takeIf { it > 0 },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.settings_on_device_headroom),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { onSetHeadroomPercent((effectivePercent - 1).coerceAtLeast(1)) }) {
+                Text("−")
+            }
+            Text(
+                "$effectivePercent%",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            TextButton(onClick = { onSetHeadroomPercent((effectivePercent + 1).coerceAtMost(20)) }) {
+                Text("+")
+            }
+        }
+        Text(
+            stringResource(R.string.settings_on_device_headroom_footer, gb(reserveBytes)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Subtle),
+        )
+
+        if (isLoaded || occupiedBytes > 0L) {
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+            if (isLoaded) {
+                TextButton(onClick = onUnload, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.on_device_model_unload))
+                }
+            }
+            if (occupiedBytes > 0L) {
+                TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(R.string.on_device_model_clear),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text(
+                    stringResource(R.string.on_device_model_clear_footer, gb(occupiedBytes)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                )
+            }
+        }
+    }
+}

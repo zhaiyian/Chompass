@@ -1,0 +1,9 @@
+Import/export weight, body-fat and body-measurement history (Chompass JSON/CSV, openScale CSV, generic weight CSVs).
+
+Health Connect: Wellness card (sleep, resting heart rate, hydration), height sync, optional background sync (off by default).
+
+Home calorie gauge: estimated active burn when Health Connect is off; measured vs estimated labels; no double-counting in Add Active mode.
+
+System accent theme (Material You, Android 12+), dynamic launcher icon, food photo thumbnails with cleanup.
+
+Nutrition calculation audit: 7,700 kcal/kg energy balance, Theil–Sen weight trend, calendar-day intake averaging, Calculation Methods reference and formula unit tests.

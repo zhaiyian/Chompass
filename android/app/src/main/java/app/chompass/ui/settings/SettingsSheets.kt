@@ -1,0 +1,1147 @@
+package app.chompass.ui.settings
+
+import androidx.annotation.StringRes
+import app.chompass.data.GoalRecalcTierOverride
+import app.chompass.data.OpenRouterReasoningEffort
+import app.chompass.data.WeatherRepository
+import app.chompass.ui.components.rememberChompassSheetState
+import app.chompass.ui.components.ChompassBottomSheet
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import app.chompass.ui.components.ChompassIconBubble
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.DataUsage
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.chompass.R
+import app.chompass.models.AIProvider
+import app.chompass.models.AiProfile
+import app.chompass.models.CalorieSafety
+import app.chompass.models.EnergyFormat
+import app.chompass.models.ActivityLevel
+import app.chompass.models.AutoBalanceMacro
+import app.chompass.ui.components.energyText
+import app.chompass.ui.components.energyUnitLabel
+import app.chompass.ui.navigation.LocalEnergyUnit
+import app.chompass.models.DietMode
+import app.chompass.models.Gender
+import app.chompass.models.HeuristicRuleOverride
+import app.chompass.models.HeuristicServingUnitSettings
+import app.chompass.models.KetoCarbMode
+import app.chompass.models.OptionalNutrient
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.ProteinTargetMode
+import app.chompass.models.ServingUnitHeuristicRule
+import app.chompass.models.ServingUnitHeuristics
+import app.chompass.models.ServingUnitInferenceMode
+import app.chompass.models.SpeechLanguage
+import app.chompass.models.SpeechProvider
+import app.chompass.models.WeightGoal
+import app.chompass.models.WaterGoalCalculator
+import app.chompass.services.KetoCarbRecommendationService
+import app.chompass.ui.components.DecimalWheelPicker
+import app.chompass.ui.components.isDarkTheme
+import app.chompass.ui.components.NumericWheelPicker
+import app.chompass.ui.home.FoodLogSortOrder
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.ui.theme.AppThemeColor
+import app.chompass.ui.theme.macroAccentColor
+import java.time.Instant
+
+@StringRes
+private fun providerGroupLabelRes(group: AIProvider.ProviderGroup): Int = when (group) {
+    AIProvider.ProviderGroup.RECOMMENDED -> R.string.ai_provider_group_recommended
+    AIProvider.ProviderGroup.CLOUD -> R.string.ai_provider_group_cloud
+    AIProvider.ProviderGroup.LOCAL -> R.string.ai_provider_group_local
+    AIProvider.ProviderGroup.DEVICE -> R.string.ai_provider_group_device
+}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsSheets(
+    sheet: SettingsSheet,
+    ui: SettingsUiState,
+    vm: SettingsViewModel,
+    onDismiss: () -> Unit,
+    onInvalidGoalWeight: (String) -> Unit,
+    onRebalanceBlocked: () -> Unit,
+    /** Sheet-to-sheet navigation (AI profile flows); null on hosts that never open those sheets. */
+    onOpenSheet: ((SettingsSheet) -> Unit)? = null,
+) {
+    val state = rememberChompassSheetState()
+    val invalidLoseMsg = stringResource(R.string.settings_invalid_goal_lose)
+    val invalidGainMsg = stringResource(R.string.settings_invalid_goal_gain)
+    val isDark = isDarkTheme()
+    // Meals edits persist only via the sheet's bottom Save (#88): guard the
+    // drag/back dismiss while there are unsaved changes instead of dropping
+    // them silently.
+    var mealsDirty by remember(sheet) { mutableStateOf(false) }
+    var confirmDiscardMeals by remember(sheet) { mutableStateOf(false) }
+    val guardedDismiss: () -> Unit = {
+        if (sheet == SettingsSheet.MEAL_TIMES && mealsDirty) {
+            confirmDiscardMeals = true
+        } else {
+            onDismiss()
+        }
+    }
+    LaunchedEffect(sheet, ui.activeProfile?.id, ui.activeProfile?.baseUrl, ui.activeProvider) {
+        if (sheet == SettingsSheet.AI_MODEL && ui.activeProvider == AIProvider.OLLAMA) {
+            vm.fetchOllamaModels()
+        }
+        if (sheet == SettingsSheet.AI_MODEL && ui.activeProvider == AIProvider.CUSTOM_OPENAI) {
+            vm.fetchCustomModels()
+        }
+        if (sheet == SettingsSheet.AI_MODEL && ui.activeProvider.supportsRuntimeLineup) {
+            vm.fetchRuntimeModels()
+        }
+    }
+    if (confirmDiscardMeals) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscardMeals = false },
+            title = { Text(stringResource(R.string.settings_meals_unsaved_title)) },
+            text = { Text(stringResource(R.string.settings_meals_unsaved_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDiscardMeals = false
+                    onDismiss()
+                }) { Text(stringResource(R.string.action_discard)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscardMeals = false }) {
+                    Text(stringResource(R.string.action_keep_editing))
+                }
+            },
+        )
+    }
+    ChompassBottomSheet(
+        onDismiss = guardedDismiss,
+        sheetState = state,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            when (sheet) {
+                SettingsSheet.AI_PROVIDER -> ListSheet(
+                    title = stringResource(R.string.sheet_ai_provider),
+                    items = AIProvider.values()
+                        .filter { it != AIProvider.ON_DEVICE || ui.onDeviceAvailable }
+                        .sortedBy { it.group.ordinal },
+                    label = { stringResource(it.displayNameRes) },
+                    subtitle = { stringResource(it.subtitleRes) },
+                    sectionHeader = { stringResource(providerGroupLabelRes(it.group)) },
+                    selected = { it == ui.activeProvider },
+                    onSelect = { vm.setProfileProvider(it); onDismiss() }
+                )
+                SettingsSheet.AI_MODEL -> ListSheet(
+                    title = stringResource(R.string.sheet_model),
+                    items = when {
+                        ui.activeProvider == AIProvider.OLLAMA && !ui.ollamaModels.isNullOrEmpty() ->
+                            ui.ollamaModels!!.map { it.id }
+                        ui.activeProvider == AIProvider.CUSTOM_OPENAI && !ui.customModels.isNullOrEmpty() ->
+                            ui.customModels!!
+                        ui.activeProvider == AIProvider.ON_DEVICE && ui.onDeviceModels.isNotEmpty() ->
+                            ui.onDeviceModels
+                        ui.activeProvider.supportsRuntimeLineup ->
+                            app.chompass.services.ai.OpenAiModelsClient.mergeOverCurated(
+                                ui.activeProvider.models,
+                                ui.runtimeModels,
+                                sortRuntime = true,
+                            )
+                        else -> ui.activeProvider.models
+                    },
+                    searchable = true,
+                    filterText = { it },
+                    label = { it },
+                    subtitle = { model ->
+                        if (ui.activeProvider == AIProvider.OLLAMA) {
+                            ui.ollamaModels?.find { it.id == model }?.subtitle
+                        } else when (ui.activeProvider.modelTiers[model]) {
+                            "paid" -> stringResource(R.string.ai_model_tier_paid)
+                            "varies" -> stringResource(R.string.ai_model_tier_varies)
+                            else -> null
+                        }
+                    },
+                    selected = { it == ui.activeModel },
+                    onSelect = { vm.setProfileModel(it); onDismiss() },
+                    footer = when {
+                        ui.activeProvider == AIProvider.OLLAMA && ui.ollamaModelsLoading ->
+                            stringResource(R.string.settings_ollama_models_loading)
+                        ui.activeProvider == AIProvider.OLLAMA && ui.ollamaModelsError ->
+                            stringResource(R.string.settings_ollama_models_error)
+                        ui.activeProvider == AIProvider.CUSTOM_OPENAI && ui.customModelsLoading ->
+                            stringResource(R.string.settings_custom_models_loading)
+                        ui.activeProvider == AIProvider.CUSTOM_OPENAI && ui.customModelsError ->
+                            stringResource(R.string.settings_custom_models_error)
+                        ui.activeProvider.supportsCustomModelName ->
+                            stringResource(R.string.sheet_model_footer)
+                        else -> null
+                    },
+                    customField = if (ui.activeProvider.supportsCustomModelName) {
+                        { m -> vm.setProfileModel(m); onDismiss() }
+                    } else null,
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.AI_REASONING_EFFORT -> ListSheet(
+                    title = stringResource(R.string.settings_ai_reasoning_effort),
+                    items = OpenRouterReasoningEffort.entries,
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.openRouterReasoningEffort },
+                    onSelect = { vm.setOpenRouterReasoningEffort(it); onDismiss() },
+                    footer = stringResource(R.string.settings_ai_reasoning_effort_footer),
+                )
+                SettingsSheet.GOAL_RECALC_TIER -> ListSheet(
+                    title = stringResource(R.string.settings_goal_tier),
+                    items = GoalRecalcTierOverride.entries,
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.goalRecalcTier },
+                    onSelect = { vm.setGoalRecalcTier(it); onDismiss() },
+                    footer = stringResource(R.string.settings_goal_tier_footer),
+                )
+                SettingsSheet.VISION_MODEL -> ListSheet(
+                    title = stringResource(R.string.settings_ai_vision_model),
+                    items = listOf("") + ui.activeProvider.models,
+                    label = { if (it.isEmpty()) stringResource(R.string.settings_ai_vision_model_unset) else it },
+                    subtitle = { model ->
+                        if (model.isEmpty()) null
+                        else when (ui.activeProvider.modelTiers[model]) {
+                            "paid" -> stringResource(R.string.ai_model_tier_paid)
+                            "varies" -> stringResource(R.string.ai_model_tier_varies)
+                            else -> null
+                        }
+                    },
+                    selected = { it == ui.activeProfile?.visionModel.orEmpty() },
+                    onSelect = { vm.setProfileVisionModel(it.ifEmpty { null }); onDismiss() },
+                    footer = stringResource(R.string.settings_ai_vision_model_footer),
+                    customField = if (ui.activeProvider.supportsCustomModelName) {
+                        { m -> vm.setProfileVisionModel(m); onDismiss() }
+                    } else null,
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.API_KEY -> ApiKeySheet(
+                    title = stringResource(R.string.sheet_api_key_format, stringResource(ui.activeProvider.displayNameRes)),
+                    placeholder = stringResource(ui.activeProvider.apiKeyPlaceholderRes),
+                    initial = vm.currentProfileApiKey().orEmpty(),
+                    signupUrl = ui.activeProvider.signupUrl,
+                    onTest = { vm.testProfileApiKey(it) },
+                    testing = ui.apiKeyTesting,
+                    testOk = ui.apiKeyTestOk,
+                    testMessage = ui.apiKeyTestMessage,
+                    onSave = { vm.setProfileApiKey(it); onDismiss() },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.CUSTOM_BASE_URL -> TextFieldSheet(
+                    title = stringResource(R.string.settings_custom_url_title),
+                    initial = ui.activeProfile?.baseUrl.orEmpty(),
+                    placeholder = stringResource(R.string.settings_custom_url_placeholder),
+                    onSave = { vm.setProfileBaseUrl(it); onDismiss() },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.ON_DEVICE_MODEL -> OnDeviceModelSheet(
+                    container = vm.container,
+                    selectedModelId = ui.activeModel,
+                    onUnload = vm::unloadOnDeviceModel,
+                    onDelete = vm::deleteOnDeviceModel,
+                    onStartDownload = vm::startOnDeviceModelDownload,
+                    onCancelDownload = vm::cancelOnDeviceModelDownload,
+                    onSetOverWifiOnly = vm::setOnDeviceDownloadOverWifiOnly,
+                    onSetHeadroomPercent = vm::setOnDeviceHeadroomPercent,
+                )
+                SettingsSheet.FILL_GAPS -> app.chompass.ui.home.FillGapsSheet(
+                    container = vm.container,
+                    onDismiss = onDismiss,
+                )
+                SettingsSheet.MAX_TOKENS -> {
+                    var value by remember(ui.maxResponseTokens) { mutableIntStateOf(ui.maxResponseTokens) }
+                    Text(stringResource(R.string.settings_max_tokens), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    NumericWheelPicker(
+                        value = value,
+                        onValueChange = { value = it },
+                        min = 50,
+                        max = 16000,
+                        step = 50,
+                        unit = stringResource(R.string.settings_max_tokens_unit),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    CancelSaveRow(onDismiss) { vm.setMaxResponseTokens(value); onDismiss() }
+                    Spacer(Modifier.height(8.dp))
+                }
+                SettingsSheet.AI_READ_TIMEOUT -> {
+                    var value by remember(ui.aiReadTimeoutSeconds) { mutableIntStateOf(ui.aiReadTimeoutSeconds) }
+                    Text(stringResource(R.string.settings_ai_read_timeout), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    NumericWheelPicker(
+                        value = value,
+                        onValueChange = { value = it },
+                        min = 1,
+                        max = 900,
+                        step = 1,
+                        unit = stringResource(R.string.settings_ai_read_timeout_unit),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    CancelSaveRow(onDismiss) { vm.setAiReadTimeoutSeconds(value); onDismiss() }
+                    Spacer(Modifier.height(8.dp))
+                }
+                SettingsSheet.SERVING_UNIT_MODE -> ListSheet(
+                    title = stringResource(R.string.sheet_serving_unit_mode),
+                    items = ServingUnitInferenceMode.entries,
+                    label = { stringResource(it.displayNameRes) },
+                    subtitle = { stringResource(it.subtitleRes) },
+                    selected = { it == ui.servingUnitInferenceMode },
+                    onSelect = { vm.setServingUnitInferenceMode(it); onDismiss() }
+                )
+                SettingsSheet.SERVING_UNIT_HEURISTICS -> ServingUnitHeuristicsSheet(
+                    settings = ui.heuristicServingUnitSettings,
+                    onToggle = vm::setHeuristicRuleEnabled,
+                    onGramsPerUnitChange = vm::setHeuristicRuleGramsPerUnit
+                )
+                SettingsSheet.SPEECH_PROVIDER -> ListSheet(
+                    title = stringResource(R.string.sheet_speech_engine),
+                    items = SpeechProvider.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.selectedSpeech },
+                    onSelect = { vm.selectSpeech(it); onDismiss() }
+                )
+                SettingsSheet.SPEECH_LANGUAGE -> ListSheet(
+                    title = stringResource(R.string.sheet_speech_language),
+                    items = SpeechLanguage.optionsFor(ui.selectedSpeech),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.selectedSpeechLanguage },
+                    onSelect = { vm.selectSpeechLanguage(it); onDismiss() },
+                    subtitle = {
+                        when (it) {
+                            SpeechLanguage.PROVIDER_AUTO -> stringResource(R.string.speech_language_provider_auto_subtitle)
+                            SpeechLanguage.DEVICE -> stringResource(R.string.speech_language_device_subtitle)
+                            else -> null
+                        }
+                    }
+                )
+                SettingsSheet.SPEECH_KEY -> ApiKeySheet(
+                    title = stringResource(R.string.sheet_speech_api_key_format, stringResource(ui.selectedSpeech.displayNameRes)),
+                    placeholder = stringResource(ui.selectedSpeech.apiKeyPlaceholderRes),
+                    onSave = {
+                        // Route through the VM so SettingsUiState.speechApiKeyMasked
+                        // updates and the API Key row reflects the new value
+                        // (was bypassing the VM and writing straight to KeyStore,
+                        // which left the UI showing "Tap to edit" forever).
+                        vm.setSpeechApiKey(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.AI_PROFILE -> {
+                    ListSheet(
+                        title = stringResource(R.string.settings_ai_profile),
+                        items = ui.profiles,
+                        label = { it.name },
+                        subtitle = { profile ->
+                            val model = profile.model ?: profile.provider.defaultModel
+                            "${stringResource(profile.provider.displayNameRes)} · $model"
+                        },
+                        selected = { it.id == ui.activeProfile?.id },
+                        onSelect = { vm.selectProfile(it.id.toString()); onDismiss() },
+                    )
+                    HorizontalDivider()
+                    SettingRow(
+                        stringResource(R.string.settings_profile_add),
+                        "",
+                        icon = Icons.Outlined.Add
+                    ) { onOpenSheet?.invoke(SettingsSheet.ADD_PROFILE_NAME) ?: onDismiss() }
+                    SettingRow(
+                        stringResource(R.string.settings_profile_rename),
+                        ui.activeProfile?.name ?: "",
+                        icon = Icons.Outlined.Edit
+                    ) { onOpenSheet?.invoke(SettingsSheet.PROFILE_RENAME) ?: onDismiss() }
+                }
+                SettingsSheet.ADD_PROFILE_NAME -> TextFieldSheet(
+                    title = stringResource(R.string.settings_profile_add),
+                    initial = "",
+                    placeholder = stringResource(R.string.sheet_profile_name),
+                    onSave = { name ->
+                        // Activate-on-add means the provider picker that opens next edits
+                        // the fresh profile — but only once the new row + active id are
+                        // committed in one edit, or a fast provider tap would rewrite the
+                        // previously active profile.
+                        vm.addProfile(name, AIProvider.GEMINI) {
+                            onOpenSheet?.invoke(SettingsSheet.AI_PROVIDER) ?: onDismiss()
+                        }
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.PROFILE_RENAME -> TextFieldSheet(
+                    title = stringResource(R.string.settings_profile_rename),
+                    initial = ui.activeProfile?.name.orEmpty(),
+                    placeholder = stringResource(R.string.sheet_profile_name),
+                    onSave = { vm.renameActiveProfile(it); onDismiss() },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FALLBACK_PROFILE -> ListSheet(
+                    title = stringResource(R.string.settings_profile_fallback),
+                    items = listOf<AiProfile?>(null) + ui.profiles.filter { it.id != ui.activeProfile?.id },
+                    label = { it?.name ?: stringResource(R.string.settings_profile_fallback_none) },
+                    subtitle = { profile -> profile?.let { stringResource(it.provider.displayNameRes) } },
+                    selected = { profile ->
+                        if (profile == null) ui.fallbackProfileId == null
+                        else profile.id.toString() == ui.fallbackProfileId
+                    },
+                    onSelect = { vm.setFallbackProfile(it?.id?.toString()); onDismiss() },
+                )
+                SettingsSheet.GENDER -> ListSheet(
+                    title = stringResource(R.string.sheet_gender),
+                    items = Gender.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.profile?.gender },
+                    onSelect = { g -> vm.updateProfile { it.copy(gender = g) }; onDismiss() },
+                    icon = { genderIcon(it) }
+                )
+                SettingsSheet.HEIGHT -> {
+                    val cm = ui.profile?.heightCm?.toInt() ?: 175
+                    HeightSheet(
+                        current = cm,
+                        useMetric = ui.heightMetric,
+                        onUnitChange = { metric -> vm.setHeightUnit(if (metric) "cm" else "ftin") },
+                        onSave = { newCm -> vm.updateProfile { it.copy(heightCm = newCm.toDouble()) }; onDismiss() },
+                        onDismiss = onDismiss
+                    )
+                }
+                SettingsSheet.WEIGHT -> {
+                    val kg = ui.profile?.weightKg ?: 70.0
+                    WeightSheet(
+                        titleText = stringResource(R.string.sheet_weight),
+                        current = kg,
+                        useMetric = ui.weightMetric,
+                        onUnitChange = { metric -> vm.setWeightUnit(if (metric) "kg" else "lbs") },
+                        onSave = { newKg -> vm.saveCurrentWeight(newKg); onDismiss() },
+                        onDismiss = onDismiss
+                    )
+                }
+                SettingsSheet.BODY_FAT -> BodyFatSheet(
+                    current = ui.profile?.bodyFatPercentage,
+                    method = ui.profile?.bodyFatMethod,
+                    accuracyOverride = ui.profile?.bodyFatAccuracyPoints,
+                    // History + profile row via the repository (setBodyFatMeasurement):
+                    // a value stamps bodyFatUpdatedAt = now; null clears value, stamp,
+                    // and goal. Method + accuracy ride the same save.
+                    onSave = { bf, method, accuracy ->
+                        vm.setBodyFatMeasurement(bf, method, accuracy)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.GOAL_BODY_FAT -> GoalBodyFatSheet(
+                    currentGoal = ui.profile?.goalBodyFatPercentage,
+                    currentBodyFat = ui.profile?.bodyFatPercentage,
+                    // Goal body fat doesn't feed BMR/TDEE/macro math, so use
+                    // updateProfile (no recompute) — editing the goal must
+                    // never silently wipe the user's pinned macros.
+                    onSave = { goal -> vm.updateProfile { it.copy(goalBodyFatPercentage = goal) }; onDismiss() },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.ACTIVITY -> ListSheet(
+                    title = stringResource(R.string.sheet_activity_level),
+                    items = ActivityLevel.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    subtitle = { stringResource(it.subtitleRes) },
+                    selected = { it == ui.profile?.activityLevel },
+                    onSelect = { a -> vm.updateProfile { it.copy(activityLevel = a) }; onDismiss() },
+                    icon = { activityIcon(it) }
+                )
+                SettingsSheet.GOAL -> ListSheet(
+                    title = stringResource(R.string.sheet_goal),
+                    items = WeightGoal.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.profile?.goal },
+                    icon = { goalIcon(it) },
+                    onSelect = { g ->
+                        // Mirrors iOS ContentView.swift profile.goal onChange, then applies
+                        // formula calories/macros for the new goal (UserProfile.withGoal).
+                        vm.updateProfile { it.withGoal(g) }
+                        onDismiss()
+                    }
+                )
+                SettingsSheet.DIET_MODE -> ListSheet(
+                    title = stringResource(R.string.sheet_diet_mode),
+                    items = DietMode.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.profile?.dietMode },
+                    subtitle = { if (it == DietMode.KETO) stringResource(R.string.diet_mode_beta_note) else null },
+                    onSelect = { mode -> vm.setDietMode(mode); onDismiss() },
+                    icon = {
+                        when (it) {
+                            DietMode.STANDARD -> Icons.Outlined.Restaurant
+                            DietMode.KETO -> Icons.Outlined.LocalFireDepartment
+                        }
+                    }
+                )
+                SettingsSheet.DIET_CARB_MODE -> ListSheet(
+                    title = stringResource(R.string.sheet_keto_carb_mode),
+                    items = KetoCarbMode.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.profile?.ketoCarbMode },
+                    subtitle = {
+                        when (it) {
+                            KetoCarbMode.ADAPTIVE -> stringResource(R.string.keto_carb_mode_adaptive_subtitle)
+                            KetoCarbMode.MANUAL -> stringResource(R.string.keto_carb_mode_manual_subtitle)
+                        }
+                    },
+                    onSelect = { mode -> vm.setKetoCarbMode(mode); onDismiss() },
+                    icon = {
+                        when (it) {
+                            KetoCarbMode.ADAPTIVE -> Icons.Outlined.AutoAwesome
+                            KetoCarbMode.MANUAL -> Icons.Outlined.Tune
+                        }
+                    }
+                )
+                SettingsSheet.DIET_CARB_TARGET -> NutritionPickerSheet(
+                    label = stringResource(R.string.settings_keto_net_carbs),
+                    unit = stringResource(R.string.unit_g),
+                    currentValue = (ui.profile?.ketoCarbManualTarget ?: ui.profile?.ketoActiveCarbTarget)
+                        ?: KetoCarbRecommendationService.MIN_NET_CARBS_G,
+                    range = KetoCarbRecommendationService.MIN_NET_CARBS_G..KetoCarbRecommendationService.MAX_NET_CARBS_G,
+                    step = 1,
+                    onSave = { grams ->
+                        vm.setKetoCarbMode(KetoCarbMode.MANUAL)
+                        vm.setKetoCarbManualTarget(grams)
+                        onDismiss()
+                    },
+                    onResetToAuto = {
+                        vm.setKetoCarbMode(KetoCarbMode.ADAPTIVE)
+                        vm.setKetoCarbManualTarget(null)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.GOAL_WEIGHT -> {
+                    val kg = ui.profile?.goalWeightKg ?: (ui.profile?.weightKg ?: 70.0)
+                    WeightSheet(
+                        titleText = stringResource(R.string.sheet_target_weight),
+                        current = kg,
+                        useMetric = ui.weightMetric,
+                        onUnitChange = { metric -> vm.setWeightUnit(if (metric) "kg" else "lbs") },
+                        onSave = { newKg ->
+                            // Mirrors iOS ContentView.swift case .editGoalWeight: a Lose goal
+                            // requires target < current weight; a Gain goal requires target >
+                            // current weight. Reject mismatched targets with an alert instead
+                            // of silently saving an unreachable goal.
+                            val p = ui.profile
+                            val current = p?.weightKg
+                            val invalid = p != null && current != null && (
+                                (p.goal == WeightGoal.LOSE && newKg >= current) ||
+                                (p.goal == WeightGoal.GAIN && newKg <= current)
+                            )
+                            if (invalid) {
+                                onInvalidGoalWeight(
+                                    if (p!!.goal == WeightGoal.LOSE)
+                                        invalidLoseMsg
+                                    else
+                                        invalidGainMsg
+                                )
+                            } else {
+                                vm.updateProfile { it.copy(goalWeightKg = newKg) }
+                                onDismiss()
+                            }
+                        },
+                        onDismiss = onDismiss
+                    )
+                }
+                SettingsSheet.GOAL_SPEED -> GoalSpeedSheet(
+                    current = ui.profile?.weeklyChangeKg ?: 0.5,
+                    goal = ui.profile?.goal ?: WeightGoal.MAINTAIN,
+                    useMetric = ui.weightMetric,
+                    onSave = { kg -> vm.updateProfile { it.copy(weeklyChangeKg = kg) }; onDismiss() }
+                )
+                SettingsSheet.BIRTHDAY -> BirthdaySheet(
+                    current = ui.profile?.birthday ?: Instant.now(),
+                    onSave = { newInstant ->
+                        vm.updateProfile { it.copy(birthday = newInstant) }
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                // Global height+weight unit switch, mirrors onboarding's single
+                // Metric/Imperial toggle (heightUnit + weightUnit move together).
+                SettingsSheet.UNITS -> ListSheet(
+                    title = stringResource(R.string.settings_units),
+                    items = listOf(true, false),
+                    label = { metric ->
+                        stringResource(
+                            if (metric) R.string.onboarding_metric else R.string.onboarding_imperial
+                        )
+                    },
+                    selected = { ui.heightMetric && ui.weightMetric },
+                    onSelect = { metric ->
+                        vm.setHeightUnit(if (metric) "cm" else "ftin")
+                        vm.setWeightUnit(if (metric) "kg" else "lbs")
+                        onDismiss()
+                    },
+                    icon = { if (it) Icons.Outlined.Straighten else Icons.Outlined.Speed },
+                )
+                SettingsSheet.ENERGY_UNIT -> ListSheet(
+                    title = stringResource(R.string.settings_energy_unit),
+                    items = listOf("kcal", "kj"),
+                    label = { raw ->
+                        stringResource(if (raw == "kj") R.string.unit_kj else R.string.unit_kcal)
+                    },
+                    selected = { it == ui.energyUnit },
+                    onSelect = { vm.setEnergyUnit(it); onDismiss() },
+                    icon = { _ -> Icons.Outlined.LocalFireDepartment },
+                )
+                SettingsSheet.APPEARANCE -> ListSheet(
+                    title = stringResource(R.string.sheet_appearance),
+                    items = listOf(
+                        "system" to stringResource(R.string.settings_appearance_system),
+                        "light" to stringResource(R.string.settings_appearance_light),
+                        "dark" to stringResource(R.string.settings_appearance_dark),
+                        "oled" to stringResource(R.string.settings_appearance_oled)
+                    ),
+                    label = { it.second },
+                    selected = { it.first == ui.appearanceMode },
+                    onSelect = { vm.setAppearanceMode(it.first); onDismiss() },
+                    icon = { appearanceIcon(it.first) }
+                )
+                // Single-choice picker like Appearance/Language, but with a color
+                // swatch per option instead of a vector icon (was an inline
+                // dropdown on the row — same interaction, two patterns).
+                SettingsSheet.THEME_COLOR -> ListSheet(
+                    title = stringResource(R.string.sheet_theme_color),
+                    items = AppThemeColor.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.appThemeColor },
+                    onSelect = { vm.setAppThemeColor(it); onDismiss() },
+                    leading = { ThemeColorSwatch(it, Modifier.size(22.dp)) },
+                    footer = stringResource(R.string.sheet_theme_color_footer),
+                )
+                SettingsSheet.LANGUAGE -> ListSheet(
+                    title = stringResource(R.string.sheet_language),
+                    items = listOf(
+                        "" to stringResource(R.string.settings_language_system),
+                        "ar" to "Arabic (العربية)",
+                        "az" to "Azerbaijani (Azərbaycan)",
+                        "de" to "German (Deutsch)",
+                        "es" to "Spanish (Español)",
+                        "fr" to "French (Français)",
+                        "hi" to "Hindi (हिन्दी)",
+                        "it" to "Italian (Italiano)",
+                        "ja" to "Japanese (日本語)",
+                        "ko" to "Korean (한국어)",
+                        "nl" to "Dutch (Nederlands)",
+                        "pt-BR" to "Portuguese (Português)",
+                        "ro" to "Romanian (Română)",
+                        "ru" to "Russian (Русский)",
+                        "uk" to "Ukrainian (Українська)",
+                        "zh-CN" to "Chinese (简体中文)"
+                    ),
+                    label = { it.second },
+                    selected = { it.first == ui.appLanguage },
+                    onSelect = { vm.setAppLanguage(it.first); onDismiss() },
+                    icon = { Icons.Outlined.Language }
+                )
+                SettingsSheet.FOOD_LOG_SORT -> ListSheet(
+                    title = stringResource(R.string.settings_food_log_sort),
+                    items = FoodLogSortOrder.values().toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.foodLogSortOrder },
+                    onSelect = { vm.setFoodLogSortOrder(it); onDismiss() }
+                )
+                SettingsSheet.WEEK_START -> ListSheet(
+                    title = stringResource(R.string.sheet_week_starts),
+                    items = app.chompass.models.WeekStartDay.entries.toList(),
+                    label = { stringResource(it.displayNameRes) },
+                    selected = { it == ui.weekStartDay },
+                    onSelect = { vm.setWeekStartDay(it); onDismiss() }
+                )
+                SettingsSheet.PROGRESS_DEFAULT_RANGE -> ListSheet(
+                    title = stringResource(R.string.settings_progress_default_range),
+                    items = app.chompass.ui.progress.TimeRange.entries.toList(),
+                    label = { stringResource(it.labelRes) },
+                    selected = { it.storageId == ui.progressDefaultRangeId },
+                    onSelect = { vm.setProgressDefaultRangeId(it.storageId); onDismiss() }
+                )
+                SettingsSheet.MEAL_TIMES -> MealTimesSheet(
+                    current = ui.mealCatalog,
+                    onDirtyChange = { mealsDirty = it },
+                    onSave = {
+                        mealsDirty = false
+                        vm.setMealCatalog(it)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.WATER_GOAL -> WaterGoalSheet(
+                    current = ui.waterDailyGoalMl,
+                    onSave = {
+                        vm.setWaterDailyGoalMl(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.WATER_QUICK_PRESETS -> WaterQuickPresetsSheet(
+                    current = ui.waterQuickPresetsMl,
+                    useMetric = ui.weightMetric,
+                    onSave = {
+                        vm.setWaterQuickPresetsMl(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.NICOTINE_LIMIT -> NicotineLimitSheet(
+                    current = ui.nicotineDailyLimit,
+                    onSave = {
+                        vm.setNicotineDailyLimit(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.CAFFEINE_LIMIT -> CaffeineLimitSheet(
+                    current = ui.optionalNutrientGoals.caffeine,
+                    onSave = {
+                        vm.setOptionalNutrientGoals(ui.optionalNutrientGoals.withValue(OptionalNutrient.CAFFEINE, it))
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FASTING_GOAL -> FastingGoalSheet(
+                    fastHours = ui.fastingGoalHours,
+                    eatHours = ui.fastingEatHours,
+                    onSave = { fast, eat ->
+                        vm.setFastingGoalHours(fast)
+                        vm.setFastingEatHours(eat)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FASTING_START_TIME -> FastingStartTimeSheet(
+                    hour = ui.fastingStartHour,
+                    minute = ui.fastingStartMinute,
+                    onSave = { hour, minute ->
+                        vm.setFastingStartTime(hour, minute)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FASTING_END_LEAD -> FastingReminderLeadSheet(
+                    title = stringResource(R.string.settings_fasting_end_reminder),
+                    current = ui.fastingEndReminderLeadMinutes,
+                    onSave = {
+                        vm.setFastingEndReminderLeadMinutes(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FASTING_START_LEAD -> FastingReminderLeadSheet(
+                    title = stringResource(R.string.settings_fasting_start_reminder),
+                    current = ui.fastingStartReminderLeadMinutes,
+                    onSave = {
+                        vm.setFastingStartReminderLeadMinutes(it)
+                        onDismiss()
+                    },
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.WATER_DYNAMIC_BASE -> ListSheet(
+                    title = stringResource(R.string.settings_water_dynamic_base),
+                    items = listOf(
+                        WaterGoalCalculator.BASE_SOURCE_WEIGHT to stringResource(R.string.settings_water_dynamic_base_weight),
+                        WaterGoalCalculator.BASE_SOURCE_MANUAL to stringResource(R.string.settings_water_dynamic_base_manual),
+                    ),
+                    label = { it.second },
+                    selected = { it.first == ui.waterBaseSource },
+                    onSelect = {
+                        vm.setWaterBaseSource(it.first)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.WATER_MANUAL_TEMP -> WaterManualTempSheet(
+                    current = ui.waterManualTempC,
+                    onSave = {
+                        vm.setWaterManualTempC(it)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.WEATHER_SOURCE -> ListSheet(
+                    title = stringResource(R.string.settings_weather_source),
+                    items = listOf(
+                        WeatherRepository.SOURCE_MANUAL to stringResource(R.string.settings_weather_source_manual),
+                        WeatherRepository.SOURCE_OPEN_METEO to stringResource(R.string.settings_weather_source_meteo),
+                    ),
+                    label = { it.second },
+                    subtitle = { option ->
+                        when (option.first) {
+                            WeatherRepository.SOURCE_MANUAL -> stringResource(R.string.settings_weather_source_manual_sub)
+                            else -> stringResource(R.string.settings_weather_source_meteo_sub)
+                        }
+                    },
+                    selected = { it.first == ui.weatherSource },
+                    onSelect = {
+                        vm.setWeatherSource(it.first)
+                        onDismiss()
+                    },
+                    footer = stringResource(R.string.settings_weather_source_help),
+                )
+                SettingsSheet.WEATHER_OM_CITY -> OpenMeteoCitySheet(
+                    currentCity = ui.weatherOmCity,
+                    currentHighC = ui.weatherOmHighC,
+                    updatedAtMillis = ui.weatherOmUpdatedAtMillis,
+                    manualHighC = ui.waterManualTempC,
+                    onSearch = { vm.searchWeatherCities(it) },
+                    onSelect = {
+                        vm.selectWeatherCity(it)
+                        onDismiss()
+                    },
+                    onRefresh = {
+                        vm.refreshWeatherNow()
+                        onDismiss()
+                    },
+                    onClose = onDismiss,
+                )
+                SettingsSheet.WATER_REMINDER_PLAN -> WaterReminderPlanSheet(
+                    currentStartMinutes = ui.waterAwakeStartMinutes,
+                    currentEndMinutes = ui.waterAwakeEndMinutes,
+                    currentCupMl = ui.waterCupSizeMl,
+                    goalMl = ui.waterDynamicGoalPreview?.netGoalMl ?: ui.waterDailyGoalMl,
+                    onSave = { start, end, cup ->
+                        vm.setWaterReminderPlan(start, end, cup)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.DAILY_SUMMARY_TIME -> DailySummaryTimeSheet(
+                    title = stringResource(R.string.settings_notif_daily_summary_time),
+                    hour = ui.dailySummaryHour,
+                    minute = ui.dailySummaryMinute,
+                    onSave = { hour, minute ->
+                        vm.setDailySummaryTime(hour, minute)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.FOOD_REMINDER_TIME -> DailySummaryTimeSheet(
+                    title = stringResource(R.string.settings_notif_weight_reminder_time),
+                    hour = ui.streakReminderHour,
+                    minute = ui.streakReminderMinute,
+                    onSave = { hour, minute ->
+                        vm.setStreakReminderTime(hour, minute)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.WEIGHT_REMINDER_TIME -> DailySummaryTimeSheet(
+                    title = stringResource(R.string.settings_notif_weight_reminder_time),
+                    hour = ui.weightReminderHour,
+                    minute = ui.weightReminderMinute,
+                    onSave = { hour, minute ->
+                        vm.setWeightReminderTime(hour, minute)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.BODY_FAT_REMINDER_TIME -> DailySummaryTimeSheet(
+                    title = stringResource(R.string.settings_notif_weight_reminder_time),
+                    hour = ui.bodyFatReminderHour,
+                    minute = ui.bodyFatReminderMinute,
+                    onSave = { hour, minute ->
+                        vm.setBodyFatReminderTime(hour, minute)
+                        onDismiss()
+                    },
+                )
+                SettingsSheet.CALORIES -> {
+                    val p = ui.profile
+                    val floor = p?.let { CalorieSafety.floorKcal(it.bmr) } ?: CalorieSafety.ABSOLUTE_FLOOR_KCAL
+                    val ceiling = p?.let { CalorieSafety.ceilingKcal(it.tdee, floor) }
+                        ?: CalorieSafety.PARSER_CEILING_KCAL
+                    val unit = LocalEnergyUnit.current
+                    NutritionPickerSheet(
+                        label = stringResource(R.string.macro_calories), unit = energyUnitLabel(),
+                        currentValue = EnergyFormat.quantity(p?.effectiveCalories ?: 2000, unit),
+                        range = EnergyFormat.quantity(floor, unit)..EnergyFormat.quantity(ceiling, unit),
+                        step = EnergyFormat.wheelStep(50, unit),
+                        confirmBelow = EnergyFormat.quantity(floor, unit),
+                        confirmBelowTitle = stringResource(R.string.settings_calorie_below_floor_title),
+                        confirmBelowMessage = stringResource(R.string.settings_calorie_below_floor_message, energyText(1200)),
+                        onSave = { v ->
+                            vm.editCaloriesGoal(EnergyFormat.toKcal(v, unit))
+                            onDismiss()
+                        },
+                        onResetToAuto = if (p?.caloriesLocked == true) {
+                            { vm.resetCaloriesLock(); onDismiss() }
+                        } else null,
+                        onDismiss = onDismiss
+                    )
+                }
+                SettingsSheet.PROTEIN -> ProteinGoalSheet(
+                    profile = ui.profile,
+                    onModeChange = { mode ->
+                        vm.setProteinTargetMode(mode)
+                    },
+                    onSaveGrams = { v ->
+                        vm.editMacroGoal(AutoBalanceMacro.PROTEIN, v) { onRebalanceBlocked() }
+                        onDismiss()
+                    },
+                    onResetToAuto = if (ui.profile?.isMacroLocked(AutoBalanceMacro.PROTEIN) == true ||
+                        (ui.profile?.proteinTargetMode?.usesRate == true && ui.profile?.proteinGramsPerKg != null)
+                    ) {
+                        {
+                            vm.resetMacroLock(AutoBalanceMacro.PROTEIN)
+                            vm.setProteinTargetMode(ProteinTargetMode.GRAMS_PER_DAY)
+                            onDismiss()
+                        }
+                    } else null,
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.CARBS -> NutritionPickerSheet(
+                    label = stringResource(R.string.macro_carbs), unit = stringResource(R.string.unit_g),
+                    currentValue = ui.profile?.effectiveCarbs ?: 0,
+                    range = 0..800, step = 5,
+                    accentColor = AppColors.Carbs,
+                    onSave = { v ->
+                        vm.editMacroGoal(AutoBalanceMacro.CARBS, v) { onRebalanceBlocked() }
+                        onDismiss()
+                    },
+                    onResetToAuto = if (ui.profile?.isMacroLocked(AutoBalanceMacro.CARBS) == true) {
+                        { vm.resetMacroLock(AutoBalanceMacro.CARBS); onDismiss() }
+                    } else null,
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.FAT -> NutritionPickerSheet(
+                    label = stringResource(R.string.macro_fat), unit = stringResource(R.string.unit_g),
+                    currentValue = ui.profile?.effectiveFat ?: 0,
+                    range = 10..300, step = 5,
+                    accentColor = AppColors.Fat,
+                    onSave = { v ->
+                        vm.editMacroGoal(AutoBalanceMacro.FAT, v) { onRebalanceBlocked() }
+                        onDismiss()
+                    },
+                    onResetToAuto = if (ui.profile?.isMacroLocked(AutoBalanceMacro.FAT) == true) {
+                        { vm.resetMacroLock(AutoBalanceMacro.FAT); onDismiss() }
+                    } else null,
+                    onDismiss = onDismiss
+                )
+                SettingsSheet.OPTIONAL_NUTRIENTS -> OptionalNutrientGoalsSheet(
+                    goals = ui.optionalNutrientGoals,
+                    onChange = vm::setOptionalNutrientGoals,
+                    onDismiss = onDismiss
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+}
+
+@Composable
+internal fun ServingUnitHeuristicsSheet(
+    settings: HeuristicServingUnitSettings,
+    onToggle: (String, Boolean) -> Unit,
+    onGramsPerUnitChange: (String, Double?) -> Unit
+) {
+    Text(
+        stringResource(R.string.sheet_serving_unit_heuristics),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.serving_unit_heuristics_footer),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+    )
+    Spacer(Modifier.height(8.dp))
+    LazyColumn(
+        Modifier.fillMaxWidth().heightIn(max = 480.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        items(ServingUnitHeuristics.RULES, key = { it.id }) { rule ->
+            ServingUnitHeuristicRuleRow(
+                rule = rule,
+                override = settings.overrides[rule.id],
+                onToggle = { onToggle(rule.id, it) },
+                onGramsPerUnitChange = { onGramsPerUnitChange(rule.id, it) }
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ServingUnitHeuristicRuleRow(
+    rule: ServingUnitHeuristicRule,
+    override: HeuristicRuleOverride?,
+    onToggle: (Boolean) -> Unit,
+    onGramsPerUnitChange: (Double?) -> Unit
+) {
+    val enabled = override?.enabled ?: true
+    val currentGrams = override?.gramsPerUnit ?: rule.defaultGramsPerUnit
+    var grams by remember(rule.id, currentGrams) { mutableStateOf(currentGrams) }
+    Column(Modifier.fillMaxWidth()) {
+        ToggleRow(label = rule.label, checked = enabled, onChange = onToggle)
+        if (enabled) {
+            DecimalWheelPicker(
+                value = grams,
+                onValueChange = { grams = it; onGramsPerUnitChange(it) },
+                min = 0.1,
+                max = 1000.0,
+                step = 0.1,
+                unit = stringResource(R.string.unit_g),
+            )
+            if (override?.gramsPerUnit != null) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { grams = rule.defaultGramsPerUnit; onGramsPerUnitChange(null) }) {
+                        Text(stringResource(R.string.serving_unit_heuristics_reset), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+internal fun OptionalNutrientGoalsSheet(
+    goals: OptionalNutrientGoals,
+    onChange: (OptionalNutrientGoals) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var editing by remember { mutableStateOf<OptionalNutrient?>(null) }
+    val nutrient = editing
+
+    if (nutrient != null) {
+        TextButton(onClick = { editing = null }) {
+            Text(stringResource(R.string.settings_other_nutrients), color = AppColors.Calorie)
+        }
+        Spacer(Modifier.height(4.dp))
+        NutritionPickerSheet(
+            label = stringResource(nutrient.displayNameRes),
+            unit = stringResource(nutrient.unitRes),
+            currentValue = goals.valueFor(nutrient),
+            range = nutrient.goalRange,
+            step = nutrient.goalStep,
+            accentColor = nutrient.macroAccentColor() ?: AppColors.Calorie,
+            confirmAbove = nutrient.softMax,
+            onSave = { value ->
+                onChange(goals.withValue(nutrient, value))
+                editing = null
+            },
+            onDismiss = onDismiss
+        )
+        return
+    }
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.settings_other_nutrient_goals), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done), color = AppColors.Calorie) }
+    }
+    Text(
+        "Separate from calorie, protein, carbs, and fat targets.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+    )
+    Spacer(Modifier.height(12.dp))
+    LazyColumn(
+        Modifier.fillMaxWidth().heightIn(max = 420.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(OptionalNutrient.values().toList()) { item ->
+            OptionalNutrientGoalRow(
+                nutrient = item,
+                value = goals.valueFor(item),
+                onClick = { editing = item }
+            )
+        }
+    }
+    TextButton(
+        onClick = { onChange(OptionalNutrientGoals.Default) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(stringResource(R.string.settings_reset_defaults), color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted))
+    }
+}
+
+@Composable
+internal fun OptionalNutrientGoalRow(
+    nutrient: OptionalNutrient,
+    value: Int,
+    onClick: () -> Unit
+) {
+    val accent = nutrient.macroAccentColor()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ChompassIconBubble(
+            Icons.Outlined.DataUsage,
+            size = 22.dp,
+            iconSize = 15.dp,
+            tint = accent ?: MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(nutrient.displayNameRes),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = accent ?: MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                stringResource(nutrient.unitRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Faint)
+            )
+        }
+        Text(
+            "$value${nutrient.unit}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = accent?.copy(alpha = AppTextOpacity.Strong) ?: MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+        )
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Disabled),
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}

@@ -1,0 +1,335 @@
+package app.chompass.data
+
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import app.chompass.models.AIProvider
+import app.chompass.models.SpeechProvider
+import java.time.YearMonth
+
+internal const val FOOD_ENTRIES_BUCKET_PREFIX = "foodEntries_"
+
+internal object Keys {
+        val USER_PROFILE = stringPreferencesKey("userProfile")
+        /** Per-day goal journal (Codeberg #60, MACRO-CYCLE-D); see models/GoalJournal.kt. */
+        val GOAL_JOURNAL = stringPreferencesKey("goalJournal")
+        val LAST_RECALC_GOAL_SIGNATURE = stringPreferencesKey("lastRecalcGoalSignature")
+        /** Version of the goalInputSignature format the stored baseline was captured with.
+         *  Bumped when the signature format changes so existing baselines are re-captured
+         *  once instead of nudging every existing user to recalculate. 0 = pre-versioning. */
+        val LAST_RECALC_SIGNATURE_VERSION = intPreferencesKey("lastRecalcSignatureVersion")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("hasCompletedOnboarding")
+        val ONBOARDING_DRAFT = stringPreferencesKey("onboardingDraft")
+        /** Release cleartext opt-in for user-entered AI endpoints (issue #8 follow-up, design doc D2 Option B). */
+        val ALLOW_INSECURE_HTTP = booleanPreferencesKey("allowInsecureHttp")
+        val HAS_SEEN_CAMERA_SCALE_TIP = booleanPreferencesKey("hasSeenCameraScaleTip")
+        /** One-time "backup restored" notice after an auto-backup restore replaced the datastore (Codeberg #60). */
+        val RESTORED_BACKUP_NOTICE_SHOWN = booleanPreferencesKey("restoredBackupNoticeShown")
+        /** Epoch-millis of first app launch; gates settings Suggestions so new users aren't nagged. */
+        val FIRST_LAUNCH_AT = longPreferencesKey("firstLaunchAt")
+        /** Dismissed settings-suggestion ids ("water_tracking", "adaptive_goals", ...). */
+        val DISMISSED_SUGGESTIONS = stringSetPreferencesKey("dismissedSuggestionIds")
+        /** Epoch day the AI fill-missing Home banner was last shown (at most once per day). */
+        val FILL_MISSING_BANNER_LAST_SHOWN_DAY = longPreferencesKey("fillMissingBannerLastShownDay")
+        /** Dismissed fill-missing scan signatures (sticky per scan shape). */
+        val FILL_MISSING_DISMISSED_SIGNATURES = stringSetPreferencesKey("fillMissingDismissedScanSignatures")
+        /** Forever opt-out of the AI fill-missing Home banner (sheet action / Settings). */
+        val FILL_MISSING_BANNER_DISABLED = booleanPreferencesKey("fillMissingBannerDisabled")
+        val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notificationsEnabled")
+        val STREAK_ENABLED = booleanPreferencesKey("streakReminderEnabled")
+        val STREAK_HOUR = intPreferencesKey("streakReminderHour")
+        val STREAK_MINUTE = intPreferencesKey("streakReminderMinute")
+        val DAILY_ENABLED = booleanPreferencesKey("dailySummaryEnabled")
+        val DAILY_HOUR = intPreferencesKey("dailySummaryHour")
+        val DAILY_MINUTE = intPreferencesKey("dailySummaryMinute")
+        val WEIGHT_REMINDER_ENABLED = booleanPreferencesKey("weightReminderEnabled")
+        val WEIGHT_REMINDER_HOUR = intPreferencesKey("weightReminderHour")
+        val WEIGHT_REMINDER_MINUTE = intPreferencesKey("weightReminderMinute")
+        val BODY_FAT_REMINDER_ENABLED = booleanPreferencesKey("bodyFatReminderEnabled")
+        val BODY_FAT_REMINDER_HOUR = intPreferencesKey("bodyFatReminderHour")
+        val BODY_FAT_REMINDER_MINUTE = intPreferencesKey("bodyFatReminderMinute")
+        val GOAL_REACHED_NOTIFICATIONS_ENABLED = booleanPreferencesKey("goalReachedNotificationsEnabled")
+        val APP_UPDATE_NOTIFICATIONS_ENABLED = booleanPreferencesKey("appUpdateNotificationsEnabled")
+        val WATER_TRACKING_ENABLED = booleanPreferencesKey("waterTrackingEnabled")
+        val WATER_DAILY_GOAL_ML = intPreferencesKey("waterDailyGoalMl")
+        val WATER_REMINDER_ENABLED = booleanPreferencesKey("waterReminderEnabled")
+        val WATER_REMINDER_HOUR = intPreferencesKey("waterReminderHour")
+        val WATER_REMINDER_MINUTE = intPreferencesKey("waterReminderMinute")
+        // Dynamic goal + adaptive reminders (issue #3); see docs/local/WATER_DYNAMIC_GOAL_DESIGN.md.
+        val WATER_DYNAMIC_ENABLED = booleanPreferencesKey("waterDynamicEnabled")
+        /** Base-goal source: WaterGoalCalculator.BASE_SOURCE_WEIGHT or _MANUAL. */
+        val WATER_BASE_SOURCE = stringPreferencesKey("waterBaseSource")
+        /** Manual expected high °C (no location permission). */
+        val WATER_MANUAL_TEMP_C = intPreferencesKey("waterManualTempC")
+        val WATER_USE_PROFILE_ACTIVITY = booleanPreferencesKey("waterUseProfileActivity")
+        val WATER_FOOD_WATER_ENABLED = booleanPreferencesKey("waterFoodWaterEnabled")
+        /** Drinking-window start/end (minutes-of-day via hour+minute pairs). */
+        val WATER_AWAKE_START_HOUR = intPreferencesKey("waterAwakeStartHour")
+        val WATER_AWAKE_START_MINUTE = intPreferencesKey("waterAwakeStartMinute")
+        val WATER_AWAKE_END_HOUR = intPreferencesKey("waterAwakeEndHour")
+        val WATER_AWAKE_END_MINUTE = intPreferencesKey("waterAwakeEndMinute")
+        /** Standard cup for the reminder-interval math (independent of quick presets). */
+        val WATER_CUP_SIZE_ML = intPreferencesKey("waterCupSizeMl")
+        // Weather input for the dynamic water goal (issue #3 Phase 5); see
+        // docs/WEATHER_INTEGRATION_DESIGN.md. Temperature sources: manual °C
+        // wheel or Open-Meteo (city forecast, no key/account/permission).
+        /** Temperature source: WeatherRepository.SOURCE_MANUAL / _OPEN_METEO. */
+        val WEATHER_SOURCE = stringPreferencesKey("weatherSource")
+        /** Selected Open-Meteo city (JSON of OmCity); null = none chosen yet. */
+        val WEATHER_OM_CITY = stringPreferencesKey("weatherOmCity")
+        /** Today's high °C from the last successful Open-Meteo fetch. */
+        val WEATHER_OM_HIGH_C = intPreferencesKey("weatherOmHighC")
+        /** Local date (yyyy-MM-dd) the Open-Meteo high applies to; stale when != today. */
+        val WEATHER_OM_DATE = stringPreferencesKey("weatherOmDate")
+        /** Epoch-millis of the last successful Open-Meteo fetch. */
+        val WEATHER_OM_UPDATED_AT = longPreferencesKey("weatherOmUpdatedAt")
+        val WATER_QUICK_PRESETS_ML = stringPreferencesKey("waterQuickPresetsMl")
+        val WATER_ENTRIES = stringPreferencesKey("waterEntries")
+        // Optional nicotine tracker (docs/local/PLAN_NICOTINE_TRACKER.md).
+        val NICOTINE_TRACKING_ENABLED = booleanPreferencesKey("nicotineTrackingEnabled")
+        val NICOTINE_DAILY_LIMIT = intPreferencesKey("nicotineDailyLimit")
+        val NICOTINE_QUICK_KINDS = stringPreferencesKey("nicotineQuickKinds")
+        // Optional daily notes (docs/local/PLAN_DAILY_NOTES.md); default off.
+        val DAILY_NOTES_ENABLED = booleanPreferencesKey("dailyNotesEnabled")
+        // Per-day not-tracked flags (#106): ISO dates + optional blind kcal map.
+        val UNTRACKED_DAYS = stringSetPreferencesKey("untrackedDays")
+        val UNTRACKED_KCAL_BY_DAY = stringPreferencesKey("untrackedKcalByDayJson")
+        // Suggest meals by time of day; default on. Off hides the Meals editor.
+        val MEAL_TIMES_ENABLED = booleanPreferencesKey("mealTimesEnabled")
+        // Optional meal planning mode; default off.
+        val MEAL_PLANNING_ENABLED = booleanPreferencesKey("mealPlanningEnabled")
+        // Optional caffeine tracker (device-pass revision); default off.
+        val CAFFEINE_TRACKING_ENABLED = booleanPreferencesKey("caffeineTrackingEnabled")
+        val CAFFEINE_DAILY_LIMIT_MG = intPreferencesKey("caffeineDailyLimitMg")
+        val CAFFEINE_QUICK_KINDS = stringPreferencesKey("caffeineQuickKinds")
+        // Tracker preset catalogs (custom/renamed caffeine + nicotine presets,
+        // #55 follow-up). Android-only: deliberately not in pref-defaults.json
+        // until the PWA implements its editor.
+        val CAFFEINE_PRESETS = stringPreferencesKey("caffeinePresetsJson")
+        val NICOTINE_PRESETS = stringPreferencesKey("nicotinePresetsJson")
+        val MANUAL_ACTIVE_ENTRIES = stringPreferencesKey("manualActiveEntries")
+        // Optional intermittent-fasting timer (docs/local/PLAN_FASTING_TRACKER.md).
+        // Session state is three scalars (state is a pure function of them).
+        val FASTING_ENABLED = booleanPreferencesKey("fastingEnabled")
+        val FASTING_GOAL_HOURS = intPreferencesKey("fastingGoalHours")
+        /** Eating-window length in hours (0 = not configured); completes the fast → eat cycle. */
+        val FASTING_EAT_HOURS = intPreferencesKey("fastingEatHours")
+        val FASTING_GOAL_NOTIFICATION_ENABLED = booleanPreferencesKey("fastingGoalNotificationEnabled")
+        /** Lead minutes for the break-fast nudge: fires this long before the fast ends. */
+        val FASTING_END_REMINDER_LEAD_MINUTES = intPreferencesKey("fastingEndReminderLeadMinutes")
+        /** Lead minutes for the start nudge: fires this long before the eating window closes. */
+        val FASTING_START_REMINDER_LEAD_MINUTES = intPreferencesKey("fastingStartReminderLeadMinutes")
+        /** Off by default; anchors to the open eating window when set. */
+        val FASTING_START_REMINDER_ENABLED = booleanPreferencesKey("fastingStartReminderEnabled")
+        val FASTING_STARTED_AT = longPreferencesKey("fastingStartedAt")
+        val FASTING_LAST_ENDED_AT = longPreferencesKey("fastingLastEndedAt")
+        val FASTING_LAST_FAST_STARTED_AT = longPreferencesKey("fastingLastFastStartedAt")
+        val FASTING_GOAL_REACHED_NOTIFIED = booleanPreferencesKey("fastingGoalReachedNotified")
+        /** The running fast was started by the auto-cycle (no manual buttons shown). */
+        val FASTING_AUTO_STARTED = booleanPreferencesKey("fastingAutoStarted")
+        /** Auto-cycle: fast starts when the eating window closes, ends at the goal. */
+        val FASTING_AUTO_WINDOWS = booleanPreferencesKey("fastingAutoWindows")
+        /** Daily fast-start clock time; anchors the auto-cycle and the start nudge. */
+        val FASTING_START_HOUR = intPreferencesKey("fastingStartHour")
+        val FASTING_START_MINUTE = intPreferencesKey("fastingStartMinute")
+        val LAST_NOTIFIED_UPDATE_VERSION = stringPreferencesKey("lastNotifiedUpdateVersion")
+        val HEALTH_CONNECT_ENABLED = booleanPreferencesKey("healthConnectEnabled")
+        val HEALTH_TYPES_VERSION = intPreferencesKey("healthTypesVersion")
+        val HEALTH_CHANGES_TOKEN = stringPreferencesKey("healthChangesToken")
+        val HEALTH_CHANGES_TOKEN_TYPES = stringPreferencesKey("healthChangesTokenTypes")
+        val HEALTH_FOOD_RESTORE_DONE = booleanPreferencesKey("healthFoodRestoreDone")
+        val HEALTH_HYDRATION_RESTORE_DONE = booleanPreferencesKey("healthHydrationRestoreDone")
+        val PENDING_NUTRITION_HEALTH_WRITES = stringPreferencesKey("pendingNutritionHealthWrites")
+        /** Ids of user-deleted weight/body-fat entries. Health Connect re-imports drop
+         *  records mapping onto these, so a deleted reading cannot resurrect on the
+         *  next backfill (upstream d03be0ea). Comma-joined UUIDs (a UUID never
+         *  contains a comma), insertion order, capped at 1000 per kind. */
+        val HEALTH_DELETED_WEIGHT_IDS = stringPreferencesKey("healthDeletedWeightIds")
+        val HEALTH_DELETED_BODY_FAT_IDS = stringPreferencesKey("healthDeletedBodyFatIds")
+        val HEALTH_ENERGY_GOALS_ENABLED = booleanPreferencesKey("healthEnergyGoalsEnabled")
+        /** Measured Health Connect active kcal/day average used to split the Energy Burn goal
+         *  into a sedentary base for the ADD_ACTIVE home gauge. 0 = not available. */
+        val HEALTH_ENERGY_MEASURED_ACTIVE = intPreferencesKey("healthEnergyMeasuredActiveCalories")
+        /** Compact ISO-date → active kcal map (internal, never synced). Pruned to 60 days. */
+        val HEALTH_ENERGY_ACTIVE_BY_DAY = stringPreferencesKey("healthEnergyActiveByDayJson")
+        val HEALTH_BACKGROUND_SYNC_ENABLED = booleanPreferencesKey("healthBackgroundSyncEnabled")
+        val HEALTH_ENERGY_GOALS_PREVIOUS_TARGETS = stringPreferencesKey("healthEnergyGoalsPreviousTargets")
+        val HEALTH_ENERGY_GOALS_LAST_AUTO_REFRESH_DAY = stringPreferencesKey("healthEnergyGoalsLastAutoRefreshDay")
+        val ADAPTIVE_GOALS_ENABLED = booleanPreferencesKey("adaptiveGoalsEnabled")
+        val REVIEW_PROMPTED_AFTER_FIRST_LOG = booleanPreferencesKey("reviewPromptedAfterFirstLog")
+        val ADAPTIVE_GOALS_PREVIOUS_TARGETS = stringPreferencesKey("adaptiveGoalsPreviousTargets")
+        val ADAPTIVE_GOALS_LAST_CHECK_DAY = stringPreferencesKey("adaptiveGoalsLastCheckDay")
+        val USE_METRIC = booleanPreferencesKey("useMetric")
+        val HEIGHT_UNIT = stringPreferencesKey("heightUnit")
+        val WEIGHT_UNIT = stringPreferencesKey("weightUnit")
+        val ENERGY_UNIT = stringPreferencesKey("energyUnit")
+        val PREFER_GRAMS_BY_DEFAULT = booleanPreferencesKey("foodMeasurementPreferGramsByDefault")
+        val APPEARANCE_MODE = stringPreferencesKey("appearanceMode")
+        val APP_LANGUAGE = stringPreferencesKey("appLanguage")
+        /** Codeberg #20 (phase 1): View-only coach-tab toggle; default ON. */
+        val COACH_TAB_ENABLED = booleanPreferencesKey("coachTabEnabled")
+        /** Codeberg #20 (phase 2): master AI-features switch; default ON. When off,
+         *  no data is sent to any LLM provider and AI entry points are hidden. */
+        val AI_FEATURES_ENABLED = booleanPreferencesKey("aiFeaturesEnabled")
+        val APP_THEME_COLOR = stringPreferencesKey("appThemeColor")
+        /** Ignored. Former iOS frosted-glass toggle; stored values are left unread. */
+        val GLASS_BLUR_ENABLED = booleanPreferencesKey("glassBlurEnabled")
+        /** When ON the launcher icon stays the brand teal and never swaps activity aliases. */
+        val FIXED_LAUNCHER_ICON = booleanPreferencesKey("fixedLauncherIcon")
+        /** Codeberg #77: meal date/time uses the system pickers instead of wheels. */
+        val USE_SYSTEM_DATE_TIME_PICKERS = booleanPreferencesKey("useSystemDateTimePickers")
+        val WEEK_STARTS_MONDAY = booleanPreferencesKey("weekStartsOnMonday")
+        /** monday | sunday | saturday. When unset, [WEEK_STARTS_MONDAY] is the fallback. */
+        val WEEK_START_DAY = stringPreferencesKey("weekStartDay")
+        /** Factory / Settings default for Progress tab range chips (`1W`…`All`). */
+        val PROGRESS_DEFAULT_RANGE_ID = stringPreferencesKey("progressDefaultRangeId")
+        /** Last Progress range the user selected; null until first chip tap. */
+        val PROGRESS_LAST_RANGE_ID = stringPreferencesKey("progressLastRangeId")
+        /** Body-measurement sites with a trend plot on the Progress tab; empty = plots off. */
+        val PROGRESS_MEASUREMENT_SITES = stringSetPreferencesKey("progressMeasurementSites")
+        /** Unified body overlay chart series ("weight", "bodyfat", site ids); null = unset. */
+        val PROGRESS_OVERLAY_SERIES = stringSetPreferencesKey("progressOverlaySeries")
+        /** Calorie-card metric overlay: "off" | "weight" | "bodyfat"; null = unset. */
+        val PROGRESS_CALORIE_OVERLAY = stringPreferencesKey("progressCalorieOverlay")
+        /** Codeberg #75: Progress nutrient averages; default off. */
+        val PROGRESS_NUTRIENT_AVERAGES = booleanPreferencesKey("progressNutrientAverages")
+        /** Codeberg #75: which nutrients Progress averages (HomeTopNutrient storage keys, macros excluded). */
+        val PROGRESS_NUTRIENT_AVERAGES_SELECTION = stringSetPreferencesKey("progressNutrientAveragesSelection")
+
+        val MEAL_BREAKFAST_START = intPreferencesKey("mealBreakfastStart")
+        val MEAL_LUNCH_START = intPreferencesKey("mealLunchStart")
+        val MEAL_DINNER_START = intPreferencesKey("mealDinnerStart")
+        val MEAL_SNACK_START = intPreferencesKey("mealSnackStart")
+        val MEAL_CATALOG = stringPreferencesKey("mealCatalog")
+        val LAST_SAVED_MEALS_SEGMENT = stringPreferencesKey("lastRecentsSegment")
+        /** Recents tab sort: "recent" | "name" | "size". Local only. */
+        val LAST_SAVED_MEALS_SORT = stringPreferencesKey("lastSavedMealsSort")
+        val FOOD_LOG_SORT_ORDER = stringPreferencesKey("foodLogSortOrder")
+        val HOME_TOP_NUTRIENTS = stringPreferencesKey("homeTopNutrients")
+        val HOME_NUTRIENT_CARD_COUNT = intPreferencesKey("homeNutrientCardCount")
+        val HOME_SHOW_STEPS = booleanPreferencesKey("homeShowSteps")
+        val HOME_SLIM_FULL_NAMES = booleanPreferencesKey("homeSlimFullNames")
+        val HOME_SHOW_ACTIVE_CALORIES = booleanPreferencesKey("homeShowActiveCalories")
+        val HOME_STEP_GOAL = intPreferencesKey("homeStepGoal")
+        val HOME_CALORIE_DISPLAY_MODE = stringPreferencesKey("homeCalorieDisplayMode")
+        val HOME_CALORIE_FULL_CREDIT = booleanPreferencesKey("homeCalorieFullCredit")
+        val HOME_CALORIE_HERO_LAYOUT = stringPreferencesKey("homeCalorieHeroLayout")
+        val HOME_MACRO_CARD_LAYOUT = stringPreferencesKey("homeMacroCardLayout")
+        val HOME_FOOD_LOG_LAYOUT = stringPreferencesKey("homeFoodLogLayout")
+        val HOME_DISPLAY_LAYOUT_VERSION = intPreferencesKey("homeDisplayLayoutVersion")
+        val FOOD_LOG_MACRO_CHIPS = stringPreferencesKey("foodLogMacroChips")
+        val OPTIONAL_NUTRIENT_GOALS = stringPreferencesKey("optionalNutrientGoals")
+        val SELECTED_AI_PROVIDER = stringPreferencesKey("selectedAIProvider")
+        val SELECTED_AI_MODEL = stringPreferencesKey("selectedAIModel")
+        // -- AI profiles (named provider+model+key configs; legacy keys above are migration inputs only) --
+        val AI_PROFILES_JSON = stringPreferencesKey("aiProfilesJson")
+        val ACTIVE_AI_PROFILE_ID = stringPreferencesKey("activeAiProfileId")
+        val FALLBACK_AI_PROFILE_ID = stringPreferencesKey("fallbackAiProfileId")
+        /** Per-provider vision-model slot (upstream #195); empty = primary model handles images too. */
+        fun visionModel(provider: AIProvider): Preferences.Key<String> =
+            stringPreferencesKey("visionModel_${provider.name}")
+        fun customBaseUrl(provider: AIProvider): Preferences.Key<String> =
+            stringPreferencesKey("customBaseURL_${provider.name}")
+        /** Fallback-slot URL; separate from [customBaseUrl] so same-provider primary + fallback keep distinct endpoints. */
+        fun fallbackCustomBaseUrl(provider: AIProvider): Preferences.Key<String> =
+            stringPreferencesKey("customBaseURL_fallback_${provider.name}")
+        val MAX_RESPONSE_TOKENS = intPreferencesKey("maxResponseTokens")
+        val AI_READ_TIMEOUT_SECONDS = intPreferencesKey("aiReadTimeoutSeconds")
+        /** Goal-recalc prompt tier override (#123); missing = AUTO. */
+        val GOAL_RECALC_TIER = stringPreferencesKey("goalRecalcTier")
+        val SERVING_UNIT_INFERENCE_MODE = stringPreferencesKey("servingUnitInferenceMode")
+        val HEURISTIC_SERVING_UNIT_SETTINGS = stringPreferencesKey("heuristicServingUnitSettings")
+        val USER_CONTEXT = stringPreferencesKey("userContext")
+        val FALLBACK_ENABLED = booleanPreferencesKey("aiFallbackEnabled")
+        val FALLBACK_PROVIDER = stringPreferencesKey("selectedFallbackAIProvider")
+        val FALLBACK_MODEL = stringPreferencesKey("selectedFallbackAIModel")
+        val GEMINI_GOOGLE_SEARCH_ENABLED = booleanPreferencesKey("geminiGoogleSearchEnabled")
+        /** OpenRouter reasoning-effort setting; missing = AUTO (current behavior). */
+        val OPENROUTER_REASONING_EFFORT = stringPreferencesKey("openrouterReasoningEffort")
+        /**
+         * When true, photo staging does not require a text note before Analyze
+         * (user opted out after repeatedly skipping).
+         */
+        val SKIP_PHOTO_NOTE_PROMPT = booleanPreferencesKey("skipPhotoNotePrompt")
+        /** Consecutive photo analyzes submitted with an empty note while the prompt was on. */
+        val PHOTO_NOTE_SKIP_COUNT = intPreferencesKey("photoNoteSkipCount")
+        /**
+         * How many photo staging Analyzes the user has completed. Used to show
+         * the accuracy tip card for the first few entries, then collapse to Info.
+         */
+        val PHOTO_ACCURACY_GUIDE_COUNT = intPreferencesKey("photoAccuracyGuideCount")
+        /** Opt-in meal ingredient breakdown from AI (off for on-device / weak models). */
+        val MEAL_CONSTITUENTS_ENABLED = booleanPreferencesKey("mealConstituentsEnabled")
+        /**
+         * Per-source switches for the Add Food database search. All three
+         * default on: Open Food Facts is the one source a keystroke can put on
+         * the network, and switching it off is one tap on the databases
+         * heading. They gate searching only — a scanned barcode still resolves
+         * through Open Food Facts, and an already-logged entry keeps its source
+         * badge.
+         */
+        val FOOD_SEARCH_OFF_ENABLED = booleanPreferencesKey("foodSearchOpenFoodFactsEnabled")
+        val FOOD_SEARCH_USDA_ENABLED = booleanPreferencesKey("foodSearchUsdaEnabled")
+        val FOOD_SEARCH_SWISS_ENABLED = booleanPreferencesKey("foodSearchSwissEnabled")
+        val SELECTED_SPEECH_PROVIDER = stringPreferencesKey("selectedSpeechProvider")
+        fun selectedSpeechLanguage(provider: SpeechProvider) =
+            stringPreferencesKey("selectedSpeechLanguage_${provider.name}")
+        val FOOD_ENTRIES = stringPreferencesKey("foodEntries") // legacy, kept only for one-time migration
+        val FOOD_ENTRIES_MIGRATED = booleanPreferencesKey("foodEntriesMigrated")
+        /**
+         * Daily-aggregate cache shape (one-time rebuild gate in
+         * [migrateBucketsToFilesIfNeeded]). 2 = fiber/sugar/sodium extras;
+         * 3 = all optional nutrients (Codeberg #75) — month files cached by
+         * older builds decode the new fields as 0 without the rebuild.
+         */
+        val FOOD_AGGREGATES_SCHEMA = intPreferencesKey("foodAggregatesSchema")
+        const val FOOD_AGGREGATES_SCHEMA_MICROS = 2
+        const val FOOD_AGGREGATES_SCHEMA_ALL_NUTRIENTS = 3
+        const val FOOD_AGGREGATES_SCHEMA_LATEST = FOOD_AGGREGATES_SCHEMA_ALL_NUTRIENTS
+
+        fun foodEntriesBucket(month: YearMonth): Preferences.Key<String> =
+            stringPreferencesKey(FOOD_ENTRIES_BUCKET_PREFIX + month.toString())
+        val FAVORITE_KEYS = stringPreferencesKey("favorites")
+        val FAVORITE_ENTRIES = stringPreferencesKey("favoriteFoodEntries")
+        val RECIPES = stringPreferencesKey("recipes")
+        val PENDING_FOOD_ANALYSIS_DRAFT = stringPreferencesKey("pendingFoodAnalysisDraft")
+        val PENDING_FOOD_INPUT_DRAFT = stringPreferencesKey("pendingFoodInputDraft")
+        val WEIGHT_ENTRIES = stringPreferencesKey("weightEntries")
+        val BODY_FAT_ENTRIES = stringPreferencesKey("bodyFatEntries")
+        val BODY_MEASUREMENTS = stringPreferencesKey("bodyMeasurements")
+        val CHAT_HISTORY = stringPreferencesKey("coachChatHistory")
+        val WIDGET_SNAPSHOT = stringPreferencesKey("widget_snapshot_v1")
+        val TEST_SEED_BACKUP = stringPreferencesKey("test_seed_backup_v1")
+        val DEBUG_ACTIVITY_DAYS = stringPreferencesKey("debugActivityDays")
+        /** Debug-only: show the resting (basal) burn rim in the home hero arc (A/B comparison). */
+        val DEBUG_SHOW_RESTING_SHADE = booleanPreferencesKey("debugShowRestingShade")
+        /** Debug-only: replay a scripted food-analysis response (demo_ai intent extra; video capture). */
+        val DEBUG_DEMO_ANALYSIS = booleanPreferencesKey("debugDemoAnalysis")
+        /** Debug-only: demo analysis replays progress, then fails (demo_ai_fail extra; failure-path capture). */
+        val DEBUG_DEMO_ANALYSIS_FAIL = booleanPreferencesKey("debugDemoAnalysisFail")
+        /** Debug-only: first demo entry leg truncates, retry answers macros (#97 demo_ai_truncate extra). */
+        val DEBUG_DEMO_ANALYSIS_TRUNCATE = booleanPreferencesKey("debugDemoAnalysisTruncate")
+        val BARCODE_CACHE = stringPreferencesKey("barcodeLookupCache")
+        val ON_DEVICE_MODEL_DOWNLOADED_VERSION = stringPreferencesKey("onDeviceModelDownloadedVersion")
+        val ON_DEVICE_DOWNLOAD_OVER_WIFI_ONLY = booleanPreferencesKey("onDeviceDownloadOverWifiOnly")
+        /** #46: adjustable on-device memory reserve percent (0 = default 5%, clamped 0..20 at the setter). */
+        val ON_DEVICE_HEADROOM_PERCENT = intPreferencesKey("onDeviceHeadroomPercent")
+        val ON_DEVICE_FEATURE_VISIBLE = booleanPreferencesKey("onDeviceFeatureVisible")
+        val SYNC_REVISIONS = stringPreferencesKey("syncRevisions")
+        val WEBDAV_URL = stringPreferencesKey("webDavUrl")
+        val MEALIE_BASE_URL = stringPreferencesKey("mealieBaseUrl")
+        val WEBDAV_USERNAME = stringPreferencesKey("webDavUsername")
+        /** Opt-in: auto WebDAV sync once per day on app open. */
+        val WEBDAV_ENABLED = booleanPreferencesKey("webDavEnabled")
+        /** Local calendar day (yyyy-MM-dd) of the last auto-sync attempt. */
+        val WEBDAV_AUTO_SYNC_DAY = stringPreferencesKey("webDavAutoSyncDay")
+        val LAST_SYNC_AT = stringPreferencesKey("lastSyncAt")
+        val LAST_SYNC_ETAG = stringPreferencesKey("lastSyncEtag")
+        /** Serialized [app.chompass.services.ai.RecalcSheetData] of the latest goal change (AI Recalculate or Adaptive). */
+        val LAST_GOAL_CHANGE_SHEET_JSON = stringPreferencesKey("lastGoalChangeSheetJson")
+        /** Last magnitude-wheel entry mode: "wheel" | "typed" (Codeberg #62). */
+        val NUMERIC_PICKER_ENTRY = stringPreferencesKey("numeric_picker_entry")
+}

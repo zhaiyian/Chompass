@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "notes": "Shared UI locale contract for Android resource packs and the PWA i18n catalog. Speech recognition languages are independent (see speechLocales). Pref key: Android system/per-app language; PWA prefs.uiLang (empty = auto-detect browser). Fallback always English (en). maxMissing raised to 35 on 2026-08-24 for the nicotine-tracker strings; raised to 40 on 2026-02-13 for settings Units row + Trackers group + search; raised to 85 on 2026-08-24 for caffeine tracker + daily-notes toggle + prompt-history strings; raised to 90 on 2026-08-25 for the macro day-type strings (#60, en+de shipped, remaining locales batch before 4.0.0); raised to 130 on 2026-08-25 for the day-types Settings editor (#60 phase 2, en+de shipped, remaining locales batch before 4.0.0); dropped to 0 (de/es/fr) and 5 (all other packs, small buffer) on 2026-08-25 when the full batch landed: caffeine + nicotine + notes + search + units + prompt-history strings and all day-types strings incl. the phase-4 recalc-sheet + calculation-methods additions (#60 phase 4). Raised to 388 (es, fr) and 393 (all other non-de locales) on 2026-08-28 for the PWA UI-audit i18n sweep: 384 new en keys (entry form, settings body, diary menus/toasts/sheets, coach, analyze, add-meal, toasts, update prompt) shipped en+de, other locales fall back to EN until the next translation batch; the PWA i18n test now enforces maxMissing instead of demanding zero missing. Raised to 389 (es, fr) on 2026-09-03 for the #86 ingredient-estimates note (en+de shipped, remaining locales batch with the next translation sweep). Raised es/fr from 389 to 399 on 2026-09-21 for the untracked-days strings (#106, en+de shipped, remaining locales batch with the next translation sweep). Raised de from 0 to 1 on 2026-09-23 for the week-strip a11y joiner string (a11y_week_strip_day, en only; the comma-joined value would be EN-identical in de, so it counts as missing rather than a copy). Raised maxMissing from 399 to 410 on 2026-09-25 for the macro chip glyph strings (#111: en+de shipped, pt-BR fat=G, remaining locales pending translation batch). Unchanged on 2026-10-28 when the Health tab shipped (78 keys for the uric-acid diary ported from UricDiary): en+de+zh-CN carry the strings, the other packs fall back to EN and stay far below the 410 cap. Raised the cap from 410 to 500 for every pack except de and zh-CN, and pinned zh-CN to 0, on 2026-10-28 when the health diary's pain (175 keys) and medication (174 keys) modules shipped: en, de and zh-CN carry the strings, the remaining packs fall back to EN and sit at 499-500. Raised the cap from 500 to 525 for every pack except de and zh-CN on 2026-10-28 when the medication-reminder stage shipped (23 keys: two notification channels, the dose and refill notifications, and the reminders card): en, de and zh-CN carry the strings, the remaining packs fall back to EN and sit at 522-523. Raised the cap from 525 to 585 for every pack except de and zh-CN on 2026-10-28 for the health diary stage 5 (51 keys: the settings/backup screen, the CSV cell values and the archive readme): en, de and zh-CN carry the strings, the remaining packs fall back to EN and sit at about 573.",
+  "defaultLocale": "en",
+  "fallbackLocale": "en",
+  "pwaPrefKey": "uiLang",
+  "locales": [
+    {
+      "id": "en",
+      "bcp47": "en",
+      "androidValues": "values",
+      "name": "English",
+      "nativeName": "English",
+      "rtl": false,
+      "speechCodes": [
+        "en",
+        "en-US",
+        "en-GB"
+      ]
+    },
+    {
+      "id": "ar",
+      "bcp47": "ar",
+      "androidValues": "values-ar",
+      "name": "Arabic",
+      "nativeName": "العربية",
+      "rtl": true,
+      "speechCodes": [
+        "ar"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "az",
+      "bcp47": "az",
+      "androidValues": "values-az",
+      "name": "Azerbaijani",
+      "nativeName": "Azərbaycan",
+      "rtl": false,
+      "speechCodes": [
+        "az"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "de",
+      "bcp47": "de",
+      "androidValues": "values-de",
+      "name": "German",
+      "nativeName": "Deutsch",
+      "rtl": false,
+      "speechCodes": [
+        "de",
+        "de-DE"
+      ],
+      "maxMissing": 1
+    },
+    {
+      "id": "es",
+      "bcp47": "es",
+      "androidValues": "values-es",
+      "name": "Spanish",
+      "nativeName": "Español",
+      "rtl": false,
+      "speechCodes": [
+        "es",
+        "es-ES"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "fr",
+      "bcp47": "fr",
+      "androidValues": "values-fr",
+      "name": "French",
+      "nativeName": "Français",
+      "rtl": false,
+      "speechCodes": [
+        "fr",
+        "fr-FR"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "hi",
+      "bcp47": "hi",
+      "androidValues": "values-hi",
+      "name": "Hindi",
+      "nativeName": "हिन्दी",
+      "rtl": false,
+      "speechCodes": [
+        "hi",
+        "hi-IN"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "it",
+      "bcp47": "it",
+      "androidValues": "values-it",
+      "name": "Italian",
+      "nativeName": "Italiano",
+      "rtl": false,
+      "speechCodes": [
+        "it",
+        "it-IT"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "ja",
+      "bcp47": "ja",
+      "androidValues": "values-ja",
+      "name": "Japanese",
+      "nativeName": "日本語",
+      "rtl": false,
+      "speechCodes": [
+        "ja",
+        "ja-JP"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "ko",
+      "bcp47": "ko",
+      "androidValues": "values-ko",
+      "name": "Korean",
+      "nativeName": "한국어",
+      "rtl": false,
+      "speechCodes": [
+        "ko",
+        "ko-KR"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "nl",
+      "bcp47": "nl",
+      "androidValues": "values-nl",
+      "name": "Dutch",
+      "nativeName": "Nederlands",
+      "rtl": false,
+      "speechCodes": [
+        "nl",
+        "nl-NL"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "pl",
+      "bcp47": "pl",
+      "androidValues": "values-pl",
+      "name": "Polish",
+      "nativeName": "Polski",
+      "rtl": false,
+      "speechCodes": [
+        "pl",
+        "pl-PL"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "pt-BR",
+      "bcp47": "pt-BR",
+      "androidValues": "values-pt-rBR",
+      "name": "Portuguese (Brazil)",
+      "nativeName": "Português (Brasil)",
+      "rtl": false,
+      "speechCodes": [
+        "pt",
+        "pt-BR"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "ro",
+      "bcp47": "ro",
+      "androidValues": "values-ro",
+      "name": "Romanian",
+      "nativeName": "Română",
+      "rtl": false,
+      "speechCodes": [
+        "ro",
+        "ro-RO"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "ru",
+      "bcp47": "ru",
+      "androidValues": "values-ru",
+      "name": "Russian",
+      "nativeName": "Русский",
+      "rtl": false,
+      "speechCodes": [
+        "ru",
+        "ru-RU"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "tr",
+      "bcp47": "tr",
+      "androidValues": "values-tr",
+      "name": "Turkish",
+      "nativeName": "Türkçe",
+      "rtl": false,
+      "speechCodes": [
+        "tr",
+        "tr-TR"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "uk",
+      "bcp47": "uk",
+      "androidValues": "values-uk",
+      "name": "Ukrainian",
+      "nativeName": "Українська",
+      "rtl": false,
+      "speechCodes": [
+        "uk",
+        "uk-UA"
+      ],
+      "maxMissing": 585
+    },
+    {
+      "id": "zh-CN",
+      "bcp47": "zh-CN",
+      "androidValues": "values-zh-rCN",
+      "name": "Chinese (Simplified)",
+      "nativeName": "简体中文",
+      "rtl": false,
+      "speechCodes": [
+        "zh",
+        "zh-CN"
+      ],
+      "maxMissing": 0
+    }
+  ],
+  "speechLocales": {
+    "notes": "Speech recognition language is independent of UI locale. Empty/auto uses device or provider detection.",
+    "pwa": [
+      "",
+      "en-US",
+      "en-GB",
+      "de-DE",
+      "fr-FR",
+      "es-ES",
+      "it-IT",
+      "nl-NL",
+      "pt-BR",
+      "hi-IN",
+      "ja-JP",
+      "zh-CN",
+      "ko-KR",
+      "uk-UA",
+      "sv-SE"
+    ],
+    "androidSpeechLanguage": [
+      "PROVIDER_AUTO",
+      "DEVICE",
+      "ENGLISH",
+      "GERMAN",
+      "SPANISH",
+      "FRENCH",
+      "ITALIAN",
+      "PORTUGUESE",
+      "DUTCH",
+      "HINDI",
+      "JAPANESE",
+      "CHINESE",
+      "KOREAN"
+    ]
+  },
+  "coreSurfaces": [
+    "shell_nav",
+    "onboarding",
+    "diary_home",
+    "progress",
+    "settings_hub",
+    "dialogs",
+    "errors",
+    "a11y"
+  ]
+}

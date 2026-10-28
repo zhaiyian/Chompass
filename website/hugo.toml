@@ -1,0 +1,51 @@
+baseURL = 'https://chompass.app/'
+locale = 'en-US'
+title = 'Chompass'
+disableKinds = ['taxonomy', 'term', 'RSS']
+enableRobotsTXT = false
+summaryLength = 20
+
+[params]
+  description = 'Private calorie tracking for Android and the browser. Bring your own AI key; optional on-device Gemma 4 on Android. Live calorie budget and Health Connect on Android. No ads, no analytics, no account.'
+  version = '5.11.0'
+  # Demo cache-buster: bump on demo/deploy changes so the hero iframe + its
+  # entry module fetch fresh (module graph still revalidates via ETag).
+  # Kept separate from `version` so a demo fix never looks like a release.
+  demoVersion = '3.8.0-d4'
+  apkArm64Note = '~17 MiB'
+  apkUniversalNote = '~19 MiB'
+  repo = 'https://codeberg.org/fitguy/chompass'
+  releases = 'https://codeberg.org/fitguy/chompass/releases'
+  fdroid = 'https://f-droid.org/packages/app.chompass/'
+  obtainium = 'https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fadd%2Fhttps%3A%2F%2Fcodeberg.org%2Ffitguy%2Fchompass'
+  pwa = 'https://chompass.app/app/'
+  kofi = 'https://ko-fi.com/fitguy'
+  privacyRepo = 'https://codeberg.org/fitguy/chompass/src/branch/main/docs/PRIVACY.md'
+  upstream = 'https://github.com/apoorvdarshan/fud-ai'
+  upstreamReleases = 'https://github.com/apoorvdarshan/fud-ai/releases'
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[module]
+  [[module.mounts]]
+    source = 'content'
+    target = 'content'
+  [[module.mounts]]
+    source = 'layouts'
+    target = 'layouts'
+  [[module.mounts]]
+    source = 'static'
+    target = 'static'
+  [[module.mounts]]
+    source = 'assets'
+    target = 'assets'
+  [[module.mounts]]
+    source = 'archetypes'
+    target = 'archetypes'
+  [[module.mounts]]
+    source = '../docs/screenshots'
+    target = 'static/screenshots'
+  [[module.mounts]]
+    source = '../web/app'
+    target = 'static/app'

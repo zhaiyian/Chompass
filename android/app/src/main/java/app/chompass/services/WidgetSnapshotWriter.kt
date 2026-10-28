@@ -1,0 +1,397 @@
+package app.chompass.services
+
+import android.content.Context
+import android.util.Log
+import androidx.compose.ui.graphics.toArgb
+import androidx.glance.appwidget.updateAll
+import app.chompass.data.FoodRepository
+import app.chompass.data.CaffeineRepository
+import app.chompass.data.PreferencesStore
+import app.chompass.data.ProfileRepository
+import app.chompass.models.FoodEntry
+import app.chompass.models.nutritionTotals
+import app.chompass.models.CaffeineEntry
+import app.chompass.models.HomeTopNutrient
+import app.chompass.models.HomeCalorieDisplay
+import app.chompass.models.MacroPlanResolver
+import app.chompass.models.UserProfile
+import app.chompass.models.WaterEntry
+import app.chompass.models.WaterGoalCalculator
+import app.chompass.models.WidgetNutrient
+import app.chompass.models.WidgetSnapshot
+import app.chompass.services.health.HomeActivityReader
+import app.chompass.utils.LocaleHelper
+import app.chompass.ui.theme.AppThemeColor
+import app.chompass.ui.theme.appearanceIsDark
+import app.chompass.ui.theme.widgetAccentColors
+import app.chompass.widget.AllMetricsAppWidget
+import app.chompass.widget.CalorieAppWidget
+import app.chompass.widget.ProteinAppWidget
+import app.chompass.widget.WaterAppWidget
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
+import java.time.Instant
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+
+/**
+ * Recomputes today's totals whenever food entries or the user profile change,
+ * writes the [WidgetSnapshot] into DataStore, and asks Glance to redraw both
+ * the Calorie and Protein app widgets. Mirrors the iOS WidgetSnapshotWriter
+ * call sites (every FoodStore change + profile-change notification + scene
+ * resume).
+ */
+class WidgetSnapshotWriter(
+    private val context: Context,
+    private val prefs: PreferencesStore,
+    private val foodRepository: FoodRepository,
+    private val profileRepository: ProfileRepository,
+    private val homeActivityReader: HomeActivityReader,
+    private val waterRepository: app.chompass.data.WaterRepository,
+    private val weatherRepository: app.chompass.data.WeatherRepository,
+    private val caffeineRepository: CaffeineRepository,
+) {
+    /** Bundled water inputs flowing through [observe]/[publish]. */
+    internal data class WaterInputs(
+        val enabled: Boolean,
+        val manualGoalMl: Int,
+        val dynamic: WaterDynamicInputs,
+        val plan: WaterPlanInputs,
+        val entries: List<WaterEntry>,
+    )
+
+    /** Bundled inputs flowing through [observe]/[publish]. */
+    internal data class SnapshotInputs(
+        val entries: List<FoodEntry>,
+        val profile: UserProfile?,
+        val appearance: String,
+        val water: WaterInputs,
+        val caffeineEntries: List<CaffeineEntry> = emptyList(),
+        val energyUnit: String = "kcal",
+        // Energy-burn inputs publish() reads for the ADD_ACTIVE split. Carried
+        // on the value so a burn-only write produces a distinct input and
+        // survives distinctUntilChanged — otherwise it could never republish.
+        val measuredActive: Int = 0,
+        val activeByDay: Map<String, Int> = emptyMap(),
+    )
+
+    internal data class WaterDynamicInputs(
+        val dynamicEnabled: Boolean,
+        val baseSource: String,
+        val tempC: Int,
+        val useProfileActivity: Boolean,
+        val foodWaterEnabled: Boolean,
+    )
+
+    /** Adaptive reminder inputs for the next-drink plan in the snapshot. */
+    internal data class WaterPlanInputs(
+        val reminderEnabled: Boolean,
+        val awakeStartMinutes: Int,
+        val awakeEndMinutes: Int,
+        val cupSizeMl: Int,
+    )
+
+    internal fun observe() = combine(
+        combine(
+            combine(
+                // Change trigger only. A date-scoped entries flow captures
+                // LocalDate.now() once at collect, so after midnight it still
+                // streams yesterday's rows and publish() then filters them
+                // against the NEW today — the widget read 0/stale kcal until
+                // process restart. The month flow keeps firing on same-day
+                // writes across midnight; month rolls are covered by the
+                // 00:00 alarm (refresh() re-reads the fresh date).
+                prefs.foodEntriesForMonth(YearMonth.now()),
+                profileRepository.profile,
+                prefs.homeDisplayPreferences,
+                prefs.appThemeColor,
+                prefs.optionalNutrientGoals,
+            ) { entries, profile, _, _, _ ->
+                entries to profile
+            },
+            prefs.appearanceMode,
+        ) { core, appearance ->
+            Triple(core.first, core.second, appearance)
+        },
+        combine(
+            combine(
+                prefs.waterTrackingEnabled,
+                prefs.waterDailyGoalMl,
+                waterRepository.entries,
+            ) { enabled, goalMl, waterEntries ->
+                Triple(enabled, goalMl, waterEntries)
+            },
+            combine(
+                prefs.waterDynamicEnabled,
+                prefs.waterBaseSource,
+                weatherRepository.state,
+                prefs.waterUseProfileActivity,
+                prefs.waterFoodWaterEnabled,
+            ) { dyn, source, weather, useAct, foodWater ->
+                WaterDynamicInputs(dyn, source, weather.effectiveHighC, useAct, foodWater)
+            },
+            combine(
+                combine(
+                    prefs.waterReminderEnabled,
+                    prefs.waterCupSizeMl,
+                ) { reminder, cup -> reminder to cup },
+                combine(
+                    prefs.waterAwakeStartHour,
+                    prefs.waterAwakeStartMinute,
+                    prefs.waterAwakeEndHour,
+                    prefs.waterAwakeEndMinute,
+                ) { sh, sm, eh, em -> sh * 60 + sm to eh * 60 + em },
+            ) { reminderAndCup, window ->
+                WaterPlanInputs(
+                    reminderEnabled = reminderAndCup.first,
+                    cupSizeMl = reminderAndCup.second,
+                    awakeStartMinutes = window.first,
+                    awakeEndMinutes = window.second,
+                )
+            },
+        ) { water, dynamic, plan ->
+            WaterInputs(
+                enabled = water.first,
+                manualGoalMl = water.second,
+                dynamic = dynamic,
+                plan = plan,
+                entries = water.third,
+            )
+        },
+        prefs.energyUnit,
+        // Burn writes (adaptive goals, HC refresh, reseed) must republish the
+        // snapshot without a diary write; carrying the values keeps the
+        // chain distinct-until-changed on real content.
+        prefs.healthEnergyMeasuredActive,
+        prefs.healthEnergyActiveByDay,
+    ) { core, water, energyUnit, measuredActive, activeByDay ->
+        SnapshotInputs(
+            core.first,
+            core.second,
+            core.third,
+            water = water,
+            energyUnit = energyUnit,
+            measuredActive = measuredActive,
+            activeByDay = activeByDay,
+        )
+    }
+        .combine(caffeineRepository.entries) { inputs, caffeine ->
+            inputs.copy(caffeineEntries = caffeine)
+        }
+        .distinctUntilChanged()
+        .onEach { inputs ->
+            // Always publish from a fresh today read, never the trigger flow's
+            // captured-at-collect list (see note above).
+            val entries = foodRepository.entriesForDate(LocalDate.now()).first()
+            publish(entries, inputs.profile, inputs.appearance, inputs.water, inputs.caffeineEntries, inputs.energyUnit, inputs.measuredActive, inputs.activeByDay)
+        }
+
+    /**
+     * Recompute and publish from current repos/prefs. Used when Theme Color is
+     * System and the Material You primary changes without any pref/diary change
+     * (wallpaper / palette refresh on resume).
+     */
+    suspend fun refresh() {
+        val entries = foodRepository.entriesForDate(LocalDate.now()).first()
+        val profile = profileRepository.profile.first()
+        val appearance = prefs.appearanceMode.first()
+        val water = WaterInputs(
+            enabled = prefs.waterTrackingEnabled.first(),
+            manualGoalMl = prefs.waterDailyGoalMl.first(),
+            dynamic = WaterDynamicInputs(
+                dynamicEnabled = prefs.waterDynamicEnabled.first(),
+                baseSource = prefs.waterBaseSource.first(),
+                tempC = weatherRepository.state.first().effectiveHighC,
+                useProfileActivity = prefs.waterUseProfileActivity.first(),
+                foodWaterEnabled = prefs.waterFoodWaterEnabled.first(),
+            ),
+            plan = WaterPlanInputs(
+                reminderEnabled = prefs.waterReminderEnabled.first(),
+                awakeStartMinutes = prefs.waterAwakeStartHour.first() * 60 + prefs.waterAwakeStartMinute.first(),
+                awakeEndMinutes = prefs.waterAwakeEndHour.first() * 60 + prefs.waterAwakeEndMinute.first(),
+                cupSizeMl = prefs.waterCupSizeMl.first(),
+            ),
+            entries = waterRepository.entries.first(),
+        )
+        publish(entries, profile, appearance, water, caffeineRepository.entries.first(), prefs.energyUnit.first(), prefs.healthEnergyMeasuredActive.first(), prefs.healthEnergyActiveByDay.first())
+    }
+
+    private suspend fun publish(
+        entries: List<FoodEntry>,
+        profile: UserProfile?,
+        appearance: String,
+        water: WaterInputs,
+        caffeineEntries: List<CaffeineEntry> = emptyList(),
+        energyUnit: String = "kcal",
+        measuredActive: Int,
+        activeByDay: Map<String, Int>,
+    ) {
+        // API < 33: nutrient labels/units follow the in-app language.
+        val ctx = LocaleHelper.wrapIfLegacy(context)
+        val todaysEntries = entries.filter {
+            it.timestamp.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now()
+        }
+        if (profile == null) {
+            prefs.clearWidgetSnapshot()
+        } else {
+            val display = prefs.homeDisplayPreferences.first()
+            val selection = display.homeTopNutrients
+            val optionalGoals = prefs.optionalNutrientGoals.first()
+            val theme = AppThemeColor.fromKey(prefs.appThemeColor.first())
+            val (themeStart, themeEnd) = theme.widgetAccentColors(context, appearanceIsDark(appearance, context))
+            val activity = homeActivityReader.readForDate(LocalDate.now())
+            // #60: today's targets resolve through the day-type plan (live —
+            // the snapshot is a frozen forward-looking today view; the midnight
+            // rollover alarm rewrites it so a CYCLE/WEEKDAYS switch lands).
+            val resolvedToday = MacroPlanResolver.targetsFor(profile, LocalDate.now())
+            val effectiveCalories = resolvedToday.targets.calories
+            // Energy Burn measured active average overrides the PAL estimate for the ADD_ACTIVE
+            // split, so the widget mirrors the home gauge (goal − measured active → base).
+            val dayTypeTypical = run {
+                val journal = prefs.goalJournal.first()
+                val merged = app.chompass.models.DayTypeActiveStats.mergeDayTotals(
+                    activeByDay,
+                    app.chompass.models.DayTypeActiveStats.sumManualByDay(prefs.manualActiveEntries.first()),
+                )
+                val stats = app.chompass.models.DayTypeActiveStats.compute(journal, merged, LocalDate.now())
+                stats.typicalFor(resolvedToday.profileId)
+            }
+            val estimatedActive = dayTypeTypical
+                ?: measuredActive.takeIf { it > 0 }
+                ?: profile.estimatedDailyActiveCalories
+            val manualToday = prefs.manualActiveEntries.first()
+                .filter { it.date == LocalDate.now().toString() }
+                .sumOf { it.calories }
+            // Source label only (widget caption); the numbers below come from
+            // the same resolveGaugeBudget call the home hero uses, so the two
+            // can never disagree.
+            val burn = HomeCalorieDisplay.resolveActiveBurn(
+                display.calorieDisplayMode,
+                activity,
+                estimatedActive,
+                manualToday,
+            )
+            val sedentary = measuredActive.takeIf { it > 0 }
+                ?.let { (effectiveCalories - it).coerceAtLeast(0) }
+                ?: profile.sedentaryCalorieBudget(effectiveCalories)
+            val gaugeBudget = HomeCalorieDisplay.resolveGaugeBudget(
+                mode = display.calorieDisplayMode,
+                fullCredit = display.fullCreditActiveBurn,
+                fullGoal = effectiveCalories,
+                sedentaryBudget = sedentary,
+                energyLive = activity.energyLive,
+                measuredToday = activity.activeCalories,
+                estimatedDailyActive = estimatedActive,
+                manual = manualToday,
+                typical = estimatedActive,
+            )
+            val gaugeBase = gaugeBudget.base
+            val activeCalories = gaugeBudget.creditedBurn
+            val effectiveGoal = gaugeBudget.displayTarget
+            // Expected-day target mirroring the hero: base + the larger of the active
+            // norm and live burn. Written only when the budget draws the expected arc
+            // (ADD_ACTIVE hold-back with a live measured source — Health Connect
+            // energy or debug data, even at 0 in the morning); estimate/manual-only
+            // and full-credit days keep the effective goal and no active-burn
+            // caption in the widget.
+            val displayGoalTarget = if (gaugeBudget.useExpectedArc) effectiveGoal else null
+            val waterTodayMl = water.entries
+                .filter { it.date.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
+                .sumOf { it.milliliters }
+            val waterGoalMl = if (water.dynamic.dynamicEnabled) {
+                WaterGoalCalculator.dailyNetGoalMl(
+                    baseSource = water.dynamic.baseSource,
+                    weightKg = profile.weightKg,
+                    manualBaseMl = water.manualGoalMl,
+                    expectedHighC = water.dynamic.tempC,
+                    activityLevel = profile.activityLevel,
+                    useProfileActivity = water.dynamic.useProfileActivity,
+                    foodGramsToday = WaterGoalCalculator.estimateDiaryGrams(todaysEntries),
+                    foodWaterEnabled = water.dynamic.foodWaterEnabled,
+                )
+            } else {
+                water.manualGoalMl
+            }
+            val weightUnit = prefs.weightUnit.first()
+            // Next planned drink for the widget's "Next 300 ml · 15:24" line —
+            // same re-derivation the reminder chain and Home use.
+            val waterPlan = WaterReminderPlanner.next(
+                prefs = prefs,
+                foodRepository = foodRepository,
+                profileRepository = profileRepository,
+                waterRepository = waterRepository,
+                weatherRepository = weatherRepository,
+            )
+            val totals = todaysEntries.nutritionTotals()
+            val snapshot = WidgetSnapshot(
+                date = Instant.now(),
+                dayStart = WidgetSnapshot.todayStart(),
+                calories = totals.calories,
+                calorieGoal = effectiveCalories,
+                protein = totals.protein,
+                proteinGoal = resolvedToday.targets.proteinG,
+                carbs = totals.carbs,
+                carbsGoal = resolvedToday.targets.carbsG,
+                fat = totals.fat,
+                fatGoal = resolvedToday.targets.fatG,
+                homeNutrients = selection.map { nutrient ->
+                    WidgetNutrient(
+                        id = nutrient.storageKey,
+                        label = ctx.getString(nutrient.displayNameRes),
+                        unit = ctx.getString(nutrient.unitRes),
+                        value = when (nutrient) {
+                            HomeTopNutrient.CALORIES -> totals.calories.toDouble()
+                            HomeTopNutrient.CAFFEINE -> {
+                            val todayCaffeine = caffeineEntries.filter {
+                                it.date.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now()
+                            }
+                            CaffeineEntry.dayCaffeineMg(todaysEntries, todayCaffeine)
+                            }
+                            else -> nutrient.current(todaysEntries)
+                        },
+                        goal = nutrient.goal(resolvedToday, profile, optionalGoals).toDouble()
+                    )
+                },
+                themeStartHex = themeStart.toArgb() and 0xFFFFFF,
+                themeEndHex = themeEnd.toArgb() and 0xFFFFFF,
+                proteinHex = theme.macroPalette.proteinArgb(),
+                carbsHex = theme.macroPalette.carbsArgb(),
+                fatHex = theme.macroPalette.fatArgb(),
+                fiberHex = theme.macroPalette.fiberArgb(),
+                nutrientCardCount = display.nutrientCardCount,
+                calorieDisplayMode = display.calorieDisplayMode.storageKey,
+                effectiveCalorieGoal = effectiveGoal,
+                activeCaloriesToday = activeCalories,
+                gaugeBaseCalorieGoal = gaugeBase,
+                activeCalorieSource = burn?.source?.storageKey,
+                displayGoalTarget = displayGoalTarget,
+                activeBurnTypical = displayGoalTarget?.let { estimatedActive },
+                stepsToday = activity.steps,
+                stepGoal = display.stepGoal,
+                waterTrackingEnabled = water.enabled,
+                waterCurrentMl = waterTodayMl,
+                waterGoalMl = waterGoalMl.coerceAtLeast(1),
+                waterUseMetric = weightUnit == "kg",
+                waterNextFireAtMillis = waterPlan?.nextFireMillis,
+                appearanceMode = appearance,
+                energyUnit = energyUnit,
+            )
+            prefs.setWidgetSnapshot(snapshot)
+        }
+        runCatching { CalorieAppWidget().updateAll(context) }
+            .onFailure { Log.e(TAG, "CalorieAppWidget.updateAll failed", it) }
+        runCatching { ProteinAppWidget().updateAll(context) }
+            .onFailure { Log.e(TAG, "ProteinAppWidget.updateAll failed", it) }
+        runCatching { AllMetricsAppWidget().updateAll(context) }
+            .onFailure { Log.e(TAG, "AllMetricsAppWidget.updateAll failed", it) }
+        runCatching { WaterAppWidget().updateAll(context) }
+            .onFailure { Log.e(TAG, "WaterAppWidget.updateAll failed", it) }
+    }
+
+    private companion object {
+        const val TAG = "FudAIWidget"
+    }
+}

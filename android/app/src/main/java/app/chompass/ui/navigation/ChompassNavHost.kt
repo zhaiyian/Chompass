@@ -1,0 +1,679 @@
+package app.chompass.ui.navigation
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.first
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import app.chompass.AppContainer
+import app.chompass.models.EnergyUnit
+import app.chompass.services.update.AndroidUpdateChecker
+import app.chompass.services.update.AndroidUpdateState
+import app.chompass.ui.about.AboutSettingsScreen
+import app.chompass.ui.about.LegalSettingsScreen
+import app.chompass.ui.about.SupportSettingsScreen
+import app.chompass.ui.coach.CoachScreen
+import app.chompass.health.ui.HealthScreen
+import app.chompass.health.ui.med.MedEditScreen
+import app.chompass.health.ui.med.MedExtraDoseScreen
+import app.chompass.health.ui.med.MedListScreen
+import app.chompass.health.ui.med.MedLogScreen
+import app.chompass.health.ui.pain.PainDetailScreen
+import app.chompass.health.ui.pain.PainEntryScreen
+import app.chompass.health.ui.pain.PainInsightScreen
+import app.chompass.health.ui.settings.HealthDataScreen
+import app.chompass.health.ui.uric.UricEntryScreen
+import app.chompass.ui.home.HomeScreen
+import app.chompass.ui.home.PlanWeekScreen
+import app.chompass.ui.onboarding.OnboardingScreen
+import app.chompass.ui.progress.BodyMeasurementsScreen
+import app.chompass.ui.progress.ProgressScreen
+import app.chompass.ui.settings.AiSettingsScreen
+import app.chompass.ui.settings.AppSettingsScreen
+import app.chompass.ui.settings.CalculationMethodsScreen
+import app.chompass.ui.settings.CoachSettingsScreen
+import app.chompass.ui.settings.CustomizeProgressScreen
+import app.chompass.ui.settings.GoalPhasesScreen
+import app.chompass.ui.settings.DataSettingsScreen
+import app.chompass.ui.settings.DayTypesSettingsScreen
+import app.chompass.ui.settings.FoodEntrySettingsScreen
+import app.chompass.ui.settings.GoalsSettingsScreen
+import app.chompass.ui.settings.HealthDataSettingsScreen
+import app.chompass.ui.settings.HomeDisplaySettingsScreen
+import app.chompass.ui.settings.NutritionTargetsSettingsScreen
+import app.chompass.ui.settings.NotificationsSettingsScreen
+import app.chompass.ui.settings.OptionalNutrientGoalsScreen
+import app.chompass.ui.settings.PersonalSettingsScreen
+import app.chompass.ui.settings.SettingsScreen
+import app.chompass.ui.settings.SpeechSettingsScreen
+import app.chompass.ui.settings.SyncSettingsScreen
+import app.chompass.ui.settings.TrackersSettingsScreen
+import app.chompass.ui.settings.WaterSettingsScreen
+import app.chompass.ui.settings.CaffeineSettingsScreen
+import app.chompass.ui.settings.NicotineSettingsScreen
+import app.chompass.ui.settings.NotesSettingsScreen
+import app.chompass.ui.settings.FastingSettingsScreen
+
+/**
+ * Increments each time the app is opened: 1 on cold launch, then +1 on every
+ * return from the background (ON_START after a real ON_STOP). Read by the Home
+ * gauge + macro bars to replay their fill-from-zero reveal. It lives above the
+ * NavHost, so tab switches (which recompose Home) never change it.
+ */
+val LocalLaunchFillEpoch = compositionLocalOf { 1 }
+
+val LocalEnergyUnit = compositionLocalOf { EnergyUnit.KCAL }
+
+@Composable
+fun ChompassNavHost(
+    container: AppContainer,
+    startOnboarding: Boolean
+) {
+    val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+    // Hide the bar while a food analysis is in flight so the AnalyzingOverlay
+    // is the only thing on screen — matches iOS, where the analyzing sheet
+    // covers the tab bar.
+    val analyzing by container.analyzingFood.collectAsState()
+    val showTabs = currentRoute in ChompassRoutes.bottomTabs && !analyzing
+    val context = LocalContext.current
+    val currentVersion = remember(context) { AndroidUpdateChecker.currentVersion(context) }
+    var updateAvailable by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentVersion) {
+        val state = AndroidUpdateChecker.check(context, currentVersion)
+        updateAvailable = state is AndroidUpdateState.Available
+        // A newer version is out — fire a one-shot notification (de-duped per version, gated by the
+        // "App Updates" toggle) so the user finds out even without opening the About section.
+        if (state is AndroidUpdateState.Available &&
+            container.prefs.appUpdateNotificationsEnabled.first() &&
+            container.notifications.canPostNotifications() &&
+            container.prefs.lastNotifiedUpdateVersion.first() != state.latest
+        ) {
+            container.notifications.showUpdateAvailable()
+            container.prefs.setLastNotifiedUpdateVersion(state.latest)
+        }
+    }
+
+    // A photo was shared into the app while another tab (or a detail screen) was
+    // showing — bring Home forward so it can consume the share inbox and open
+    // FoodPhotoSession review. No-op during onboarding (HOME isn't on the stack yet);
+    // the inbox is sticky, so Home picks it up once it composes. RESUMED-only
+    // so a stopped duplicate MainActivity cannot mutate this nav controller.
+    // The pop carries saveState so the displaced screen comes back via the tab's
+    // restoreState once the share/shortcut flow is done (audit M1: the yank).
+    // In-app gallery does not use sharedImageInbox (Activity FoodPhotoSession).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val sharedImages by container.sharedImageInbox.collectAsState()
+    LaunchedEffect(sharedImages, currentRoute, lifecycleOwner) {
+        if (sharedImages.isEmpty()) return@LaunchedEffect
+        if (currentRoute == null || currentRoute == ChompassRoutes.HOME) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (container.sharedImageInbox.value.isEmpty()) return@repeatOnLifecycle
+            val route = nav.currentBackStackEntry?.destination?.route
+            if (route != null && route != ChompassRoutes.HOME) {
+                nav.popBackStack(ChompassRoutes.HOME, inclusive = false, saveState = true)
+            }
+        }
+    }
+    val shortcutEntry by container.shortcutEntryInbox.collectAsState()
+    LaunchedEffect(shortcutEntry, currentRoute, lifecycleOwner) {
+        if (shortcutEntry == null) return@LaunchedEffect
+        if (currentRoute == null || currentRoute == ChompassRoutes.HOME) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (container.shortcutEntryInbox.value == null) return@repeatOnLifecycle
+            val route = nav.currentBackStackEntry?.destination?.route
+            if (route != null && route != ChompassRoutes.HOME) {
+                nav.popBackStack(ChompassRoutes.HOME, inclusive = false, saveState = true)
+            }
+        }
+    }
+    // Notification tap destination (Codeberg #27): navigate once, clear the inbox.
+    val launchDestination by container.launchDestinationInbox.collectAsState()
+    LaunchedEffect(launchDestination, lifecycleOwner) {
+        val dest = launchDestination ?: return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (container.launchDestinationInbox.value != dest) return@repeatOnLifecycle
+            val route = nav.currentBackStackEntry?.destination?.route
+            // Onboarding has no HOME on the stack yet; ignore the tap there.
+            if (route == null || route == ChompassRoutes.ONBOARDING) return@repeatOnLifecycle
+            if (route != ChompassRoutes.HOME && route != dest) {
+                nav.popBackStack(ChompassRoutes.HOME, inclusive = false, saveState = true)
+            }
+            if (container.launchDestinationInbox.value != dest) return@repeatOnLifecycle
+            if (route != dest) {
+                nav.navigate(dest) {
+                    popUpTo(ChompassRoutes.HOME) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            container.launchDestinationInbox.value = null
+        }
+    }
+
+    // App-open epoch for the Home fill-from-zero reveal. Bumped only on ON_START
+    // that follows an ON_STOP (a genuine background -> foreground return), so
+    // transient pauses (notification shade, permission dialog) don't retrigger it.
+    var launchFillEpoch by remember { mutableIntStateOf(1) }
+    var hasStopped by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> hasStopped = true
+                Lifecycle.Event.ON_START -> if (hasStopped) { launchFillEpoch++; hasStopped = false }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val energyUnitRaw by container.prefs.energyUnit.collectAsState(initial = "kcal")
+    CompositionLocalProvider(
+        LocalLaunchFillEpoch provides launchFillEpoch,
+        LocalEnergyUnit provides EnergyUnit.fromStorage(energyUnitRaw),
+    ) {
+    // Codeberg #20: phase 1 hides the coach tab (View-only); phase 2's master
+    // AI-off switch hides it too — with AI off the coach has nothing to say.
+    val coachTabEnabled by container.prefs.coachTabEnabled.collectAsState(initial = true)
+    val aiFeaturesEnabled by container.prefs.aiFeaturesEnabled.collectAsState(initial = true)
+    val showCoachTab = coachTabEnabled && aiFeaturesEnabled
+    Scaffold(
+        bottomBar = {
+            if (showTabs) {
+                ChompassBottomNavBar(
+                    currentRoute = currentRoute,
+                    showAboutBadge = updateAvailable,
+                    showCoachTab = showCoachTab,
+                    onTap = { target ->
+                        if (target == currentRoute) return@ChompassBottomNavBar
+                        // Tapping HOME (the start destination) needs popBackStack
+                        // — `navigate(HOME) { popUpTo(HOME); launchSingleTop = true }`
+                        // is a no-op because NavController sees HOME at the top of
+                        // the stack and skips re-emitting currentBackStackEntry, so
+                        // the bar stays selected on the previous tab.
+                        if (target == ChompassRoutes.HOME) {
+                            nav.popBackStack(ChompassRoutes.HOME, inclusive = false)
+                        } else {
+                            nav.navigate(target) {
+                                popUpTo(ChompassRoutes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    ) { _ ->
+        Box(Modifier.fillMaxSize()) {
+            NavHost(
+                navController = nav,
+                startDestination = if (startOnboarding) ChompassRoutes.ONBOARDING else ChompassRoutes.HOME
+            ) {
+                composable(ChompassRoutes.ONBOARDING) {
+                    OnboardingScreen(container = container, onComplete = {
+                        nav.navigate(ChompassRoutes.HOME) {
+                            popUpTo(ChompassRoutes.ONBOARDING) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    })
+                }
+                composable(ChompassRoutes.HOME) {
+                    HomeScreen(
+                        container = container,
+                        onOpenSettings = {
+                            nav.navigate(ChompassRoutes.SETTINGS) {
+                                popUpTo(ChompassRoutes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onOpenFoodSettings = {
+                            nav.navigate(ChompassRoutes.SETTINGS_FOOD) {
+                                popUpTo(ChompassRoutes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onPlanWeek = {
+                            nav.navigate(ChompassRoutes.PLAN_WEEK) {
+                                popUpTo(ChompassRoutes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onOpenDayTypes = {
+                            nav.navigate(ChompassRoutes.SETTINGS_DAY_TYPES) {
+                                popUpTo(ChompassRoutes.HOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
+                }
+                composable(ChompassRoutes.PLAN_WEEK) {
+                    PlanWeekScreen(container = container, nav = nav)
+                }
+                composable(ChompassRoutes.HEALTH) {
+                    HealthScreen(
+                        container = container,
+                        onOpenReading = { recordId ->
+                            nav.navigate(ChompassRoutes.uricEntryRoute(recordId)) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onAddPain = {
+                            nav.navigate(ChompassRoutes.painEntryRoute()) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenPainEpisode = { episodeId ->
+                            nav.navigate(ChompassRoutes.painDetailRoute(episodeId)) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenPainInsight = {
+                            nav.navigate(ChompassRoutes.HEALTH_PAIN_INSIGHT) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenMedLog = {
+                            nav.navigate(ChompassRoutes.HEALTH_MED_LOG) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenMedManage = {
+                            nav.navigate(ChompassRoutes.HEALTH_MED_MANAGE) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onRecordExtra = { medicationId ->
+                            nav.navigate(ChompassRoutes.medExtraRoute(medicationId)) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenData = {
+                            nav.navigate(ChompassRoutes.HEALTH_DATA) {
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
+                composable(ChompassRoutes.HEALTH_DATA) {
+                    HealthDataScreen(
+                        container = container,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.HEALTH_MED_LOG) {
+                    MedLogScreen(
+                        container = container,
+                        onBack = { nav.popBackStack() },
+                        onRecordExtra = {
+                            nav.navigate(ChompassRoutes.medExtraRoute()) { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable(ChompassRoutes.HEALTH_MED_MANAGE) {
+                    MedListScreen(
+                        container = container,
+                        onBack = { nav.popBackStack() },
+                        onAdd = {
+                            nav.navigate(ChompassRoutes.medEditRoute()) { launchSingleTop = true }
+                        },
+                        onOpen = { medId ->
+                            nav.navigate(ChompassRoutes.medEditRoute(medId)) {
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.HEALTH_MED_EDIT,
+                    arguments = listOf(navArgument("medId") {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    }),
+                ) { entry ->
+                    MedEditScreen(
+                        container = container,
+                        medId = entry.arguments?.getLong("medId")?.takeIf { it > 0 },
+                        onDone = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.HEALTH_MED_EXTRA,
+                    arguments = listOf(navArgument("medId") {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    }),
+                ) { entry ->
+                    MedExtraDoseScreen(
+                        container = container,
+                        presetMedId = entry.arguments?.getLong("medId")?.takeIf { it > 0 },
+                        onDone = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.HEALTH_PAIN_ENTRY,
+                    arguments = listOf(navArgument("episodeId") {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    }),
+                ) { entry ->
+                    PainEntryScreen(
+                        container = container,
+                        episodeId = entry.arguments?.getLong("episodeId")?.takeIf { it > 0 },
+                        onDone = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.HEALTH_PAIN_DETAIL,
+                    arguments = listOf(navArgument("episodeId") { type = NavType.LongType }),
+                ) { entry ->
+                    val episodeId = entry.arguments?.getLong("episodeId") ?: 0L
+                    PainDetailScreen(
+                        container = container,
+                        episodeId = episodeId,
+                        onBack = { nav.popBackStack() },
+                        onEdit = {
+                            nav.navigate(ChompassRoutes.painEntryRoute(episodeId)) {
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
+                composable(ChompassRoutes.HEALTH_PAIN_INSIGHT) {
+                    PainInsightScreen(
+                        container = container,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.HEALTH_URIC_ENTRY,
+                    arguments = listOf(navArgument("recordId") {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    }),
+                ) { entry ->
+                    UricEntryScreen(
+                        container = container,
+                        recordId = entry.arguments?.getLong("recordId")?.takeIf { it > 0 },
+                        onDone = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.PROGRESS) {
+                    ProgressScreen(
+                        container = container,
+                        onOpenCustomize = {
+                            nav.navigate(ChompassRoutes.CUSTOMIZE_PROGRESS) { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable(ChompassRoutes.COACH) {
+                    if (showCoachTab) {
+                        CoachScreen(container = container)
+                    } else {
+                        // Deep link or stale back stack with the tab off: pop back to
+                        // Home instead of pushing a second HOME entry on top of COACH
+                        // (that stack made back bounce off COACH and then exit).
+                        LaunchedEffect(Unit) {
+                            nav.popBackStack(ChompassRoutes.HOME, inclusive = false)
+                        }
+                    }
+                }
+                composable(ChompassRoutes.SETTINGS) { SettingsScreen(container = container, nav = nav) }
+                composable(ChompassRoutes.SETTINGS_PERSONAL) {
+                    PersonalSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_GOALS) {
+                    GoalsSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_DAY_TYPES) {
+                    DayTypesSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_APP) {
+                    AppSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_TRACKERS) {
+                    TrackersSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_AI) {
+                    AiSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_DATA) {
+                    DataSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_NUTRITION_TARGETS) {
+                    NutritionTargetsSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_SPEECH) {
+                    SpeechSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_COACH) {
+                    CoachSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_HEALTH) {
+                    HealthDataSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_ABOUT) {
+                    AboutSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_SUPPORT) {
+                    SupportSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_LEGAL) {
+                    LegalSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ChompassRoutes.SETTINGS_FOOD) {
+                    FoodEntrySettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_WATER,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    WaterSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_NICOTINE,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    NicotineSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_CAFFEINE,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    CaffeineSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_NOTES,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    NotesSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_FASTING,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    FastingSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_NOTIFICATIONS,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "app"
+                    }),
+                ) { entry ->
+                    NotificationsSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "app",
+                    )
+                }
+                composable(
+                    route = ChompassRoutes.SETTINGS_SYNC,
+                    arguments = listOf(navArgument("from") {
+                        type = NavType.StringType
+                        defaultValue = "data"
+                    }),
+                ) { entry ->
+                    SyncSettingsScreen(
+                        container = container,
+                        nav = nav,
+                        onBack = { nav.popBackStack() },
+                        from = entry.arguments?.getString("from") ?: "data",
+                    )
+                }
+                composable(ChompassRoutes.OPTIONAL_NUTRIENT_GOALS) {
+                    OptionalNutrientGoalsScreen(container = container, nav = nav, onBack = { nav.popBackStack() })
+                }
+                composable(ChompassRoutes.HOME_DISPLAY) {
+                    HomeDisplaySettingsScreen(container = container, nav = nav, onBack = { nav.popBackStack() })
+                }
+                composable(ChompassRoutes.CUSTOMIZE_PROGRESS) {
+                    CustomizeProgressScreen(container = container, nav = nav, onBack = { nav.popBackStack() })
+                }
+                composable(ChompassRoutes.GOAL_PHASES) {
+                    GoalPhasesScreen(container = container, nav = nav, onBack = { nav.popBackStack() })
+                }
+                composable(ChompassRoutes.CALCULATION_METHODS) {
+                    CalculationMethodsScreen(onBack = { nav.popBackStack() })
+                }
+                composable(ChompassRoutes.BODY_MEASUREMENTS) {
+                    BodyMeasurementsScreen(container = container, onBack = { nav.popBackStack() })
+                }
+            }
+        }
+    }
+    }
+}
+
+internal fun NavHostController.current(): String? = currentBackStackEntry?.destination?.route

@@ -1,0 +1,483 @@
+package app.chompass.ui.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import app.chompass.R
+import app.chompass.models.AutoBalanceMacro
+import app.chompass.models.CalorieSafety
+import app.chompass.models.LocaleFormat
+import app.chompass.models.EnergyFormat
+import app.chompass.models.GoalFormulaReference
+import app.chompass.models.MacroPlanResolver
+import app.chompass.services.ai.GoalRecalcTier
+import app.chompass.services.ai.ImpliedWithheldReason
+import app.chompass.services.ai.RecalcSheetData
+import app.chompass.services.ai.RecalcSheetSource
+import app.chompass.ui.components.ChompassBottomSheet
+import app.chompass.ui.components.PlanEditDialog
+import app.chompass.ui.components.PlanField
+import app.chompass.ui.components.energyText
+import app.chompass.ui.components.blockSheetDragAtScrollEdges
+import app.chompass.ui.components.energyUnitLabel
+import app.chompass.ui.navigation.LocalEnergyUnit
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+
+/**
+ * Transparency sheet shown after Recalculate Goals: the new targets, who
+ * decided (provider/model badge + fallback note), how it decided (tier line),
+ * the formula baseline (BMR → TDEE × activity → goal pace → formula target),
+ * the data used (weigh-ins, logged intake, implied maintenance or why it was
+ * withheld, measured Health Connect burn), previous → new with delta, and the
+ * model's full reason (no 100-char squeeze).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RecalcResultSheet(
+    data: RecalcSheetData,
+    onDismiss: () -> Unit,
+    /** Confirm mode (edit-before-apply): targets are tappable and the bottom
+     *  actions become Save/Cancel. Non-editable reopen (persisted details,
+     *  Adaptive, Home ⓘ) stays byte-identical to the old behavior. */
+    editable: Boolean = false,
+    onEdit: ((PlanField, Int) -> Unit)? = null,
+    onApply: (() -> Unit)? = null,
+    onDiscard: (() -> Unit)? = null,
+) {
+    val result = data.result
+    val report = result.report
+    val before = data.before
+    val after = data.after
+    val unit = LocalEnergyUnit.current
+    val unitLabel = energyUnitLabel()
+    val scroll = rememberScrollState()
+    var editing by remember { mutableStateOf<PlanField?>(null) }
+    ChompassBottomSheet(onDismiss = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scroll)
+                .blockSheetDragAtScrollEdges(scroll)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                if (data.source == RecalcSheetSource.ADAPTIVE) {
+                    stringResource(R.string.settings_adaptive_goals)
+                } else {
+                    stringResource(R.string.vm_goals_recalculated)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            // 1. New targets — tappable in confirm mode; fields locked on the
+            // after-profile stay dim + locked and are NOT editable (applying
+            // keeps locks, so editing them would be a lie).
+            SheetSectionHeader(stringResource(R.string.recalc_sheet_new_targets))
+            val caloriesLocked = after.caloriesLocked
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (editable && !caloriesLocked) {
+                            Modifier.clickable { editing = PlanField.CALORIES }
+                        } else {
+                            Modifier
+                        }
+                    ),
+            ) {
+                Text(
+                    energyText(result.calories),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (editable && caloriesLocked) {
+                        AppColors.Calorie.copy(alpha = AppTextOpacity.Faint)
+                    } else {
+                        AppColors.Calorie
+                    },
+                )
+                if (editable && caloriesLocked) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            if (editable) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    editableMacro(
+                        label = stringResource(R.string.macro_protein),
+                        grams = result.protein,
+                        color = AppColors.Protein,
+                        locked = AutoBalanceMacro.PROTEIN in after.lockedMacros,
+                        onClick = { editing = PlanField.PROTEIN },
+                        modifier = Modifier.weight(1f),
+                    )
+                    editableMacro(
+                        label = stringResource(R.string.macro_carbs),
+                        grams = result.carbs,
+                        color = AppColors.Carbs,
+                        locked = AutoBalanceMacro.CARBS in after.lockedMacros,
+                        onClick = { editing = PlanField.CARBS },
+                        modifier = Modifier.weight(1f),
+                    )
+                    editableMacro(
+                        label = stringResource(R.string.macro_fat),
+                        grams = result.fat,
+                        color = AppColors.Fat,
+                        locked = AutoBalanceMacro.FAT in after.lockedMacros,
+                        onClick = { editing = PlanField.FAT },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                Text(
+                    stringResource(
+                        R.string.recalc_sheet_macros_format,
+                        result.protein, result.carbs, result.fat,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                )
+            }
+            HorizontalDivider()
+            // 2. Who decided
+            SheetSectionHeader(stringResource(R.string.recalc_sheet_who_decided))
+            val provider = result.provider
+            val providerLine = if (provider != null) {
+                val model = result.model.orEmpty()
+                if (model.isBlank()) stringResource(provider.displayNameRes)
+                else stringResource(provider.displayNameRes) + " · " + model
+            } else {
+                stringResource(R.string.recalc_sheet_tier_formula)
+            }
+            SheetInfoRow(providerLine)
+            if (result.fallbackFired && provider != null) {
+                SheetInfoRow(
+                    stringResource(
+                        R.string.recalc_sheet_fallback_note,
+                        result.primaryProvider?.let { stringResource(it.displayNameRes) } ?: "",
+                        stringResource(provider.displayNameRes),
+                    ),
+                    dim = true,
+                )
+            }
+            HorizontalDivider()
+            // 3. How it decided
+            SheetSectionHeader(stringResource(R.string.recalc_sheet_how_decided))
+            val weighIns = report?.weighIns ?: 0
+            val spanDays = report?.weightSpanDays ?: 0
+            val tierLine = when {
+                // Adaptive/deterministic entries (tier null) always show the formula line.
+                result.tier != null && report?.measuredTdee != null && result.tier != GoalRecalcTier.SMART ->
+                    stringResource(R.string.recalc_sheet_tier_measured)
+                result.tier == GoalRecalcTier.SMART && weighIns > 0 ->
+                    stringResource(R.string.recalc_sheet_tier_smart, weighIns, spanDays)
+                result.tier == GoalRecalcTier.SAFE && weighIns > 0 ->
+                    stringResource(R.string.recalc_sheet_tier_safe, weighIns, spanDays)
+                else -> stringResource(R.string.recalc_sheet_tier_formula)
+            }
+            SheetInfoRow(tierLine)
+            HorizontalDivider()
+            // 4. Formula baseline (checkable chain)
+            if (report != null) {
+                SheetSectionHeader(stringResource(R.string.recalc_sheet_formula_baseline))
+                SheetInfoRow(stringResource(R.string.recalc_sheet_bmr_row, LocaleFormat.integer(EnergyFormat.quantity(report.bmr, unit)), unitLabel))
+                SheetInfoRow(
+                    stringResource(
+                        R.string.recalc_sheet_tdee_row,
+                        GoalFormulaReference.formatMultiplier(report.activityMultiplier),
+                        LocaleFormat.integer(EnergyFormat.quantity(report.tdee, unit)),
+                        unitLabel,
+                    ),
+                )
+                SheetInfoRow(stringResource(R.string.recalc_sheet_pace_row, signed(EnergyFormat.quantity(report.calorieAdjustment, unit)), unitLabel))
+                SheetInfoRow(stringResource(R.string.recalc_sheet_formula_target_row, LocaleFormat.integer(EnergyFormat.quantity(report.formulaCalories, unit)), unitLabel))
+                report.clampedFrom?.let { pre ->
+                    SheetInfoRow(
+                        stringResource(
+                            R.string.recalc_sheet_clamped_row,
+                            LocaleFormat.integer(EnergyFormat.quantity(pre, unit)),
+                            LocaleFormat.integer(EnergyFormat.quantity(result.calories, unit)),
+                        ),
+                        dim = true,
+                    )
+                }
+                report.measuredTdee?.let {
+                    SheetInfoRow(stringResource(R.string.recalc_sheet_measured_row, LocaleFormat.integer(EnergyFormat.quantity(it, unit)), unitLabel))
+                }
+                report.dayTypeActiveTypical.forEach { line ->
+                    SheetInfoRow(
+                        stringResource(
+                            R.string.recalc_sheet_day_type_active,
+                            line.name,
+                            EnergyFormat.quantity(line.kcal, unit),
+                            line.samples,
+                            unitLabel,
+                        ),
+                    )
+                }
+                HorizontalDivider()
+            }
+            // 5. Data used
+            if (report != null) {
+                SheetSectionHeader(stringResource(R.string.recalc_sheet_data_used))
+                if (report.weighIns > 0) {
+                    SheetInfoRow(stringResource(R.string.recalc_sheet_data_weighins, report.weighIns, report.weightSpanDays))
+                } else {
+                    SheetInfoRow(stringResource(R.string.recalc_sheet_data_no_weighins))
+                }
+                val loggedAvg = report.loggedDayAvgCalories
+                if (report.foodDays > 0 && loggedAvg != null) {
+                    SheetInfoRow(stringResource(R.string.recalc_sheet_data_intake, LocaleFormat.integer(EnergyFormat.quantity(loggedAvg, unit)), report.foodDays, unitLabel))
+                } else {
+                    SheetInfoRow(stringResource(R.string.recalc_sheet_data_no_intake))
+                }
+                when (report.impliedWithheld) {
+                    ImpliedWithheldReason.THIN ->
+                        SheetInfoRow(stringResource(R.string.recalc_sheet_data_implied_thin))
+                    ImpliedWithheldReason.BELOW_FLOOR ->
+                        SheetInfoRow(stringResource(R.string.recalc_sheet_data_implied_below_floor))
+                    ImpliedWithheldReason.DISAGREE ->
+                        SheetInfoRow(stringResource(R.string.recalc_sheet_data_implied_disagree))
+                    null -> report.impliedMaintenance?.let {
+                        SheetInfoRow(stringResource(R.string.recalc_sheet_data_implied, LocaleFormat.integer(EnergyFormat.quantity(it, unit)), unitLabel))
+                    }
+                }
+                HorizontalDivider()
+            }
+            // 6. Before → after
+            SheetSectionHeader(stringResource(R.string.recalc_sheet_change))
+            SheetInfoRow(stringResource(R.string.recalc_sheet_previous, LocaleFormat.integer(EnergyFormat.quantity(before.effectiveCalories, unit)), unitLabel))
+            val delta = after.effectiveCalories - before.effectiveCalories
+            SheetInfoRow(
+                stringResource(
+                    R.string.recalc_sheet_new_with_delta,
+                    LocaleFormat.integer(EnergyFormat.quantity(after.effectiveCalories, unit)),
+                    signed(EnergyFormat.quantity(delta, unit)),
+                    unitLabel,
+                ),
+            )
+            // 6b. Day types (#60 phase 4): per-profile before/after + the weekly
+            // average line, so a plan-user can audit what the change did to each
+            // day type and not just the base anchor.
+            val afterPlan = after.macroPlan?.takeIf { it.enabled }
+            if (afterPlan != null) {
+                HorizontalDivider()
+                SheetSectionHeader(stringResource(R.string.recalc_sheet_day_types))
+                val today = java.time.LocalDate.now()
+                afterPlan.profiles.forEach { profile ->
+                    val beforeKcal = before.macroPlan?.profileById(profile.id)?.calories
+                    if (beforeKcal != null && beforeKcal != profile.calories) {
+                        SheetInfoRow(
+                            stringResource(
+                                R.string.recalc_sheet_daytype_change,
+                                profile.name,
+                                LocaleFormat.integer(EnergyFormat.quantity(beforeKcal, unit)),
+                                LocaleFormat.integer(EnergyFormat.quantity(profile.calories, unit)),
+                                unitLabel,
+                            ),
+                        )
+                    } else {
+                        SheetInfoRow(
+                            stringResource(
+                                R.string.recalc_sheet_daytype_value,
+                                profile.name,
+                                LocaleFormat.integer(EnergyFormat.quantity(profile.calories, unit)),
+                                unitLabel,
+                            ),
+                        )
+                    }
+                    SheetInfoRow(
+                        stringResource(
+                            R.string.recalc_sheet_daytype_macros_format,
+                            profile.proteinG, profile.carbsG, profile.fatG,
+                        ),
+                        dim = true,
+                    )
+                }
+                val averageAfter = MacroPlanResolver.averageForward(
+                    afterPlan, MacroPlanResolver.baseTargets(after), today,
+                ).calories
+                val averageBefore = before.macroPlan?.takeIf { it.enabled }?.let {
+                    MacroPlanResolver.averageForward(it, MacroPlanResolver.baseTargets(before), today).calories
+                }
+                if (averageBefore != null && averageBefore != averageAfter) {
+                    SheetInfoRow(
+                        stringResource(
+                            R.string.recalc_sheet_daytype_avg_change,
+                            LocaleFormat.integer(EnergyFormat.quantity(averageBefore, unit)),
+                            LocaleFormat.integer(EnergyFormat.quantity(averageAfter, unit)),
+                            unitLabel,
+                        ),
+                    )
+                } else {
+                    SheetInfoRow(
+                        stringResource(R.string.recalc_sheet_daytype_avg_value, LocaleFormat.integer(EnergyFormat.quantity(averageAfter, unit)), unitLabel),
+                    )
+                }
+            }
+            // 7. Model's full reason
+            result.reason?.let { reason ->
+                HorizontalDivider()
+                SheetSectionHeader(stringResource(R.string.recalc_sheet_reason))
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                )
+            }
+            if (editable) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { onDiscard?.invoke() },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                    Button(
+                        onClick = { onApply?.invoke() },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.action_save))
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                ) {
+                    Text(stringResource(R.string.action_done))
+                }
+            }
+        }
+    }
+    editing?.let { field ->
+        PlanEditDialog(
+            field = field,
+            calorieFloor = CalorieSafety.floorKcal(after.bmr),
+            currentValue = when (field) {
+                PlanField.CALORIES -> after.effectiveCalories
+                PlanField.PROTEIN -> after.effectiveProtein
+                PlanField.CARBS -> after.effectiveCarbs
+                PlanField.FAT -> after.effectiveFat
+            },
+            onDismiss = { editing = null },
+            onSave = { newValue ->
+                onEdit?.invoke(field, newValue)
+                editing = null
+            },
+            onReset = null,
+        )
+    }
+}
+
+@Composable
+private fun SheetSectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/** One tappable macro value in the confirm sheet's NEW TARGETS row; locked
+ *  macros render dim with the lock icon and ignore taps. */
+@Composable
+private fun editableMacro(
+    label: String,
+    grams: Int,
+    color: androidx.compose.ui.graphics.Color,
+    locked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.then(if (locked) Modifier else Modifier.clickable(onClick = onClick)),
+    ) {
+        Column {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    LocaleFormat.integer(grams) + " " + stringResource(R.string.unit_g),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (locked) color.copy(alpha = AppTextOpacity.Faint) else color,
+                )
+                if (locked) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetInfoRow(text: String, dim: Boolean = false) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(
+            alpha = if (dim) AppTextOpacity.Faint else AppTextOpacity.Muted,
+        ),
+    )
+}
+
+/** Signed integer for deltas: "+120" / "-120" / "0". */
+private fun signed(value: Int): String =
+    if (value > 0) "+" + LocaleFormat.integer(value) else LocaleFormat.integer(value)

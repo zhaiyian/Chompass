@@ -1,0 +1,222 @@
+package app.chompass.ui.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Equalizer
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.TrackChanges
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import app.chompass.R
+import app.chompass.models.DietMode
+import app.chompass.models.KetoCarbMode
+import app.chompass.models.MacroPlanMode
+import app.chompass.models.WeightGoal
+import app.chompass.ui.components.ChompassIconBubble
+import app.chompass.ui.navigation.ChompassRoutes
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.models.UnitFormat
+import app.chompass.services.ai.RecalcSheetData
+import app.chompass.services.ai.RecalcSheetSource
+import java.util.Date
+import java.text.DateFormat
+
+@Composable
+internal fun SettingsGoalsSection(
+    ui: SettingsUiState,
+    profile: app.chompass.models.UserProfile?,
+    vm: SettingsViewModel,
+    nav: NavHostController,
+    onOpenSheet: (SettingsSheet) -> Unit,
+    onShowAdaptiveGoalsInfo: () -> Unit,
+) {
+    SectionCard(title = stringResource(R.string.settings_section_goals)) {
+                profile?.let { p ->
+                    SettingRow(stringResource(R.string.settings_weight_goal), stringResource(p.goal.displayNameRes), icon = Icons.Outlined.Equalizer, inlineMenu = true) { onOpenSheet(SettingsSheet.GOAL) }
+                    HorizontalDivider()
+                    SettingRow(stringResource(R.string.settings_diet_mode), stringResource(p.dietMode.displayNameRes), icon = Icons.Outlined.Restaurant) { onOpenSheet(SettingsSheet.DIET_MODE) }
+                    if (p.dietMode == DietMode.KETO) {
+                        HorizontalDivider()
+                        SettingRow(
+                            stringResource(R.string.settings_keto_carb_mode),
+                            stringResource(p.ketoCarbMode.displayNameRes),
+                            icon = Icons.Outlined.Tune
+                        ) { onOpenSheet(SettingsSheet.DIET_CARB_MODE) }
+                        HorizontalDivider()
+                        val carbValue = if (p.ketoCarbMode == KetoCarbMode.MANUAL) {
+                            p.ketoCarbManualTarget ?: p.ketoActiveCarbTarget
+                        } else p.ketoActiveCarbTarget
+                        SettingRow(
+                            stringResource(R.string.settings_keto_net_carbs),
+                            stringResource(R.string.keto_carb_grams_format, carbValue),
+                            icon = Icons.Outlined.Restaurant
+                        ) { onOpenSheet(SettingsSheet.DIET_CARB_TARGET) }
+                    }
+                    HorizontalDivider()
+                    ActivityLevelSettingRow(p.activityLevel, stringResource(p.activityLevel.displayNameRes)) { onOpenSheet(SettingsSheet.ACTIVITY) }
+                    if (p.goal != WeightGoal.MAINTAIN) {
+                        HorizontalDivider()
+                        SettingRow(
+                            stringResource(R.string.settings_weekly_change),
+                            p.weeklyChangeKg?.let {
+                                if (ui.weightMetric) stringResource(R.string.kg_per_week_format, it)
+                                else stringResource(R.string.lbs_per_week_format, UnitFormat.kgToLbs(it))
+                            } ?: stringResource(R.string.settings_weekly_default),
+                            icon = Icons.Outlined.Speed
+                        ) { onOpenSheet(SettingsSheet.GOAL_SPEED) }
+                        HorizontalDivider()
+                        SettingRow(
+                            stringResource(R.string.settings_goal_weight),
+                            p.goalWeightKg?.let {
+                                if (ui.weightMetric) stringResource(R.string.kg_value_format, it)
+                                else stringResource(R.string.lbs_value_format, UnitFormat.kgToLbs(it))
+                            } ?: stringResource(R.string.settings_not_set),
+                            icon = Icons.AutoMirrored.Outlined.TrendingUp
+                        ) { onOpenSheet(SettingsSheet.GOAL_WEIGHT) }
+                    }
+                    HorizontalDivider()
+                    BusyToggleRow(
+                        label = stringResource(R.string.settings_adaptive_goals),
+                        checked = ui.adaptiveGoalsEnabled,
+                        icon = Icons.Outlined.TrackChanges,
+                        busy = ui.applyingAdaptiveGoals,
+                        onInfo = onShowAdaptiveGoalsInfo,
+                        onChange = vm::setAdaptiveGoalsEnabled
+                    )
+                    if (p.dietMode == DietMode.STANDARD) {
+                        // Day types (#60): STANDARD-only — keto's fixed net-carb
+                        // ceiling contradicts carb cycling (settled Q4). Switching
+                        // to keto hides this row and pauses a live plan.
+                        HorizontalDivider()
+                        SettingRow(
+                            stringResource(R.string.settings_day_types_title),
+                            dayTypesRowSummary(p),
+                            icon = Icons.Outlined.CalendarToday
+                        ) { nav.navigate(ChompassRoutes.SETTINGS_DAY_TYPES) }
+                    }
+                    HorizontalDivider()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !ui.recalculatingGoals) { vm.recalculateGoals() }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ChompassIconBubble(icon = Icons.Outlined.Refresh, size = 22.dp, iconSize = 14.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            stringResource(R.string.settings_recalculate_goals),
+                            color = if (ui.recalculatingGoals) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Faint)
+                            } else {
+                                AppColors.Calorie
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (ui.recalculatingGoals) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else if (ui.goalsNeedRecalc) {
+                            // Soft nudge: a goal input changed since the last recalc. A CTA on the
+                            // row's right edge, not a wrapped line below it.
+                            Text(
+                                stringResource(R.string.settings_tap_to_update),
+                                color = AppColors.Calorie,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    // On-demand transparency: reopen the latest goal-change explanation
+                    // (AI Recalculate or Adaptive) without triggering a new calculation.
+                    val lastSheet = ui.lastRecalcSheet
+                    if (lastSheet != null) {
+                        HorizontalDivider()
+                        SettingRow(
+                            stringResource(R.string.settings_recalc_details),
+                            recalcDetailsSubtitle(lastSheet),
+                            icon = Icons.Outlined.Info
+                        ) { vm.openRecalcSheet() }
+                    }
+                }
+    }
+
+    // Reference card moved below the goal rows so the editable targets come
+    // first; the Adaptive/Energy mechanisms each have their own info dialog.
+    SectionCard(title = stringResource(R.string.settings_goals_how_title)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                stringResource(R.string.settings_goals_how_adaptive),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+            Text(
+                stringResource(R.string.settings_goals_how_energy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+            Text(
+                stringResource(R.string.settings_goals_how_lock),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+        }
+    }
+}
+
+/** "Gemini · 22 Aug 2026" / "Adaptive Goals · 22 Aug 2026" for the details row. */
+@Composable
+private fun recalcDetailsSubtitle(sheet: RecalcSheetData): String {
+    val who = if (sheet.source == RecalcSheetSource.ADAPTIVE) {
+        stringResource(R.string.settings_adaptive_goals)
+    } else {
+        sheet.result.provider?.let { stringResource(it.displayNameRes) }
+            ?: stringResource(R.string.recalc_sheet_tier_formula)
+    }
+    val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(sheet.savedAtMillis))
+    return "$who · $date"
+}
+
+/** "Off" / "2 types · Cycle" for the Day types row. */
+@Composable
+internal fun dayTypesRowSummary(profile: app.chompass.models.UserProfile): String {
+    val plan = profile.macroPlan ?: return stringResource(R.string.settings_off)
+    if (!plan.enabled) return stringResource(R.string.settings_off)
+    val mode = when (plan.mode) {
+        MacroPlanMode.MANUAL -> stringResource(R.string.settings_day_types_mode_manual)
+        MacroPlanMode.WEEKDAYS -> stringResource(R.string.settings_day_types_mode_weekdays)
+        MacroPlanMode.CYCLE -> stringResource(R.string.settings_day_types_mode_cycle)
+    }
+    return stringResource(R.string.settings_day_types_summary_format, plan.profiles.size, mode)
+}

@@ -1,0 +1,492 @@
+package app.chompass.export
+
+import app.chompass.R
+
+import app.chompass.models.DailyNote
+import app.chompass.models.FoodConstituent
+import app.chompass.models.FoodEntry
+import app.chompass.models.FoodSource
+import app.chompass.models.GoalJournalEntry
+import app.chompass.models.MacroPlanResolver
+import app.chompass.models.ServingUnitOption
+import app.chompass.models.UserProfile
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+enum class DiaryFormat(val label: String, val ext: String, val mime: String) {
+    JSON("JSON", "json", "application/json"),
+    MARKDOWN("Markdown", "md", "text/markdown"),
+    CSV("CSV", "csv", "text/csv"),
+}
+
+enum class DiaryRange(val label: String, val labelRes: Int) {
+    TODAY("Today", R.string.export_range_today),
+    THIS_WEEK("This week", R.string.export_range_week),
+    THIS_MONTH("This month", R.string.export_range_month),
+    ALL_TIME("All time", R.string.export_range_all),
+    CUSTOM("Custom", R.string.export_range_custom),
+}
+
+/**
+ * Builds a shareable food-diary file (JSON / Markdown / CSV) from the local log.
+ * Pure logic — the caller supplies the entries, the current profile, and a meal
+ * display-name resolver (so string resources stay in the UI layer).
+ */
+object DiaryExporter {
+    private val zone: ZoneId get() = ZoneId.systemDefault()
+    private val dayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    private fun LocalDate.of(entry: FoodEntry): Boolean =
+        entry.timestamp.atZone(zone).toLocalDate() == this
+
+    fun resolveRange(
+        range: DiaryRange,
+        customStart: LocalDate,
+        customEnd: LocalDate,
+        entries: List<FoodEntry>,
+    ): Pair<LocalDate, LocalDate> {
+        val today = LocalDate.now()
+        return when (range) {
+            DiaryRange.TODAY -> today to today
+            DiaryRange.THIS_WEEK -> today.with(DayOfWeek.MONDAY) to today
+            DiaryRange.THIS_MONTH -> today.withDayOfMonth(1) to today
+            DiaryRange.ALL_TIME -> {
+                val earliest = entries.minOfOrNull { it.timestamp.atZone(zone).toLocalDate() } ?: today
+                earliest to today
+            }
+            DiaryRange.CUSTOM -> customStart to customEnd
+        }
+    }
+
+    /**
+     * Returns (filename, content) or null if nothing is logged in the range.
+     *
+     * Per-day targets (#60 phase 3): journal-first — a journaled day exports its
+     * frozen actual targets, gaps resolve live from the plan (base targets when
+     * the plan is off, so plan-off exports are byte-identical to before).
+     */
+    fun build(
+        entries: List<FoodEntry>,
+        start: LocalDate,
+        end: LocalDate,
+        format: DiaryFormat,
+        profile: UserProfile?,
+        mealDisplay: (String) -> String,
+        notes: List<DailyNote> = emptyList(),
+        goalJournal: List<GoalJournalEntry> = emptyList(),
+        today: LocalDate = LocalDate.now(),
+        untrackedDates: Set<LocalDate> = emptySet(),
+        untrackedKcalByDay: Map<LocalDate, Int> = emptyMap(),
+    ): Pair<String, String>? {
+        val lo = if (start.isAfter(end)) end else start
+        val hi = if (start.isAfter(end)) start else end
+
+        val byDay: Map<LocalDate, List<FoodEntry>> = entries
+            .filter {
+                val d = it.timestamp.atZone(zone).toLocalDate()
+                !d.isBefore(lo) && !d.isAfter(hi)
+            }
+            .groupBy { it.timestamp.atZone(zone).toLocalDate() }
+            .toSortedMap()
+        val noteByDay: Map<LocalDate, DailyNote> = notes
+            .filter { !it.date.isBefore(lo) && !it.date.isAfter(hi) }
+            .associateBy { it.date }
+        // A day with a note but no food still exports (journal days) — except
+        // CSV, which is entry-row-only and has no place for a day-level note.
+        val untrackedInRange = untrackedDates.filter { !it.isBefore(lo) && !it.isAfter(hi) }.toSet()
+        if (byDay.isEmpty() && format == DiaryFormat.CSV) return null
+        if (byDay.isEmpty() && noteByDay.isEmpty() && untrackedInRange.isEmpty()) return null
+
+        val targetsForDay: (LocalDate) -> Targets = { date ->
+            val resolved = MacroPlanResolver.targetsForJournaled(goalJournal, profile, date, today)
+            Targets(
+                calories = resolved.targets.calories,
+                protein = resolved.targets.proteinG.toDouble(),
+                carbs = resolved.targets.carbsG.toDouble(),
+                fat = resolved.targets.fatG.toDouble(),
+            )
+        }
+
+        val content = when (format) {
+            DiaryFormat.JSON -> json(byDay, noteByDay, untrackedInRange, untrackedKcalByDay, lo, hi, targetsForDay)
+            DiaryFormat.MARKDOWN -> markdown(byDay, noteByDay, lo, hi, targetsForDay, mealDisplay)
+            DiaryFormat.CSV -> csv(byDay)
+        }
+        val name = "Fud-Food-Diary-${dayFmt.format(lo)}_to_${dayFmt.format(hi)}.${format.ext}"
+        return name to content
+    }
+
+    // --- internal helpers ---
+
+    private data class Targets(val calories: Int, val protein: Double, val carbs: Double, val fat: Double)
+
+    /** A day's entries grouped by meal in enum order, each sorted by time ascending. */
+    private fun meals(dayEntries: List<FoodEntry>): List<Pair<String, List<FoodEntry>>> {
+        val order = app.chompass.models.CurrentMealCatalog.value.displayOrderIds()
+        val grouped = dayEntries.groupBy { it.mealType }
+        val known = order.mapNotNull { id ->
+            val items = grouped[id].orEmpty().sortedBy { it.timestamp }
+            if (items.isEmpty()) null else id to items
+        }
+        val orphans = grouped.keys.filter { it !in order }.sorted().map { id ->
+            id to grouped.getValue(id).sortedBy { it.timestamp }
+        }
+        return known + orphans
+    }
+
+    private fun totals(dayEntries: List<FoodEntry>): DoubleArray {
+        var cal = 0.0; var p = 0.0; var c = 0.0; var f = 0.0
+        for (e in dayEntries) { cal += e.calories; p += e.protein; c += e.carbs; f += e.fat }
+        return doubleArrayOf(cal, p, c, f)
+    }
+
+    fun sourceLabel(source: FoodSource): String =
+        when (source) {
+            FoodSource.MANUAL -> "manually_edited"
+            FoodSource.GROUNDED -> "grounded"
+            FoodSource.BARCODE -> "barcode"
+            FoodSource.SEARCH -> "search"
+            else -> "ai_estimated"
+        }
+
+    private fun r1(x: Double): Double = (x * 10).roundToInt() / 10.0
+    private fun optionalNumber(x: Double?, missing: String = ""): String = x?.let { r1(it).toString() } ?: missing
+    private fun time(entry: FoodEntry): String = timeFmt.format(entry.timestamp.atZone(zone))
+
+    private fun servingUnitDto(o: ServingUnitOption): ServingUnitDto = ServingUnitDto(
+        unit = o.unit,
+        grams_per_unit = r1(o.gramsPerUnit),
+        quantity = o.quantity?.let { r1(it) },
+    )
+
+    private fun constituentDto(c: FoodConstituent): ConstituentDto = ConstituentDto(
+        name = c.name,
+        calories = c.calories,
+        protein_g = r1(c.protein),
+        carbs_g = r1(c.carbs),
+        fat_g = r1(c.fat),
+        quantity_g = r1(c.servingSizeGrams),
+        sugar_g = c.sugar?.let { r1(it) }, added_sugar_g = c.addedSugar?.let { r1(it) },
+        fiber_g = c.fiber?.let { r1(it) }, saturated_fat_g = c.saturatedFat?.let { r1(it) },
+        monounsaturated_fat_g = c.monounsaturatedFat?.let { r1(it) },
+        polyunsaturated_fat_g = c.polyunsaturatedFat?.let { r1(it) },
+        cholesterol_mg = c.cholesterol?.let { r1(it) }, sodium_mg = c.sodium?.let { r1(it) },
+        potassium_mg = c.potassium?.let { r1(it) }, trans_fat_g = c.transFat?.let { r1(it) },
+        calcium_mg = c.calcium?.let { r1(it) }, iron_mg = c.iron?.let { r1(it) },
+        magnesium_mg = c.magnesium?.let { r1(it) }, zinc_mg = c.zinc?.let { r1(it) },
+        vitamin_a_mcg = c.vitaminA?.let { r1(it) }, vitamin_c_mg = c.vitaminC?.let { r1(it) },
+        vitamin_d_mcg = c.vitaminD?.let { r1(it) }, vitamin_b12_mcg = c.vitaminB12?.let { r1(it) },
+        vitamin_e_mg = c.vitaminE?.let { r1(it) }, vitamin_k_mcg = c.vitaminK?.let { r1(it) },
+        folate_mcg = c.folate?.let { r1(it) }, omega3_g = c.omega3?.let { r1(it) },
+        caffeine_mg = c.caffeine?.let { r1(it) },
+        emoji = c.emoji,
+        serving_unit_options = c.servingUnitOptions.takeIf { it.isNotEmpty() }?.map { servingUnitDto(it) },
+        selected_serving_unit = c.selectedServingUnit,
+        selected_serving_quantity = c.selectedServingQuantity?.let { r1(it) },
+    )
+
+    private fun itemDto(e: FoodEntry): ItemDto = ItemDto(
+        name = e.name,
+        quantity_g = e.servingSizeGrams?.let { r1(it) },
+        calories = e.calories,
+        protein_g = r1(e.protein), carbs_g = r1(e.carbs), fat_g = r1(e.fat),
+        sugar_g = e.sugar?.let { r1(it) }, added_sugar_g = e.addedSugar?.let { r1(it) },
+        fiber_g = e.fiber?.let { r1(it) }, saturated_fat_g = e.saturatedFat?.let { r1(it) },
+        monounsaturated_fat_g = e.monounsaturatedFat?.let { r1(it) },
+        polyunsaturated_fat_g = e.polyunsaturatedFat?.let { r1(it) },
+        cholesterol_mg = e.cholesterol?.let { r1(it) }, sodium_mg = e.sodium?.let { r1(it) },
+        potassium_mg = e.potassium?.let { r1(it) }, trans_fat_g = e.transFat?.let { r1(it) },
+        calcium_mg = e.calcium?.let { r1(it) }, iron_mg = e.iron?.let { r1(it) },
+        magnesium_mg = e.magnesium?.let { r1(it) }, zinc_mg = e.zinc?.let { r1(it) },
+        vitamin_a_mcg = e.vitaminA?.let { r1(it) }, vitamin_c_mg = e.vitaminC?.let { r1(it) },
+        vitamin_d_mcg = e.vitaminD?.let { r1(it) }, vitamin_b12_mcg = e.vitaminB12?.let { r1(it) },
+        vitamin_e_mg = e.vitaminE?.let { r1(it) }, vitamin_k_mcg = e.vitaminK?.let { r1(it) },
+        folate_mcg = e.folate?.let { r1(it) }, omega3_g = e.omega3?.let { r1(it) },
+        caffeine_mg = e.caffeine?.let { r1(it) },
+        time = time(e), source = sourceLabel(e.source),
+        note = e.customNote?.takeIf { it.isNotBlank() },
+        grounding = e.grounding?.let { g ->
+            GroundingDto(
+                source_kind = when (g.sourceKind) {
+                    app.chompass.models.NutrientSourceKind.USDA -> "usda"
+                    app.chompass.models.NutrientSourceKind.OPEN_FOOD_FACTS -> "openFoodFacts"
+                    app.chompass.models.NutrientSourceKind.SWISS -> "swiss"
+                    app.chompass.models.NutrientSourceKind.HISTORY -> "history"
+                    app.chompass.models.NutrientSourceKind.NUTRITION_LABEL -> "nutritionLabel"
+                    app.chompass.models.NutrientSourceKind.MODEL_ESTIMATE -> "modelEstimate"
+                },
+                source_id = g.sourceId,
+                source_name = g.sourceName,
+                dataset_version = g.datasetVersion,
+                identity_confirmed = g.identityConfirmed,
+                portion_confirmed = g.portionConfirmed,
+                user_corrected = g.userCorrected,
+                identity_evidence = g.identityEvidence,
+                portion_evidence = g.portionEvidence,
+                validation_notes = g.validationNotes.takeIf { it.isNotEmpty() },
+                components = g.components.takeIf { it.isNotEmpty() }?.map { c ->
+                    GroundingComponentDto(
+                        name = c.name,
+                        grams = r1(c.grams),
+                        source_kind = when (c.sourceKind) {
+                            app.chompass.models.NutrientSourceKind.USDA -> "usda"
+                            app.chompass.models.NutrientSourceKind.OPEN_FOOD_FACTS -> "openFoodFacts"
+                            app.chompass.models.NutrientSourceKind.SWISS -> "swiss"
+                            app.chompass.models.NutrientSourceKind.HISTORY -> "history"
+                            app.chompass.models.NutrientSourceKind.NUTRITION_LABEL -> "nutritionLabel"
+                            app.chompass.models.NutrientSourceKind.MODEL_ESTIMATE -> "modelEstimate"
+                        },
+                        source_id = c.sourceId,
+                        source_name = c.sourceName,
+                        matched_by = c.matchedBy,
+                    )
+                },
+            )
+        },
+        serving_unit_options = e.servingUnitOptions.takeIf { it.isNotEmpty() }?.map { servingUnitDto(it) },
+        selected_serving_unit = e.selectedServingUnit,
+        selected_serving_quantity = e.selectedServingQuantity?.let { r1(it) },
+        constituents = e.constituents.map { constituentDto(it) },
+    )
+
+    private fun nutrientCells(e: FoodEntry): List<String> = listOf(
+        r1(e.protein).toString(), r1(e.carbs).toString(), r1(e.fat).toString(),
+        optionalNumber(e.sugar, "-"), optionalNumber(e.addedSugar, "-"), optionalNumber(e.fiber, "-"),
+        optionalNumber(e.saturatedFat, "-"), optionalNumber(e.monounsaturatedFat, "-"),
+        optionalNumber(e.polyunsaturatedFat, "-"), optionalNumber(e.cholesterol, "-"),
+        optionalNumber(e.sodium, "-"), optionalNumber(e.potassium, "-"), optionalNumber(e.transFat, "-"),
+        optionalNumber(e.calcium, "-"), optionalNumber(e.iron, "-"), optionalNumber(e.magnesium, "-"),
+        optionalNumber(e.zinc, "-"), optionalNumber(e.vitaminA, "-"), optionalNumber(e.vitaminC, "-"),
+        optionalNumber(e.vitaminD, "-"), optionalNumber(e.vitaminB12, "-"), optionalNumber(e.vitaminE, "-"),
+        optionalNumber(e.vitaminK, "-"), optionalNumber(e.folate, "-"), optionalNumber(e.omega3, "-"),
+        optionalNumber(e.caffeine, "-"),
+    )
+
+    // --- JSON ---
+
+    @Serializable private data class Macro(val calories: Int, val protein_g: Double, val carbs_g: Double, val fat_g: Double)
+    @Serializable private data class ServingUnitDto(
+        val unit: String,
+        val grams_per_unit: Double,
+        val quantity: Double? = null,
+    )
+    @Serializable private data class ConstituentDto(
+        val name: String,
+        val calories: Int,
+        val protein_g: Double,
+        val carbs_g: Double,
+        val fat_g: Double,
+        val quantity_g: Double,
+        val sugar_g: Double? = null, val added_sugar_g: Double? = null, val fiber_g: Double? = null,
+        val saturated_fat_g: Double? = null, val monounsaturated_fat_g: Double? = null,
+        val polyunsaturated_fat_g: Double? = null, val cholesterol_mg: Double? = null,
+        val sodium_mg: Double? = null, val potassium_mg: Double? = null, val trans_fat_g: Double? = null,
+        val calcium_mg: Double? = null, val iron_mg: Double? = null, val magnesium_mg: Double? = null,
+        val zinc_mg: Double? = null, val vitamin_a_mcg: Double? = null, val vitamin_c_mg: Double? = null,
+        val vitamin_d_mcg: Double? = null, val vitamin_b12_mcg: Double? = null,
+        val vitamin_e_mg: Double? = null, val vitamin_k_mcg: Double? = null,
+        val folate_mcg: Double? = null, val omega3_g: Double? = null,
+        val caffeine_mg: Double? = null,
+        val emoji: String? = null,
+        val serving_unit_options: List<ServingUnitDto>? = null,
+        val selected_serving_unit: String? = null,
+        val selected_serving_quantity: Double? = null,
+    )
+    @Serializable private data class ItemDto(
+        val name: String, val quantity_g: Double? = null, val calories: Int,
+        val protein_g: Double, val carbs_g: Double, val fat_g: Double,
+        val sugar_g: Double? = null, val added_sugar_g: Double? = null, val fiber_g: Double? = null,
+        val saturated_fat_g: Double? = null, val monounsaturated_fat_g: Double? = null,
+        val polyunsaturated_fat_g: Double? = null, val cholesterol_mg: Double? = null,
+        val sodium_mg: Double? = null, val potassium_mg: Double? = null, val trans_fat_g: Double? = null,
+        val calcium_mg: Double? = null, val iron_mg: Double? = null, val magnesium_mg: Double? = null,
+        val zinc_mg: Double? = null, val vitamin_a_mcg: Double? = null, val vitamin_c_mg: Double? = null,
+        val vitamin_d_mcg: Double? = null, val vitamin_b12_mcg: Double? = null,
+        val vitamin_e_mg: Double? = null, val vitamin_k_mcg: Double? = null,
+        val folate_mcg: Double? = null, val omega3_g: Double? = null,
+        val caffeine_mg: Double? = null,
+        val time: String, val source: String, val note: String? = null,
+        val grounding: GroundingDto? = null,
+        val serving_unit_options: List<ServingUnitDto>? = null,
+        val selected_serving_unit: String? = null,
+        val selected_serving_quantity: Double? = null,
+        val constituents: List<ConstituentDto> = emptyList(),
+    )
+    @Serializable private data class GroundingComponentDto(
+        val name: String,
+        val grams: Double,
+        val source_kind: String,
+        val source_id: String? = null,
+        val source_name: String? = null,
+        val matched_by: String? = null,
+    )
+    @Serializable private data class GroundingDto(
+        val source_kind: String,
+        val source_id: String? = null,
+        val source_name: String? = null,
+        val dataset_version: String? = null,
+        val identity_confirmed: Boolean = false,
+        val portion_confirmed: Boolean = false,
+        val user_corrected: Boolean = false,
+        val identity_evidence: String? = null,
+        val portion_evidence: String? = null,
+        val validation_notes: List<String>? = null,
+        val components: List<GroundingComponentDto>? = null,
+    )
+    @Serializable private data class MealDto(val type: String, val items: List<ItemDto>)
+    @Serializable private data class DayDto(
+        val date: String, val totals: Macro, val targets: Macro, val remaining: Macro,
+        val meals: List<MealDto>, val note: String? = null,
+        val untracked: Boolean? = null,
+        val untracked_kcal: Int? = null,
+    )
+    @Serializable private data class RangeDto(val start: String, val end: String)
+    @Serializable private data class MealCatalogDto(val id: String, val label: String)
+    @Serializable private data class MetaDto(
+        val app: String,
+        val format_version: String,
+        val date_range: RangeDto,
+        val meal_catalog: List<MealCatalogDto>? = null,
+    )
+    @Serializable private data class Doc(val export: MetaDto, val days: List<DayDto>)
+
+    private val jsonPretty = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
+
+    private fun json(
+        byDay: Map<LocalDate, List<FoodEntry>>,
+        noteByDay: Map<LocalDate, DailyNote>,
+        untrackedDates: Set<LocalDate>,
+        untrackedKcalByDay: Map<LocalDate, Int>,
+        lo: LocalDate, hi: LocalDate, t: (LocalDate) -> Targets,
+    ): String {
+        // Union of days: food, notes, and untracked-only days (#106).
+        val days = (byDay.keys + noteByDay.keys + untrackedDates).sorted().map { date ->
+            val dayEntries = byDay[date].orEmpty()
+            val tot = totals(dayEntries)
+            val dayTarget = t(date)
+            val mealDtos = meals(dayEntries).map { (mt, items) ->
+                MealDto(
+                    type = mt,
+                    items = items.map { itemDto(it) },
+                )
+            }
+            DayDto(
+                date = dayFmt.format(date),
+                totals = Macro(tot[0].roundToInt(), r1(tot[1]), r1(tot[2]), r1(tot[3])),
+                targets = Macro(dayTarget.calories, dayTarget.protein, dayTarget.carbs, dayTarget.fat),
+                remaining = Macro(
+                    max(0, dayTarget.calories - tot[0].roundToInt()),
+                    r1(max(0.0, dayTarget.protein - tot[1])),
+                    r1(max(0.0, dayTarget.carbs - tot[2])),
+                    r1(max(0.0, dayTarget.fat - tot[3])),
+                ),
+                meals = mealDtos,
+                note = noteByDay[date]?.text,
+                untracked = true.takeIf { date in untrackedDates },
+                untracked_kcal = untrackedKcalByDay[date],
+            )
+        }
+        val doc = Doc(
+            export = MetaDto(
+                app = "Chompass",
+                format_version = "1.6",
+                date_range = RangeDto(dayFmt.format(lo), dayFmt.format(hi)),
+                meal_catalog = app.chompass.models.CurrentMealCatalog.value.meals.map {
+                    MealCatalogDto(it.id, it.label)
+                },
+            ),
+            days = days,
+        )
+        return jsonPretty.encodeToString(Doc.serializer(), doc)
+    }
+
+    // --- Markdown ---
+
+    private fun markdown(
+        byDay: Map<LocalDate, List<FoodEntry>>,
+        noteByDay: Map<LocalDate, DailyNote>,
+        lo: LocalDate, hi: LocalDate, t: (LocalDate) -> Targets,
+        mealDisplay: (String) -> String,
+    ): String {
+        val sb = StringBuilder()
+        sb.append("# Food diary export\n")
+        sb.append("Date range: ${dayFmt.format(lo)} to ${dayFmt.format(hi)}\n")
+        sb.append("Generated by Chompass\n")
+        for ((date, dayEntries) in byDay) {
+            val tot = totals(dayEntries)
+            val dayTarget = t(date)
+            sb.append("\n## ${dayFmt.format(date)}\n")
+            sb.append("Totals:\n")
+            sb.append("- Calories: ${tot[0].roundToInt()} / ${dayTarget.calories} kcal\n")
+            sb.append("- Protein: ${r1(tot[1])} / ${dayTarget.protein.roundToInt()} g\n")
+            sb.append("- Carbs: ${r1(tot[2])} / ${dayTarget.carbs.roundToInt()} g\n")
+            sb.append("- Fat: ${r1(tot[3])} / ${dayTarget.fat.roundToInt()} g\n")
+            for ((mt, items) in meals(dayEntries)) {
+                sb.append("### ${mealDisplay(mt)}\n")
+                sb.append("| Time | Food | Weight | Calories | Protein (g) | Carbs (g) | Fat (g) | Sugar (g) | Added sugar (g) | Fiber (g) | Saturated fat (g) | Monounsaturated fat (g) | Polyunsaturated fat (g) | Cholesterol (mg) | Sodium (mg) | Potassium (mg) | Trans fat (g) | Calcium (mg) | Iron (mg) | Magnesium (mg) | Zinc (mg) | Vitamin A (mcg) | Vitamin C (mg) | Vitamin D (mcg) | Vitamin B12 (mcg) | Vitamin E (mg) | Vitamin K (mcg) | Folate (mcg) | Omega-3 (g) | Caffeine (mg) | Source |\n")
+                sb.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
+                for (e in items) {
+                    val weight = e.servingSizeGrams?.let { "${it.roundToInt()} g" } ?: "-"
+                    val food = e.name.replace("|", "/")
+                    val cells = listOf(
+                        time(e), food, weight, e.calories.toString(),
+                    ) + nutrientCells(e) + sourceLabel(e.source)
+                    sb.append("| ").append(cells.joinToString(" | ")).append(" |\n")
+                }
+            }
+        }
+        // Note-only days (journal entries) and day notes on food days:
+        // Markdown has a natural place for a day-level note.
+        val allDays = (byDay.keys + noteByDay.keys).sorted()
+        for (date in allDays) {
+            val note = noteByDay[date]?.text ?: continue
+            sb.append("\n## ${dayFmt.format(date)}\n")
+            if (byDay[date].isNullOrEmpty()) sb.append("No food logged.\n")
+            sb.append("\n> ${note.replace("\n", "\n> ")}\n")
+        }
+        return sb.toString()
+    }
+
+    // --- CSV ---
+
+    private fun csv(byDay: Map<LocalDate, List<FoodEntry>>): String {
+        val sb = StringBuilder()
+        sb.append("date,meal,time,food,weight_g,calories,protein_g,carbs_g,fat_g,sugar_g,added_sugar_g,fiber_g,saturated_fat_g,monounsaturated_fat_g,polyunsaturated_fat_g,cholesterol_mg,sodium_mg,potassium_mg,trans_fat_g,calcium_mg,iron_mg,magnesium_mg,zinc_mg,vitamin_a_mcg,vitamin_c_mg,vitamin_d_mcg,vitamin_b12_mcg,vitamin_e_mg,vitamin_k_mcg,folate_mcg,omega3_g,caffeine_mg,source,note\n")
+        for ((date, dayEntries) in byDay) {
+            val d = dayFmt.format(date)
+            for ((mt, items) in meals(dayEntries)) {
+                for (e in items) {
+                    val cols = listOf(
+                        d, mt, time(e), e.name,
+                        e.servingSizeGrams?.roundToInt()?.toString() ?: "",
+                        e.calories.toString(), r1(e.protein).toString(), r1(e.carbs).toString(), r1(e.fat).toString(),
+                        optionalNumber(e.sugar), optionalNumber(e.addedSugar), optionalNumber(e.fiber),
+                        optionalNumber(e.saturatedFat), optionalNumber(e.monounsaturatedFat),
+                        optionalNumber(e.polyunsaturatedFat), optionalNumber(e.cholesterol), optionalNumber(e.sodium),
+                        optionalNumber(e.potassium), optionalNumber(e.transFat), optionalNumber(e.calcium),
+                        optionalNumber(e.iron), optionalNumber(e.magnesium), optionalNumber(e.zinc),
+                        optionalNumber(e.vitaminA), optionalNumber(e.vitaminC), optionalNumber(e.vitaminD),
+                        optionalNumber(e.vitaminB12), optionalNumber(e.vitaminE), optionalNumber(e.vitaminK),
+                        optionalNumber(e.folate), optionalNumber(e.omega3),
+                        optionalNumber(e.caffeine),
+                        sourceLabel(e.source), e.customNote ?: "",
+                    )
+                    sb.append(cols.joinToString(",") { csvEscape(it) }).append("\n")
+                }
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun csvEscape(field: String): String =
+        if (field.contains(',') || field.contains('"') || field.contains('\n')) {
+            "\"" + field.replace("\"", "\"\"") + "\""
+        } else field
+}

@@ -1,0 +1,968 @@
+package app.chompass.ui.settings
+import android.content.Intent
+import android.net.Uri
+
+import app.chompass.ui.components.ChompassPrimaryButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import app.chompass.R
+import app.chompass.data.MAX_FASTING_EAT_HOURS
+import app.chompass.data.MAX_FASTING_GOAL_HOURS
+import app.chompass.data.MAX_FASTING_REMINDER_LEAD_MINUTES
+import app.chompass.models.FastingGoalPreset
+import app.chompass.models.BodyFatMethod
+import app.chompass.models.CalorieSafety
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.LocaleFormat
+import app.chompass.models.WaterQuickPresets
+import app.chompass.models.WaterAmountFormat
+import app.chompass.models.WeightGoal
+import app.chompass.ui.components.DateWheelPicker
+import app.chompass.ui.components.DecimalWheelPicker
+import app.chompass.ui.components.FeetInchesWheelPicker
+import app.chompass.ui.components.ChompassTextButton
+import app.chompass.ui.components.ChompassTextField
+import app.chompass.ui.components.ChompassIconBubble
+import app.chompass.ui.components.NumericWheelPicker
+import app.chompass.ui.components.SplitDecimalWheelPicker
+import app.chompass.ui.components.UnitToggle
+import app.chompass.ui.components.WheelPicker
+import app.chompass.ui.components.isDarkTheme
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.util.formatMinutesOfDay
+import androidx.compose.ui.platform.LocalContext
+import java.time.Instant
+import app.chompass.ui.theme.AppRadii
+import app.chompass.ui.theme.AppTextOpacity
+import java.time.LocalDate
+import java.time.ZoneId
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import app.chompass.models.UnitFormat
+
+internal fun optionalNutrientSummary(goals: OptionalNutrientGoals): String =
+    "Fiber ${goals.fiber}g, Sodium ${goals.sodium}mg"
+
+/**
+ * D1 (audit M8+M9 decision): every value-editing sheet shows explicit Cancel
+ * beside the gradient Save. Scrim and back already dismissed silently (= the
+ * old discard path); the visible Cancel is the discoverable twin, and there
+ * is deliberately no dismiss-with-edits guard (D4).
+ */
+@Composable
+internal fun CancelSaveRow(
+    onDismiss: () -> Unit,
+    enabled: Boolean = true,
+    onSave: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ChompassTextButton(
+            text = stringResource(R.string.action_cancel),
+            onClick = onDismiss,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+        )
+        ChompassPrimaryButton(flushDrafts = true, enabled = enabled, modifier = Modifier.weight(1f), onClick = onSave)
+    }
+}
+
+@Composable
+internal fun <T> ListSheet(
+    title: String,
+    items: List<T>,
+    label: @Composable (T) -> String,
+    selected: (T) -> Boolean,
+    onSelect: (T) -> Unit,
+    icon: ((T) -> ImageVector?)? = null,
+    subtitle: (@Composable (T) -> String?)? = null,
+    /** Group label for an item; rendered above the first item of each distinct group. */
+    sectionHeader: (@Composable (T) -> String?)? = null,
+    /** Renders a search field above the list; queries match [filterText] (default toString). */
+    searchable: Boolean = false,
+    filterText: ((T) -> String)? = null,
+    footer: String? = null,
+    customField: ((String) -> Unit)? = null,
+    /** Composable leading slot (e.g. a color swatch) rendered before the label; overrides [icon]. */
+    leading: (@Composable (T) -> Unit)? = null,
+    /** When non-null, the custom-field footer gains a Cancel beside its Save. */
+    onDismiss: (() -> Unit)? = null
+) {
+    val isDark = isDarkTheme()
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    var query by remember { mutableStateOf("") }
+    if (searchable) {
+        ChompassTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = stringResource(R.string.sheet_model_search_hint),
+            modifier = Modifier.fillMaxWidth(),
+            leadingIcon = {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+            trailingIcon = if (query.isNotEmpty()) {
+                {
+                    IconButton(onClick = { query = "" }) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.action_clear),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            } else null,
+        )
+        Spacer(Modifier.height(12.dp))
+    }
+    val needle = query.trim()
+    val visible = if (!searchable || needle.isEmpty()) items else items.filter {
+        (filterText?.invoke(it) ?: it.toString()).contains(needle, ignoreCase = true)
+    }
+    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (visible.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.sheet_no_match),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                )
+            }
+        }
+        itemsIndexed(visible) { index, item ->
+            val isSel = selected(item)
+            val rowIcon = icon?.invoke(item)
+            val sub = subtitle?.invoke(item)
+            val header = sectionHeader?.invoke(item)
+            Column(Modifier.fillMaxWidth()) {
+            if (!header.isNullOrBlank() &&
+                (index == 0 || sectionHeader?.invoke(visible[index - 1]) != header)
+            ) {
+                if (index > 0) Spacer(Modifier.height(6.dp))
+                Text(
+                    header,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            val shape = MaterialTheme.shapes.medium
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(
+                        if (isSel) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    )
+                    .clickable { onSelect(item) }
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (leading != null) {
+                    leading(item)
+                    Spacer(Modifier.width(14.dp))
+                } else if (rowIcon != null) {
+                    ChompassIconBubble(rowIcon, size = 22.dp, iconSize = 14.dp)
+                    Spacer(Modifier.width(14.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        label(item),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (!sub.isNullOrBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            sub,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                        )
+                    }
+                }
+                if (isSel) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = stringResource(R.string.sheet_selected_a11y),
+                        tint = AppColors.Calorie,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            }
+        }
+    }
+    if (customField != null) {
+        footer?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted))
+        }
+        var custom by remember { mutableStateOf("") }
+        Spacer(Modifier.height(8.dp))
+        ChompassTextField(
+            value = custom,
+            onValueChange = { custom = it },
+            placeholder = stringResource(R.string.sheet_any_model_id),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        CancelSaveRow(
+            onDismiss = { onDismiss?.invoke() },
+            enabled = custom.isNotBlank()
+        ) { if (custom.isNotBlank()) customField(custom.trim()) }
+    }
+}
+
+@Composable
+internal fun ApiKeySheet(
+    title: String,
+    placeholder: String,
+    initial: String = "",
+    signupUrl: String? = null,
+    onTest: ((String) -> Unit)? = null,
+    testing: Boolean = false,
+    testOk: Boolean? = null,
+    testMessage: String? = null,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember { mutableStateOf(initial) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Saving an empty field over a stored key silently cleared it — confirm first.
+    fun save(v: String) {
+        if (v.isBlank() && initial.isNotBlank()) confirmClear = true else onSave(v)
+    }
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    ChompassTextField(
+        value = value,
+        onValueChange = { value = it },
+        placeholder = placeholder,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    if (signupUrl != null) {
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(signupUrl)))
+        }) { Text(stringResource(R.string.settings_ai_get_key)) }
+    }
+    if (onTest != null) {
+        val resultLine = when {
+            testing -> stringResource(R.string.onboarding_api_key_testing)
+            testOk == true -> "✓ ${stringResource(R.string.onboarding_api_key_works)}"
+            testOk == false -> "✗ ${testMessage.orEmpty()}"
+            else -> null
+        }
+        if (resultLine != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                resultLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = when (testOk) {
+                    true -> AppColors.SuccessLight
+                    false -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                }
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ChompassTextButton(
+            text = stringResource(R.string.action_cancel),
+            onClick = onDismiss,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+        )
+        if (onTest != null) {
+            TextButton(
+                onClick = { onTest(value) },
+                enabled = value.isNotBlank() && !testing,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (testing) {
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(stringResource(R.string.settings_ai_key_test), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        ChompassPrimaryButton(flushDrafts = true, modifier = Modifier.weight(1f), onClick = { save(value) })
+    }
+    Spacer(Modifier.height(4.dp))
+    TextButton(onClick = { onSave("") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_clear_key)) }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.settings_ai_key_remove_title)) },
+            text = { Text(stringResource(R.string.settings_ai_key_remove_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClear = false
+                    onSave("")
+                }) { Text(stringResource(R.string.action_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun TextFieldSheet(
+    title: String,
+    initial: String,
+    placeholder: String,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember(initial) { mutableStateOf(initial) }
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    ChompassTextField(
+        value = value,
+        onValueChange = { value = it },
+        placeholder = placeholder,
+        singleLine = true,
+        keyboardOptions = keyboardOptions,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    CancelSaveRow(onDismiss) { onSave(value.trim()) }
+}
+
+@Composable
+internal fun HeightSheet(current: Int, useMetric: Boolean, onUnitChange: (Boolean) -> Unit, onSave: (Int) -> Unit, onDismiss: () -> Unit) {
+    var cm by remember(current) { mutableStateOf(current) }
+    var metric by remember { mutableStateOf(useMetric) }
+    Text(stringResource(R.string.sheet_height), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    UnitToggle(stringResource(R.string.unit_cm), stringResource(R.string.unit_ft_in), metric, { metric = it; onUnitChange(it) }, Modifier.fillMaxWidth())
+    Spacer(Modifier.height(20.dp))
+    if (metric) NumericWheelPicker(cm, { cm = it }, 100, 250, stringResource(R.string.unit_cm))
+    else FeetInchesWheelPicker(cm, { cm = it })
+    Spacer(Modifier.height(16.dp))
+    CancelSaveRow(onDismiss) { onSave(cm) }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+internal fun WeightSheet(titleText: String, current: Double, useMetric: Boolean, onUnitChange: (Boolean) -> Unit, onSave: (Double) -> Unit, onDismiss: () -> Unit) {
+    var kg by remember(current) { mutableStateOf(current) }
+    var metric by remember { mutableStateOf(useMetric) }
+    Text(titleText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    UnitToggle(stringResource(R.string.unit_kg), stringResource(R.string.unit_lbs), metric, { metric = it; onUnitChange(it) }, Modifier.fillMaxWidth())
+    Spacer(Modifier.height(20.dp))
+    if (metric) {
+        SplitDecimalWheelPicker(kg, { kg = it }, 30, 250, stringResource(R.string.unit_kg))
+    } else {
+        SplitDecimalWheelPicker(UnitFormat.kgToLbs(kg), { lbs -> kg = UnitFormat.lbsToKg(lbs) }, 66, 551, stringResource(R.string.unit_lbs))
+    }
+    Spacer(Modifier.height(16.dp))
+    CancelSaveRow(onDismiss) { onSave(kg) }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+internal fun BodyFatSheet(
+    current: Double?,
+    method: BodyFatMethod?,
+    accuracyOverride: Double?,
+    onSave: (fraction: Double?, method: BodyFatMethod?, accuracyPoints: Double?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var pct by remember(current) { mutableStateOf((current ?: 0.20) * 100) }
+    var selectedMethod by remember(method) { mutableStateOf(method) }
+    // Null = follow the method's known accuracy; a value = user override.
+    var accuracyOverride by remember(accuracyOverride, selectedMethod) {
+        mutableStateOf(accuracyOverride)
+    }
+    val shownAccuracy = accuracyOverride ?: selectedMethod?.accuracyPoints ?: 5.0
+    Text(stringResource(R.string.sheet_body_fat_percent), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    DecimalWheelPicker(pct, { pct = it }, 3.0, 65.0, 0.1, stringResource(R.string.unit_percent))
+    Spacer(Modifier.height(12.dp))
+    Text(stringResource(R.string.sheet_body_fat_method), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(6.dp))
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        BodyFatMethod.entries.forEach { candidate ->
+            FilterChip(
+                selected = selectedMethod == candidate,
+                onClick = {
+                    selectedMethod = if (selectedMethod == candidate) null else candidate
+                    // Picking a method resets an override so its known accuracy applies.
+                    accuracyOverride = null
+                },
+                label = { Text(stringResource(candidate.labelRes), maxLines = 1) },
+            )
+        }
+    }
+    if (selectedMethod != null) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.sheet_body_fat_accuracy, LocaleFormat.decimal(shownAccuracy, 1)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        DecimalWheelPicker(shownAccuracy, { accuracyOverride = it }, 0.5, 10.0, 0.1, stringResource(R.string.unit_pp))
+    }
+    Spacer(Modifier.height(12.dp))
+    CancelSaveRow(onDismiss) {
+        onSave(pct / 100.0, selectedMethod, accuracyOverride)
+    }
+    Spacer(Modifier.height(4.dp))
+    TextButton(onClick = { onSave(null, selectedMethod, accuracyOverride) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** Same wheel UX as BodyFatSheet, but framed as a goal — separate, optional,
+ *  display-only. Seeds from the existing goal, falling back to the user's
+ *  current body fat % so the wheel lands somewhere sensible on first open. */
+@Composable
+internal fun GoalBodyFatSheet(currentGoal: Double?, currentBodyFat: Double?, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
+    val seed = currentGoal ?: currentBodyFat ?: 0.15
+    var pct by remember(currentGoal) { mutableStateOf(seed * 100) }
+    Text(stringResource(R.string.sheet_goal_body_fat), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    if (currentBodyFat != null) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.sheet_goal_body_fat_currently, LocaleFormat.decimal(currentBodyFat * 100, 1)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    DecimalWheelPicker(pct, { pct = it }, 3.0, 65.0, 0.1, stringResource(R.string.unit_percent))
+    Spacer(Modifier.height(12.dp))
+    CancelSaveRow(onDismiss) { onSave(pct / 100.0) }
+    Spacer(Modifier.height(4.dp))
+    TextButton(onClick = { onSave(null) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_remove_goal)) }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+internal fun WaterGoalSheet(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Unit) {
+    val initialGoal = (((current.coerceIn(50, 10_000) + 25) / 50) * 50).coerceIn(50, 10_000)
+    var goal by remember(current) { mutableIntStateOf(initialGoal) }
+    Text(stringResource(R.string.settings_water_goal), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(20.dp))
+    NumericWheelPicker(
+        value = goal,
+        onValueChange = { goal = it },
+        min = 50,
+        max = 10_000,
+        unit = stringResource(R.string.unit_ml),
+        step = 50,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.settings_water_goal_wheel_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+    )
+    Spacer(Modifier.height(16.dp))
+    CancelSaveRow(onDismiss) { onSave(goal) }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** Daily nicotine count limit (0 = no limit); mirrors the water goal wheel. */
+@Composable
+internal fun NicotineLimitSheet(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Unit) {
+    var limit by remember(current) { mutableIntStateOf(current.coerceIn(0, 100)) }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Text(stringResource(R.string.nicotine_daily_limit), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(20.dp))
+        NumericWheelPicker(
+            value = limit,
+            onValueChange = { limit = it },
+            min = 0,
+            max = 100,
+            unit = stringResource(R.string.nicotine_count_unit),
+            step = 1,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_nicotine_limit_wheel_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        Spacer(Modifier.height(16.dp))
+        CancelSaveRow(onDismiss) { onSave(limit) }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Daily caffeine mg limit (0 = no limit); mirrors the nicotine limit wheel. */
+@Composable
+internal fun CaffeineLimitSheet(current: Int, onSave: (Int) -> Unit, onDismiss: () -> Unit) {
+    var limit by remember(current) { mutableIntStateOf(current.coerceIn(0, 1000)) }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Text(stringResource(R.string.caffeine_daily_limit), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(20.dp))
+        NumericWheelPicker(
+            value = limit,
+            onValueChange = { limit = it },
+            min = 0,
+            max = 1000,
+            unit = stringResource(R.string.unit_mg),
+            step = 25,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_caffeine_limit_wheel_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        Spacer(Modifier.height(16.dp))
+        CancelSaveRow(onDismiss) { onSave(limit) }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Fasting goal + eating window (hours each, 0 = none); presets + two wheels. */
+@Composable
+internal fun FastingGoalSheet(
+    fastHours: Int,
+    eatHours: Int,
+    onSave: (fast: Int, eat: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var fast by remember(fastHours) { mutableIntStateOf(fastHours.coerceIn(0, MAX_FASTING_GOAL_HOURS)) }
+    // Default the eating window to a 24 h cycle when the user only set a fast
+    // length — they can still override it freely afterwards.
+    var eat by remember(fastHours, eatHours) {
+        mutableIntStateOf(if (eatHours > 0) eatHours else (24 - fastHours).coerceIn(0, MAX_FASTING_EAT_HOURS))
+    }
+    // Tall fixed stack (presets + two wheels, ~550dp) exceeds the sheet on
+    // small screens / large font scale, which pushes Save off-screen (#84
+    // class). Whole-body scroll with the single CTA inside it — the
+    // CaffeineLimitSheet / NicotineLimitSheet pattern.
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Text(stringResource(R.string.settings_fasting_goal), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        // Popular-protocol quick picks (12:12 … 23:1). Ratio labels are
+        // language-neutral; the detail line below explains the selected one.
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FastingGoalPreset.Popular.forEach { preset ->
+                val selected = fast == preset.fastHours && eat == preset.eatHours
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        fast = preset.fastHours
+                        eat = preset.eatHours
+                    },
+                    label = { Text(preset.label) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val selectedPreset = FastingGoalPreset.Popular.firstOrNull { it.fastHours == fast && it.eatHours == eat }
+        if (selectedPreset != null && fast > 0) {
+            Text(
+                stringResource(R.string.fasting_preset_detail, selectedPreset.fastHours, selectedPreset.eatHours),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        Text(
+            stringResource(R.string.fasting),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        NumericWheelPicker(
+            value = fast,
+            onValueChange = { fast = it },
+            min = 0,
+            max = MAX_FASTING_GOAL_HOURS,
+            unit = stringResource(R.string.fasting_goal_unit_h),
+            step = 1,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_fasting_eat_window),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        NumericWheelPicker(
+            value = eat,
+            onValueChange = { eat = it },
+            min = 0,
+            max = MAX_FASTING_EAT_HOURS,
+            unit = stringResource(R.string.fasting_goal_unit_h),
+            step = 1,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_fasting_goal_wheel_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        Spacer(Modifier.height(16.dp))
+        CancelSaveRow(onDismiss) { onSave(fast, eat) }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Daily fast-start clock time; mirrors [DailySummaryTimeSheet]. */
+@Composable
+internal fun FastingStartTimeSheet(
+    hour: Int,
+    minute: Int,
+    onSave: (hour: Int, minute: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val currentMinutes = (hour.coerceIn(0, 23) * 60 + minute.coerceIn(0, 59))
+    val options = remember(currentMinutes) {
+        val grid = (0 until 24 * 60 step 15).toList()
+        if (currentMinutes in grid) grid else (grid + currentMinutes).sorted()
+    }
+    var selectedMinutes by remember(currentMinutes) { mutableIntStateOf(currentMinutes) }
+    val context = LocalContext.current
+    Text(
+        stringResource(R.string.settings_fasting_start_time),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+    )
+    Spacer(Modifier.height(16.dp))
+    WheelPicker(
+        items = options,
+        selected = selectedMinutes,
+        onSelect = { selectedMinutes = it },
+        label = { formatMinutesOfDay(context, it) },
+    )
+    Spacer(Modifier.height(16.dp))
+    CancelSaveRow(onDismiss) { onSave(selectedMinutes / 60, selectedMinutes % 60) }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** Reminder lead minutes (0–120, step 5); reused for start and break-fast nudges. */
+@Composable
+internal fun FastingReminderLeadSheet(
+    title: String,
+    current: Int,
+    onSave: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var lead by remember(current) { mutableIntStateOf(current.coerceIn(0, MAX_FASTING_REMINDER_LEAD_MINUTES)) }
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(20.dp))
+    NumericWheelPicker(
+        value = lead,
+        onValueChange = { lead = it },
+        min = 0,
+        max = MAX_FASTING_REMINDER_LEAD_MINUTES,
+        unit = stringResource(R.string.settings_fasting_reminder_lead_unit),
+        step = 5,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.settings_fasting_reminder_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+    )
+    Spacer(Modifier.height(16.dp))
+    CancelSaveRow(onDismiss) { onSave(lead) }
+    Spacer(Modifier.height(8.dp))
+}
+
+internal fun formatWaterQuickPresetsSummary(presetsMl: List<Int>, useMetric: Boolean): String =
+    presetsMl.joinToString(" · ") { ml ->
+        if (useMetric) {
+            "${ml} ml"
+        } else {
+            "${WaterAmountFormat.flOzFromMl(ml)} fl oz"
+        }
+    }
+
+@Composable
+internal fun WaterQuickPresetsSheet(
+    current: List<Int>,
+    useMetric: Boolean,
+    onSave: (List<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var presets by remember(current) { mutableStateOf(current.sorted()) }
+
+    fun updatePreset(index: Int, ml: Int) {
+        presets = presets.toMutableList().apply {
+            set(index, ml.coerceIn(WaterQuickPresets.MIN_ML, WaterQuickPresets.MAX_ML))
+        }.sorted()
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.settings_water_quick_presets),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_water_quick_presets_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        )
+        Spacer(Modifier.height(16.dp))
+        // Up to 5 wheels (~220dp each) exceed the sheet on small screens and at
+        // large font scale, which used to push Save off-screen. Wheels scroll
+        // (weight = remaining height after header + pinned footer are measured,
+        // fill=false so the sheet stays compact when only 2-3 presets fit); the
+        // add/remove row and Save stay pinned below and always reachable.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            presets.forEachIndexed { index, ml ->
+                Text(
+                    stringResource(R.string.settings_water_preset_label, index + 1),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary),
+                )
+                Spacer(Modifier.height(6.dp))
+                if (useMetric) {
+                    val snapped = (((ml.coerceIn(WaterQuickPresets.MIN_ML, WaterQuickPresets.MAX_ML) + 25) / 50) * 50)
+                        .coerceIn(WaterQuickPresets.MIN_ML, WaterQuickPresets.MAX_ML)
+                    var value by remember(index, ml) { mutableIntStateOf(snapped) }
+                    NumericWheelPicker(
+                        value = value,
+                        onValueChange = {
+                            value = it
+                            updatePreset(index, it)
+                        },
+                        min = WaterQuickPresets.MIN_ML,
+                        max = WaterQuickPresets.MAX_ML,
+                        unit = stringResource(R.string.unit_ml),
+                        step = 50,
+                    )
+                } else {
+                    val flOz = WaterAmountFormat.flOzFromMl(ml).coerceIn(1, 68)
+                    var value by remember(index, ml) { mutableIntStateOf(flOz) }
+                    NumericWheelPicker(
+                        value = value,
+                        onValueChange = {
+                            value = it
+                            updatePreset(index, WaterAmountFormat.mlFromFlOz(it))
+                        },
+                        min = 1,
+                        max = 68,
+                        unit = stringResource(R.string.unit_fl_oz),
+                        step = 1,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (presets.size < WaterQuickPresets.MAX_COUNT) {
+                TextButton(
+                    onClick = {
+                        val next = (presets.lastOrNull() ?: 250) + 250
+                        presets = (presets + next.coerceIn(WaterQuickPresets.MIN_ML, WaterQuickPresets.MAX_ML))
+                            .sorted()
+                            .distinct()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.settings_water_add_preset))
+                }
+            }
+            if (presets.size > WaterQuickPresets.MIN_COUNT) {
+                TextButton(
+                    onClick = { presets = presets.dropLast(1) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.settings_water_remove_preset))
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        CancelSaveRow(onDismiss) { onSave(WaterQuickPresets(presets).validatedOrDefault().amountsMl) }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+internal fun GoalSpeedSheet(current: Double, goal: WeightGoal, useMetric: Boolean, onSave: (Double) -> Unit) {
+    val isDark = isDarkTheme()
+    Text(stringResource(R.string.sheet_weekly_change), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    val wUnit = if (useMetric) stringResource(R.string.unit_kg) else stringResource(R.string.unit_lbs)
+    val paceRes = if (goal == WeightGoal.LOSE) R.string.settings_pace_loss_format else R.string.settings_pace_gain_format
+    val options = listOf(
+        Triple(0.25, stringResource(R.string.onboarding_pace_slow), 0.25),
+        Triple(0.5, stringResource(R.string.onboarding_pace_recommended), 0.5),
+        Triple(1.0, stringResource(R.string.onboarding_pace_fast), 1.0),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((kg, title, displayKg) in options) {
+            val displayAmount = if (useMetric) {
+                LocaleFormat.decimal(displayKg, 1)
+            } else {
+                LocaleFormat.decimal(UnitFormat.kgToLbs(displayKg), 1)
+            }
+            val subtitle = stringResource(paceRes, "$displayAmount $wUnit")
+            val isSel = kotlin.math.abs(kg - current) < 0.01
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(AppRadii.Field))
+                    .background(
+                        if (isSel) AppColors.Calorie.copy(alpha = 0.13f)
+                        else if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                    )
+                    .clickable { onSave(kg) }
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                    )
+                }
+                if (isSel) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = stringResource(R.string.cd_selected),
+                        tint = AppColors.Calorie,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun BirthdaySheet(current: Instant, onSave: (Instant) -> Unit, onDismiss: () -> Unit) {
+    // Material3 DatePicker stores selection as UTC-midnight millis. We store
+    // birthdays as a local-zone Instant. Round-trip both sides through the
+    // user's local date to avoid an off-by-one when the user is east of UTC.
+    val localDate = current.atZone(ZoneId.systemDefault()).toLocalDate()
+    var pickedDate by remember(current) { mutableStateOf(localDate) }
+    var confirmMinor by remember { mutableStateOf(false) }
+    fun commit() {
+        val newInstant = pickedDate.atStartOfDay(ZoneId.systemDefault()).toInstant()
+        onSave(newInstant)
+    }
+    Text(stringResource(R.string.sheet_birthday), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+    DateWheelPicker(
+        selected = pickedDate,
+        onSelect = { pickedDate = it },
+        maxYear = LocalDate.now().year,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    CancelSaveRow(onDismiss) {
+        val age = java.time.Period.between(pickedDate, LocalDate.now()).years
+        if (age < CalorieSafety.ADULT_MIN_AGE) confirmMinor = true else commit()
+    }
+    Spacer(Modifier.height(8.dp))
+    if (confirmMinor) {
+        AlertDialog(
+            onDismissRequest = { confirmMinor = false },
+            title = { Text(stringResource(R.string.onboarding_minor_title)) },
+            text = { Text(stringResource(R.string.onboarding_minor_message)) },
+            confirmButton = {
+                TextButton(onClick = { confirmMinor = false; commit() }) {
+                    Text(stringResource(R.string.onboarding_minor_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmMinor = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}

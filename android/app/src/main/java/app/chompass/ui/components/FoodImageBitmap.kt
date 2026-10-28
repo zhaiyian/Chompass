@@ -1,0 +1,96 @@
+package app.chompass.ui.components
+
+import android.graphics.Bitmap
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import app.chompass.services.FoodImageStore
+import app.chompass.services.decodeSampledBitmap
+import app.chompass.data.AnalysisQueueStore
+
+/**
+ * Decodes in-memory image bytes off the composition thread. Keyed on the array
+ * identity, so a re-analysis of the same photo does not re-decode. Bounds-samples
+ * to the stored-image cap (see [decodeSampledBitmap]), so a 48 MP share-in photo
+ * never materializes as a ~192 MB bitmap for a 96–220 dp preview.
+ */
+@Composable
+fun rememberDecodedBitmap(bytes: ByteArray?): Bitmap? {
+    val state = produceState<Bitmap?>(initialValue = null, key1 = bytes) {
+        value = if (bytes == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                decodeSampledBitmap(bytes)
+            }
+        }
+    }
+    return state.value
+}
+
+/** Load state for an analysis-queue thumbnail: a slow decode shows a spinner, a missing file an icon. */
+sealed interface QueueThumb {
+    data object Loading : QueueThumb
+    data object Missing : QueueThumb
+    data class Ready(val bitmap: Bitmap) : QueueThumb
+}
+
+/** Loads an analysis-queue thumbnail off the composition thread (Codeberg #53). */
+@Composable
+fun rememberQueueThumbnail(
+    imageFilename: String?,
+    queueStore: AnalysisQueueStore?,
+): QueueThumb {
+    val state = produceState(
+        initialValue = if (imageFilename == null || queueStore == null) QueueThumb.Missing else QueueThumb.Loading,
+        imageFilename,
+        queueStore,
+    ) {
+        val filename = imageFilename
+        val store = queueStore
+        value = if (filename == null || store == null) {
+            QueueThumb.Missing
+        } else {
+            withContext(Dispatchers.IO) { store.thumbnail(filename) }
+                ?.let { QueueThumb.Ready(it) } ?: QueueThumb.Missing
+        }
+    }
+    return state.value
+}
+
+/** Loads a full-size stored food image off the composition thread. */
+@Composable
+fun rememberFoodImage(
+    imageFilename: String?,
+    imageStore: FoodImageStore?,
+): Bitmap? {
+    val state = produceState<Bitmap?>(initialValue = null, imageFilename, imageStore) {
+        val filename = imageFilename
+        val store = imageStore
+        value = if (filename == null || store == null) {
+            null
+        } else {
+            withContext(Dispatchers.IO) { store.load(filename) }
+        }
+    }
+    return state.value
+}
+
+/** Loads a food-entry thumbnail off the composition thread. */
+@Composable
+fun rememberFoodThumbnail(
+    imageFilename: String?,
+    imageStore: FoodImageStore?,
+): Bitmap? {
+    val state = produceState<Bitmap?>(initialValue = null, imageFilename, imageStore) {
+        val filename = imageFilename
+        val store = imageStore
+        value = if (filename == null || store == null) {
+            null
+        } else {
+            withContext(Dispatchers.IO) { store.loadThumbnail(filename) }
+        }
+    }
+    return state.value
+}

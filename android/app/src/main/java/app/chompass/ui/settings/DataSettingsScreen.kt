@@ -1,0 +1,279 @@
+package app.chompass.ui.settings
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.export.BodyMetricsImportResult
+import app.chompass.export.BodyMetricsImporter
+import app.chompass.export.DiaryImportResult
+import app.chompass.export.DiaryImporter
+import app.chompass.ui.components.ChompassDialog
+import app.chompass.ui.components.ChompassDialogActions
+import app.chompass.ui.navigation.ChompassRoutes
+import app.chompass.models.CurrentMealCatalog
+import app.chompass.models.LocaleFormat
+import app.chompass.ui.theme.AppTextOpacity
+import java.time.Instant
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DataSettingsScreen(
+    container: AppContainer,
+    nav: NavHostController,
+    onBack: () -> Unit,
+) {
+    val vm: SettingsViewModel = rememberSettingsViewModel(container, nav)
+    val ui by vm.ui.collectAsState()
+    val profile = ui.profile
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showClearFoodDialog by remember { mutableStateOf(false) }
+    var showExportSheet by remember { mutableStateOf(false) }
+    var showBodyMetricsExportSheet by remember { mutableStateOf(false) }
+    var importDiaryMessage by remember { mutableStateOf<String?>(null) }
+    var importBodyMetricsMessage by remember { mutableStateOf<String?>(null) }
+    var lastSyncAt by remember { mutableStateOf<String?>(null) }
+    val activityContext = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        lastSyncAt = container.prefs.lastSyncAt.first()
+    }
+
+    val importDiaryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val text = activityContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                if (text.isNullOrBlank()) {
+                    importDiaryMessage = activityContext.getString(R.string.import_diary_empty)
+                    return@runCatching
+                }
+                when (val result = DiaryImporter.parse(text)) {
+                    is DiaryImportResult.Success -> {
+                        val currentCatalog = container.prefs.mealCatalog.first()
+                        val merged = currentCatalog.unionImported(result.mealCatalog)
+                        if (merged != currentCatalog) {
+                            container.prefs.setMealCatalog(merged)
+                            CurrentMealCatalog.value = merged
+                        }
+                        val imported = if (result.entries.isEmpty()) 0
+                            else container.foodRepository.importEntries(result.entries)
+                        if (result.untrackedDates.isNotEmpty()) {
+                            val existing = container.prefs.untrackedDays.first().toMutableSet()
+                            val kcal = container.prefs.untrackedKcalByDay.first().toMutableMap()
+                            result.untrackedDates.forEach { existing += it.toString() }
+                            result.untrackedKcalByDay.forEach { (d, v) -> kcal[d.toString()] = v }
+                            container.prefs.setUntrackedDays(existing)
+                            container.prefs.setUntrackedKcalByDay(kcal)
+                        }
+                        for ((date, noteText) in result.notesByDay) {
+                            container.notesRepository.setNote(date, noteText)
+                        }
+                        if (imported <= 0 && result.untrackedDates.isEmpty() && result.notesByDay.isEmpty()) {
+                            importDiaryMessage = activityContext.getString(R.string.import_diary_empty)
+                            return@runCatching
+                        }
+                        importDiaryMessage = activityContext.getString(
+                            R.string.import_diary_success_count,
+                            imported
+                        )
+                    }
+                    DiaryImportResult.EmptyPayload -> {
+                        importDiaryMessage = activityContext.getString(R.string.import_diary_empty)
+                    }
+                    is DiaryImportResult.UnsupportedFormat -> {
+                        importDiaryMessage = activityContext.getString(
+                            R.string.import_diary_unsupported,
+                            result.reason,
+                        )
+                    }
+                    is DiaryImportResult.Malformed -> {
+                        importDiaryMessage = activityContext.getString(
+                            R.string.import_diary_malformed,
+                            result.reason
+                        )
+                    }
+                }
+            }.onFailure { t ->
+                importDiaryMessage = activityContext.getString(
+                    R.string.import_diary_failed,
+                    t.localizedMessage ?: activityContext.getString(R.string.error_unknown)
+                )
+            }
+        }
+    }
+
+    val importBodyMetricsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val text = activityContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                if (text.isNullOrBlank()) {
+                    importBodyMetricsMessage = activityContext.getString(R.string.import_body_metrics_empty)
+                    return@runCatching
+                }
+                when (val result = BodyMetricsImporter.parse(text)) {
+                    is BodyMetricsImportResult.Success -> {
+                        val w = container.weightRepository.importFromFile(result.weights)
+                        val f = container.bodyFatRepository.importFromFile(result.bodyFats)
+                        val m = container.bodyMeasurementRepository.importFromFile(result.measurements)
+                        if (w + f + m <= 0) {
+                            importBodyMetricsMessage = activityContext.getString(R.string.import_body_metrics_empty)
+                            return@runCatching
+                        }
+                        importBodyMetricsMessage = activityContext.getString(
+                            R.string.import_body_metrics_success, w, f, m
+                        )
+                    }
+                    BodyMetricsImportResult.EmptyPayload -> {
+                        importBodyMetricsMessage = activityContext.getString(R.string.import_body_metrics_empty)
+                    }
+                    BodyMetricsImportResult.UnsupportedFormat -> {
+                        importBodyMetricsMessage = activityContext.getString(R.string.import_body_metrics_unsupported)
+                    }
+                    is BodyMetricsImportResult.Malformed -> {
+                        importBodyMetricsMessage = activityContext.getString(
+                            R.string.import_body_metrics_malformed, result.reason
+                        )
+                    }
+                }
+            }.onFailure { t ->
+                importBodyMetricsMessage = activityContext.getString(
+                    R.string.import_diary_failed,
+                    t.localizedMessage ?: activityContext.getString(R.string.error_unknown)
+                )
+            }
+        }
+    }
+
+    SettingsSubScreen(
+        title = stringResource(R.string.settings_group_data),
+        onBack = onBack,
+    ) {
+        SettingsDataTransferSection(
+            onShowExportDiary = { showExportSheet = true },
+            onShowExportBodyMetrics = { showBodyMetricsExportSheet = true },
+            onImportDiary = { importDiaryLauncher.launch(arrayOf("application/json", "text/plain")) },
+            onImportBodyMetrics = {
+                importBodyMetricsLauncher.launch(
+                    arrayOf(
+                        "application/json", "text/csv", "text/comma-separated-values",
+                        "text/plain", "application/octet-stream"
+                    )
+                )
+            },
+            onShowClearFoodDialog = { showClearFoodDialog = true },
+            onShowDeleteDialog = { showDeleteDialog = true },
+            onOpenSync = { nav.navigate(ChompassRoutes.syncRoute("data")) },
+            syncSummary = lastSyncAt?.let { raw ->
+                val formatted = runCatching {
+                    LocaleFormat.mediumDateTimeZoned().format(Instant.parse(raw))
+                }.getOrNull() ?: raw
+                activityContext.getString(R.string.settings_last_sync, formatted)
+            },
+        )
+    }
+
+    if (showExportSheet) {
+        ExportDiarySheet(
+            container = container,
+            profile = profile,
+            onDismiss = { showExportSheet = false },
+        )
+    }
+    if (showBodyMetricsExportSheet) {
+        ExportBodyMetricsSheet(
+            container = container,
+            onDismiss = { showBodyMetricsExportSheet = false },
+        )
+    }
+
+    if (showClearFoodDialog) {
+        ChompassDialog(onDismissRequest = { showClearFoodDialog = false }) {
+            Text(stringResource(R.string.settings_clear_food_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.settings_clear_food_message),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_clear),
+                onPrimary = {
+                    vm.clearFoodLog()
+                    showClearFoodDialog = false
+                },
+                dismissText = stringResource(R.string.action_cancel),
+                onDismiss = { showClearFoodDialog = false },
+                destructive = true
+            )
+        }
+    }
+
+    if (showDeleteDialog) {
+        val context = LocalContext.current
+        ChompassDialog(onDismissRequest = { showDeleteDialog = false }) {
+            Text(stringResource(R.string.settings_delete_all_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.settings_delete_all_message),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_delete),
+                onPrimary = {
+                    vm.deleteAllData {
+                        showDeleteDialog = false
+                        (context as? android.app.Activity)?.recreate()
+                    }
+                },
+                dismissText = stringResource(R.string.action_cancel),
+                onDismiss = { showDeleteDialog = false },
+                destructive = true
+            )
+        }
+    }
+
+    importDiaryMessage?.let { msg ->
+        ChompassDialog(onDismissRequest = { importDiaryMessage = null }) {
+            Text(stringResource(R.string.import_diary_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(msg, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary))
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_ok),
+                onPrimary = { importDiaryMessage = null }
+            )
+        }
+    }
+
+    importBodyMetricsMessage?.let { msg ->
+        ChompassDialog(onDismissRequest = { importBodyMetricsMessage = null }) {
+            Text(stringResource(R.string.import_body_metrics_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(msg, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary))
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_ok),
+                onPrimary = { importBodyMetricsMessage = null }
+            )
+        }
+    }
+}

@@ -1,0 +1,4437 @@
+package app.chompass.ui.home
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.data.SavedFoodIndexEntry
+import app.chompass.data.asSuggestion
+import app.chompass.data.disambiguateFoodName
+import app.chompass.data.mergesWithSavedFood
+import app.chompass.data.loadLastGoalChangeSheet
+import app.chompass.models.ActiveBurnShade
+import app.chompass.models.GaugeBudget
+import app.chompass.models.AiProfile
+import app.chompass.models.resolveModelForRequest
+import app.chompass.models.ActiveCalorieSource
+import app.chompass.models.FoodEntry
+import app.chompass.models.FoodSource
+import app.chompass.models.FoodLogMacroChip
+import app.chompass.models.GoalDerivation
+import app.chompass.models.HomeCalorieDisplay
+import app.chompass.models.HomeCalorieDisplayMode
+import app.chompass.models.toGoalDerivation
+import app.chompass.models.DietMode
+import app.chompass.models.DayTargets
+import app.chompass.models.GoalJournal
+import app.chompass.models.GoalJournalEntry
+import app.chompass.models.HomeDisplayPreferences
+import app.chompass.models.MacroPlanResolver
+import app.chompass.models.ResolvedDayTargets
+import app.chompass.models.ResolvedActiveBurn
+import app.chompass.models.HomeTopNutrient
+import app.chompass.models.ManualActiveEntry
+import app.chompass.models.MealType
+import app.chompass.models.Recipe
+import app.chompass.models.CurrentMealCatalog
+import app.chompass.models.CaffeineEntry
+import app.chompass.models.FastingPhase
+import app.chompass.models.HabitPreset
+import app.chompass.models.HabitPresetDomain
+import app.chompass.models.NicotineEntry
+import app.chompass.models.MilkKind
+import app.chompass.models.toFoodEntry
+import app.chompass.models.builtinCaffeineDefaultMg
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.PendingFoodAnalysisDraft
+import app.chompass.models.PendingFoodInputDraft
+import app.chompass.models.ProgressiveMealDraft
+import app.chompass.models.toFoodEntries
+import app.chompass.models.ProgressiveMealItem
+import app.chompass.models.QueuedAnalysis
+import app.chompass.models.QueueStatus
+import app.chompass.models.ServingUnitOption
+import app.chompass.models.UserProfile
+import app.chompass.models.ActivityLevel
+import app.chompass.models.WaterGoalCalculator
+import app.chompass.models.WaterQuickPresets
+import app.chompass.models.WaterEntry
+import app.chompass.BuildConfig
+import app.chompass.debug.DebugTrace
+import app.chompass.services.FoodImageComposer
+import app.chompass.services.FastingAutoPlanner
+import app.chompass.services.nextFastingStartMillis
+import app.chompass.services.FoodPhotoSession
+import app.chompass.services.OpenFoodFactsService
+import app.chompass.services.PerfLog
+import app.chompass.services.WaterReminderPlanner
+import app.chompass.services.grounding.DatabaseSearchResult
+import app.chompass.services.grounding.FoodDatabaseSearch
+import app.chompass.services.grounding.FoodSuggestion
+import app.chompass.services.grounding.FoodSuggestionRanker
+import app.chompass.services.grounding.QueryNormalizer
+import app.chompass.services.grounding.SuggestionKind
+import app.chompass.services.grounding.GroundedEntryFeature
+import app.chompass.services.ai.AiError
+import app.chompass.services.health.ActivityDataSource
+import app.chompass.services.health.HomeActivitySnapshot
+import app.chompass.services.ai.FoodAnalysis
+import app.chompass.services.ai.applyTo
+import app.chompass.services.ai.toMicronutrients
+import app.chompass.services.ai.userMessage
+import app.chompass.services.ai.errorDetail
+import app.chompass.models.MicronutrientValues
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.util.Locale
+import java.util.UUID
+import kotlin.math.roundToInt
+
+enum class FoodLogSortOrder(val storageValue: String, val displayName: String, val displayNameRes: Int) {
+    STANDARD("standard", "Breakfast → Lunch → Dinner (latest last)", R.string.sort_standard),
+    LATEST_MEALS_FIRST("latestMealsFirst", "Latest Meals First", R.string.sort_latest_first);
+
+    companion object {
+        fun fromStorage(value: String?): FoodLogSortOrder =
+            values().firstOrNull { it.storageValue == value } ?: STANDARD
+    }
+}
+
+/**
+ * Whether the home hero needs a Health Connect activity snapshot (steps or
+ * active calories shown). Pure decision extracted from [HomeViewModel] so the
+ * refresh path is unit-testable (Codeberg #22 race family).
+ */
+internal fun needsActivitySnapshotFor(display: HomeDisplayPreferences): Boolean =
+    display.showSteps || display.showActiveCalories
+
+/**
+ * Queued entry with the attempt record for its upcoming run (queue "Run with…"):
+ * profile display name + model resolved the way [app.chompass.services.ai.FoodAnalysisService]
+ * resolves it at dispatch time (vision slot only for image-bearing requests).
+ * Pure so the bookkeeping is unit-testable without a container.
+ */
+internal fun queuedEntryWithAttemptRecord(
+    item: QueuedAnalysis,
+    profile: AiProfile,
+    hasImages: Boolean,
+): QueuedAnalysis = item.copy(
+    lastAttemptProfile = profile.name,
+    lastAttemptModel = resolveModelForRequest(
+        profile.provider,
+        profile.model,
+        profile.visionModel,
+        hasImages,
+    ),
+)
+
+/**
+ * Whether the hero needs a measured energy read (ADD_ACTIVE mode with a live
+ * measured source). Debug activity days count as a live source even when
+ * Health Connect is off, so seeded demo days still reach the gauge.
+ */
+internal fun needsMeasuredEnergyFor(
+    display: HomeDisplayPreferences,
+    healthConnectEnabled: Boolean,
+    hasDebugActivityDays: Boolean,
+): Boolean =
+    display.calorieDisplayMode == HomeCalorieDisplayMode.ADD_ACTIVE &&
+        (healthConnectEnabled || hasDebugActivityDays)
+
+/** One-shot favorite-save confirmation for the Home snackbar. */
+data class SavedFavoriteAck(
+    val entry: FoodEntry,
+    /** True when the upsert appended a new favorite (false = replaced an existing one). */
+    val inserted: Boolean,
+)
+
+data class HomeUiState(
+    val date: LocalDate = LocalDate.now(),
+    val profile: UserProfile? = null,
+    /** Per-day goal journal (#60): frozen past targets behind [resolvedDayTargets]. */
+    val goalJournal: List<GoalJournalEntry> = emptyList(),
+    val todayEntries: List<FoodEntry> = emptyList(),
+    val homeDisplay: HomeDisplayPreferences = HomeDisplayPreferences(),
+    val homeTopNutrients: List<HomeTopNutrient> = HomeTopNutrient.DefaultSelection,
+    val foodLogMacroChips: List<FoodLogMacroChip> = FoodLogMacroChip.DefaultSelection,
+    /** Measured Health Connect active kcal/day average (Energy Burn Goals). 0 = unavailable. */
+    val measuredActiveAverageCalories: Int = 0,
+    /** Internal 60-day HC active-by-day map (never synced). */
+    val healthEnergyActiveByDay: Map<String, Int> = emptyMap(),
+    /** Manual active totals keyed by ISO date. */
+    val manualActiveByDay: Map<String, Int> = emptyMap(),
+    val activitySnapshot: HomeActivitySnapshot = HomeActivitySnapshot(date = LocalDate.now()),
+    val optionalNutrientGoals: OptionalNutrientGoals = OptionalNutrientGoals.Default,
+    val foodLogSortOrder: FoodLogSortOrder = FoodLogSortOrder.STANDARD,
+    val preferGramsByDefault: Boolean = false,
+    /** Latest persisted goal-change explanation (hero ⓘ → recalc details); null = none yet. */
+    val lastRecalcSheet: app.chompass.services.ai.RecalcSheetData? = null,
+    /** Recalc details sheet currently shown (opened from the hero ⓘ budget dialog). */
+    val recalcSheet: app.chompass.services.ai.RecalcSheetData? = null,
+    /** When false (default), photo staging requires a text note before Analyze. */
+    val skipPhotoNotePrompt: Boolean = false,
+    /** Consecutive empty-note photo analyzes; at ≥3 offer “don’t ask again”. */
+    val photoNoteSkipCount: Int = 0,
+    /** Completed photo staging Analyzes; tip card while below [HomeViewModel.PHOTO_ACCURACY_GUIDE_COUNT]. */
+    val photoAccuracyGuideCount: Int = 0,
+    val hasSeenCameraScaleTip: Boolean = true,
+    val weightMetric: Boolean = true,
+    val favoriteKeys: Set<String> = emptySet(),
+    val pendingAnalysis: FoodAnalysis? = null,
+    val pendingImageBytes: ByteArray? = null,
+    /** Raw photo bytes for the in-flight / pending review (for tip re-analyze / add photo). */
+    val pendingAnalysisImages: List<ByteArray> = emptyList(),
+    val pendingFoodSource: FoodSource? = null,
+    val pendingDraftImageFilename: String? = null,
+    /**
+     * Set when the pendingAnalysis came from a Saved Meals tap (Recents /
+     * Frequent / Favorites) instead of a fresh AI analysis. We keep the
+     * original entry so saveAnalysis can reuse its imageFilename instead of
+     * re-storing the image bytes as a new file on disk.
+     */
+    val pendingReviewSource: FoodEntry? = null,
+    /**
+     * Dismissed-but-not-logged review (recovered draft): shown as the Home
+     * "recovered analysis" chip. Restoring reopens the review sheet without a
+     * new AI call; discarding deletes the persisted draft for good.
+     */
+    val recoveredReview: PendingFoodAnalysisDraft? = null,
+    /** AI fill-missing Home banner (Batch 2); null = nothing gapped or already shown/dismissed today. */
+    val fillGapsBanner: app.chompass.services.FillGapsBanner? = null,
+    val pendingInputImageBytes: ByteArray? = null,
+    val pendingInputNote: String? = null,
+    val pendingInputConfirmedPortionGrams: Double? = null,
+    /**
+     * Text of the in-flight text-only analysis (Codeberg #53): lets the
+     * failure auto-save see the prompt even though the sheet owns the field.
+     * Cleared on success / dismiss.
+     */
+    val pendingPromptText: String? = null,
+    /**
+     * Auto-saved analysis-queue entry for the current failed/retried input
+     * (Codeberg #53): retries update the same entry; a successful retry marks
+     * it DONE. Cleared on success / dismiss / fresh enqueue.
+     */
+    val pendingQueueEntryId: UUID? = null,
+    /**
+     * True when the pending review already received exact grams on multi-photo /
+     * context note (tip strip / prior note).
+     */
+    val pendingPortionPreConfirmed: Boolean = false,
+    val pendingInputDraftImageFilenames: List<String> = emptyList(),
+    /**
+     * Unified Add Food search: what the user typed, and the ranked suggestions
+     * for it. Owned by the ViewModel rather than the sheet because the search
+     * outlives sheet recomposition while a database leg is in flight, and
+     * because dismissing the sheet to run an analysis still needs the text.
+     */
+    val addFoodQuery: String = "",
+    val addFoodSuggestions: List<FoodSuggestion> = emptyList(),
+    /**
+     * Zero-query state: the Saved Meals tab shown inline in the Add Food sheet
+     * and its rows. They occupy the same reserved viewport the search results
+     * later fill, so typing swaps the list's contents without resizing the
+     * sheet and shoving the input field around.
+     */
+    val addFoodSavedTab: SavedTab = SavedTab.RECENTS,
+    val addFoodSavedRows: List<FoodSuggestion> = emptyList(),
+    /** True while the Open Food Facts leg is still outstanding for this query. */
+    val addFoodSuggestNetworkPending: Boolean = false,
+    /** True when the last packaged leg ended without reaching Open Food Facts at all. */
+    val addFoodSuggestNetworkUnreachable: Boolean = false,
+    /**
+     * Whether the packaged-product (Open Food Facts) leg may run. Saved foods
+     * come from the local index and USDA / Swiss from bundled SQLite on every
+     * keystroke; this is the only leg that leaves the phone.
+     *
+     * This is the Settings > Food & Entry > Open Food Facts switch itself, not
+     * a second copy of it: the sheet's toggle reads and writes the same
+     * preference, so flipping either one moves both and the choice survives the
+     * sheet, the screen and the process. It defaults on (maintainer call
+     * 2026-09-15), so a brand name typed into Add Food finds the packaged
+     * product without a detour through Settings; switching it off is one tap on
+     * the databases heading.
+     */
+    val addFoodPackagedSearchEnabled: Boolean = true,
+    /**
+     * Identity the pending entry keeps no matter which source supplies its
+     * nutrients. Set once when the draft is saved (already disambiguated) so a
+     * later source swap never re-enters disambiguation.
+     */
+    val pendingIdentityName: String? = null,
+    /** Analysis queue + prompt history (Codeberg #53), newest first. */
+    val queueEntries: List<QueuedAnalysis> = emptyList(),
+    val queueRunningId: UUID? = null,
+    val showAnalysisQueue: Boolean = false,
+    /** Intermediate grounded-entry review (candidate / portion picks). */
+    val pendingGroundedReview: PendingGroundedReview? = null,
+    val analyzing: Boolean = false,
+    val analysisPhase: EntryAnalysisPhase? = null,
+    val analysisPreview: FoodAnalysis? = null,
+    /** Validated fields observed while the AI response is still streaming. */
+    val analysisPartial: app.chompass.services.ai.PartialFoodAnalysis? = null,
+    val inferringUnits: Boolean = false,
+    val saving: Boolean = false,
+    val error: String? = null,
+    /** OFF product code when [error] is a barcode not-found; drives the add-to-OFF action. */
+    val errorNotFoundBarcode: String? = null,
+    /** Secondary technical detail (HTTP status · provider message) shown under [error]. */
+    val errorDetail: String? = null,
+    val waterTrackingEnabled: Boolean = false,
+    val waterDailyGoalMl: Int = 2_000,
+    val waterQuickPresetsMl: List<Int> = WaterQuickPresets.DEFAULT_AMOUNTS_ML,
+    val waterTodayMl: Int = 0,
+    /** Individual sips for the selected day, newest first (drives the history sheet). */
+    val waterTodayEntries: List<WaterEntry> = emptyList(),
+    /** Free-text note for the selected day (Codeberg #58a); null when the day has none. */
+    val dailyNote: String? = null,
+    /** True when the goal shown comes from the dynamic calculator (issue #3). */
+    val waterGoalDynamic: Boolean = false,
+    /**
+     * Next planned drink from the adaptive reminder chain (one cup, capped by
+     * the goal remainder, at [Plan.nextFireMillis]); null when water tracking /
+     * the reminder is off, the goal is met, or the window is degenerate.
+     */
+    val waterNextPlan: app.chompass.services.WaterReminderPlanner.Plan? = null,
+    /** Optional nicotine tracker (docs/local/PLAN_NICOTINE_TRACKER.md). */
+    val nicotineTrackingEnabled: Boolean = false,
+    val nicotineDailyLimit: Int = 0,
+    val nicotineQuickKinds: List<String> = HabitPresetDomain.NICOTINE.defaultQuickKindIds,
+    /** Nicotine preset catalog (labels + defaults) in user order. */
+    val nicotinePresets: List<HabitPreset> = HabitPresetDomain.NICOTINE.defaultCatalog.presets,
+    val nicotineTodayCount: Int = 0,
+    /** Individual logs for the selected day, newest first (drives the history sheet). */
+    val nicotineTodayEntries: List<NicotineEntry> = emptyList(),
+    /** Optional daily notes (docs/local/PLAN_DAILY_NOTES.md); default off. */
+    val dailyNotesEnabled: Boolean = false,
+    /** Suggest meals by time of day; default on. */
+    val mealTimesEnabled: Boolean = true,
+    /** Optional meal planning mode; default off. */
+    val mealPlanningEnabled: Boolean = false,
+    /** Optional caffeine tracker (device-pass revision); default off. */
+    val caffeineTrackingEnabled: Boolean = false,
+    val caffeineQuickKinds: List<String> = HabitPresetDomain.CAFFEINE.defaultQuickKindIds,
+    /** Caffeine preset catalog (labels + defaults) in user order. */
+    val caffeinePresets: List<HabitPreset> = HabitPresetDomain.CAFFEINE.defaultCatalog.presets,
+    /** Selected-day caffeine total: tracker logs + food-entry caffeine, mg. */
+    val caffeineTodayMg: Double = 0.0,
+    /** Tracker logs for the selected day, newest first (history sheet). */
+    val caffeineTodayEntries: List<CaffeineEntry> = emptyList(),
+    /** Optional intermittent-fasting timer (docs/local/PLAN_FASTING_TRACKER.md); local-only. */
+    val fastingEnabled: Boolean = false,
+    val fastingGoalHours: Int = 16,
+    val fastingEatHours: Int = 8,
+    val fastingAutoWindows: Boolean = true,
+    val fastingPhase: FastingPhase = FastingPhase.IDLE,
+    /** Elapsed millis of the running fast; ticked each minute by the VM. */
+    val fastingElapsedMillis: Long = 0L,
+    /** Wall-clock "now" of the latest tick; lets the bar compute remaining. */
+    val fastingNowMillis: Long = 0L,
+    /** Elapsed millis inside the open eating window; ticked each minute. */
+    val fastingEatingElapsedMillis: Long = 0L,
+    /** Millis of the next fast start (schedule T in auto mode, eating-window
+     *  end in manual); null while fasting or with no anchor. Drives the bar. */
+    val fastingNextFastStartMillis: Long? = null,
+    val fastingGoalReached: Boolean = false,
+    val fastingAutoStarted: Boolean = false,
+    val fastingLastEndedAtMillis: Long? = null,
+    val fastingLastFastStartedAtMillis: Long? = null,
+    /** In-progress weigh-as-you-go meal (photo-per-ingredient). Null when idle. */
+    val progressiveMeal: ProgressiveMealDraft? = null,
+    /** HomeScreen consumes this once to reopen the Add Food hub after Add another. */
+    val resumeProgressiveCapture: Boolean = false,
+    /** Show [ProgressiveMealSheet] when the draft has items and capture is idle. */
+    val showProgressiveMealSheet: Boolean = false,
+    val manualActiveKcal: Int = 0,
+    /** Manual active logs for the selected day, newest first. */
+    val manualActiveTodayEntries: List<ManualActiveEntry> = emptyList(),
+    /**
+     * Codeberg #77 part 3: when set, new food logs use this clock time on the
+     * selected day instead of now. Null = wall clock. Session-only.
+     */
+    val logTimeOverride: LocalTime? = null,
+    /**
+     * Diary entries copied via the selection bar, waiting to be pasted onto
+     * the viewed day (in-memory only, cleared on app restart). Empty when the
+     * clipboard is unset.
+     */
+    /** In-memory paste clipboard: copied diary rows awaiting a paste chip tap. */
+    val copiedEntries: List<FoodEntry> = emptyList(),
+    /** Last plan action (tick to target day); Home shows the "planned for" snackbar once. */
+    val plannedAck: Pair<Int, LocalDate>? = null,
+    /**
+     * Set after [HomeViewModel.saveScannedFavorite] upserts a barcode review
+     * into favorites: Home shows the saved snackbar once, with Undo
+     * (toggle off) only when the save inserted a new favorite — a replace of
+     * an existing one is not undoable because the previous copy is not kept.
+     */
+    val savedFavoriteAck: SavedFavoriteAck? = null,
+    /** ISO dates marked not tracked (#106). */
+    val untrackedDays: Set<String> = emptySet(),
+    /** True once the diary flow has emitted at least once; gates the empty-diary text. */
+    val diaryLoaded: Boolean = false,
+    val untrackedKcalByDay: Map<String, Int> = emptyMap(),
+    /** True once a Health Connect mirror write stayed queued this session; Home shows a snackbar once. */
+    val healthSyncFailed: Boolean = false,
+) {
+    val isEntryAnalysisBusy: Boolean get() = analyzing || analysisPhase != null || inferringUnits
+    /** Pending (runnable) queue items — badge count for the Add Food hub row. */
+    val queuePendingCount: Int get() = queueEntries.count { it.status == QueueStatus.PENDING }
+    /** Progressive Log sheet: analysis running or a completed review is waiting. */
+    val showFoodResultSheet: Boolean get() = pendingAnalysis != null || isEntryAnalysisBusy
+    /** Fields + Log unlocked only after the AI call (and unit inference) finish. */
+    val analysisReadyForEdit: Boolean get() = pendingAnalysis != null && !isEntryAnalysisBusy
+    val caloriesToday: Int get() = todayEntries.sumOf { it.calories }
+    val loggedCaloriesToday: Int get() = todayEntries.filter { !it.planned }.sumOf { it.calories }
+    val plannedCaloriesToday: Int get() = todayEntries.filter { it.planned }.sumOf { it.calories }
+    val proteinToday: Double get() = todayEntries.sumOf { it.protein }
+    val carbsToday: Double get() = todayEntries.sumOf { it.carbs }
+    val fatToday: Double get() = todayEntries.sumOf { it.fat }
+    val baseCalorieGoal: Int get() = resolvedDayTargets.targets.calories
+
+    /**
+     * Standing goal derivation (BMR → TDEE × activity → pace → clamp) for the
+     * hero ⓘ budget dialog's formula-baseline block; computed from the same
+     * profile that feeds [gaugeBaseCalorieGoal]. Null without a profile.
+     */
+    val goalDerivation: GoalDerivation? get() = profile?.toGoalDerivation()
+
+    /**
+     * MACRO-CYCLE-A (#60): the viewed day's targets. Past days read the goal
+     * journal first (frozen history — schedule edits never rewrite it), gaps
+     * and today/future resolve live from the plan; plan off = base effective
+     * targets, so behavior is unchanged while disabled.
+     */
+    val resolvedDayTargets: ResolvedDayTargets get() {
+        val p = profile
+            ?: return ResolvedDayTargets(DayTargets(2000, 150, 220, 70), null, null)
+        val day = date
+        if (day.isBefore(LocalDate.now())) {
+            val key = day.toString()
+            val entry = goalJournal.firstOrNull { it.date == key }
+            if (entry != null) {
+                return ResolvedDayTargets(
+                    targets = DayTargets(entry.calories, entry.proteinG, entry.carbsG, entry.fatG),
+                    profileId = entry.profileId,
+                    profileName = entry.profileName,
+                )
+            }
+        }
+        return MacroPlanResolver.targetsFor(p, day)
+    }
+
+    /**
+     * Hero day-type chip label (#60): today's profile name, null when the plan
+     * is off / resolved to base, or while browsing another day (the quick
+     * switch sheet only edits today).
+     */
+    val dayTypeLabel: String? get() =
+        if (date == LocalDate.now()) resolvedDayTargets.profileName else null
+    val viewedDayUntracked: Boolean get() = date.toString() in untrackedDays
+    val viewedDayUntrackedKcal: Int? get() = untrackedKcalByDay[date.toString()]
+    val resolvedActiveBurn: ResolvedActiveBurn? get() {
+        val p = profile ?: return null
+        val estimate = measuredActiveAverageCalories.takeIf { it > 0 } ?: p.estimatedDailyActiveCalories
+        return HomeCalorieDisplay.resolveActiveBurn(
+            homeDisplay.calorieDisplayMode,
+            activitySnapshot,
+            estimate,
+            manualActiveKcal,
+        )
+    }
+    val effectiveCalorieMode: HomeCalorieDisplayMode get() =
+        HomeCalorieDisplay.effectiveMode(homeDisplay.calorieDisplayMode, resolvedActiveBurn)
+
+    /**
+     * One budget decision for hero + widget ([HomeCalorieDisplay.resolveGaugeBudget]):
+     * hold-back splits the stored goal into a sedentary base plus the active
+     * layer; full credit keeps the full goal and stacks today's measured burn
+     * plus manual burns on top. Without a profile there is no split — the
+     * stored goal stands alone.
+     */
+    private val gaugeBudget: GaugeBudget get() {
+        val p = profile
+            ?: return GaugeBudget(baseCalorieGoal, 0, baseCalorieGoal, false)
+        val sedentary = measuredActiveAverageCalories.takeIf { it > 0 }
+            ?.let { (baseCalorieGoal - it).coerceAtLeast(0) }
+            ?: p.sedentaryCalorieBudget(baseCalorieGoal)
+        return HomeCalorieDisplay.resolveGaugeBudget(
+            mode = homeDisplay.calorieDisplayMode,
+            fullCredit = homeDisplay.fullCreditActiveBurn,
+            fullGoal = baseCalorieGoal,
+            sedentaryBudget = sedentary,
+            energyLive = activitySnapshot.energyLive,
+            measuredToday = activitySnapshot.activeCalories,
+            estimatedDailyActive = measuredActiveAverageCalories.takeIf { it > 0 }
+                ?: p.estimatedDailyActiveCalories,
+            manual = manualActiveKcal,
+            typical = activeBurnTypical,
+        )
+    }
+    val gaugeBaseCalorieGoal: Int get() = gaugeBudget.base
+    val displayActiveCalories: Int get() = gaugeBudget.creditedBurn
+    /**
+     * Today's live active burn regardless of gauge mode: measured Health Connect
+     * burn (or debug data) plus manual entries. Mode-independent — in STATIC
+     * mode [displayActiveCalories] carries manual burns only, so the measured
+     * part needs this separate sum. Feeds the hero's "N active" caption so the
+     * toggle works in STATIC too.
+     */
+    val liveActiveBurn: Int get() =
+        activitySnapshot.activeCalories.coerceAtLeast(0) + manualActiveKcal.coerceAtLeast(0)
+
+    /** True when the home activity snapshot carries live measured/debug burn for the day. */
+    val hasLiveBurn: Boolean get() {
+        val s = activitySnapshot
+        return (s.source == ActivityDataSource.HEALTH_CONNECT || s.source == ActivityDataSource.DEBUG) &&
+            s.activeCalories > 0
+    }
+
+    val dayTypeActiveStats: app.chompass.models.DayTypeActiveStats.Result get() {
+        val totals = app.chompass.models.DayTypeActiveStats.mergeDayTotals(
+            healthEnergyActiveByDay,
+            manualActiveByDay,
+        )
+        return app.chompass.models.DayTypeActiveStats.compute(goalJournal, totals, date)
+    }
+
+    val typicalResolution: app.chompass.models.DayTypeActiveStats.TypicalResolution get() {
+        val p = profile
+        val pal = p?.estimatedDailyActiveCalories ?: 0
+        return app.chompass.models.DayTypeActiveStats.resolveTypical(
+            viewedProfileId = resolvedDayTargets.profileId,
+            stats = dayTypeActiveStats,
+            blendedMeasured = measuredActiveAverageCalories,
+            palEstimate = pal,
+        )
+    }
+
+    /** The day's active norm: per-type average, else 14-day blended, else PAL. */
+    val activeBurnTypical: Int get() = typicalResolution.kcal
+
+    /**
+     * The hero ring's displayed calorie goal — the budget's display target:
+     * ADD_ACTIVE hold-back grows to the expected-day target when live burn
+     * exceeds the norm, full credit stacks measured burn on the full goal,
+     * STATIC stays the base goal. Macro cards scale against this so they can
+     * never disagree with the ring (#38).
+     */
+    val heroCalorieGoal: Int get() = gaugeBudget.displayTarget
+
+    /**
+     * Display scale for P/C/F goals (#38): 1 on typical days (the ring shows
+     * the stored base), >1 only when the ring projects above the base
+     * (over-typical live burn, or manual kcal on top of the estimate). Keto is
+     * excluded — its macro targets are fixed by design.
+     */
+    val macroGoalScale: Float get() {
+        val p = profile ?: return 1f
+        if (p.dietMode == DietMode.KETO) return 1f
+        // #60: the denominator is the viewed day's resolved target, so the
+        // cards scale against the ring exactly as before the day plan existed.
+        val base = resolvedDayTargets.targets.calories
+        if (base <= 0) return 1f
+        return (heroCalorieGoal.toFloat() / base).coerceAtLeast(1f)
+    }
+
+    /**
+     * Hero burn shades: only when the budget draws the expected-day arc
+     * (ADD_ACTIVE hold-back with a live measured source — Health Connect
+     * energy, or debug data — including the measured-0 morning, so the
+     * projected day (base + typical) is visible before the first sync).
+     * Manual-only, PAL-estimate-only, and full-credit days stay on the legacy
+     * budget tail so the drawing never fabricates a burn story. Intrinsic to
+     * ADD_ACTIVE: not gated by the "show active calories" toggle, which now
+     * only controls the STATIC caption.
+     */
+    val activeBurnShade: ActiveBurnShade? get() {
+        if (!gaugeBudget.useExpectedArc) return null
+        val typical = activeBurnTypical
+        val source = if (measuredActiveAverageCalories > 0) {
+            ActiveCalorieSource.MEASURED
+        } else {
+            ActiveCalorieSource.ESTIMATED
+        }
+        return ActiveBurnShade(
+            live = liveActiveBurn,
+            typical = typical,
+            source = source,
+            typicalIsDayType = typicalResolution.typicalIsDayType,
+            typicalDayTypeName = resolvedDayTargets.profileName,
+            blendedTypical = measuredActiveAverageCalories,
+        )
+    }
+
+    /**
+     * Resting (basal) burn so far: measured HC total minus active when the snapshot
+     * carries a total, else BMR prorated to the elapsed fraction of the day. Null
+     * when no live burn exists. Feeds the optional resting shade in the hero.
+     */
+    val restingBurnToday: Int? get() {
+        val s = activitySnapshot
+        return when {
+            s.totalCalories != null -> (s.totalCalories - s.activeCalories).coerceAtLeast(0)
+            hasLiveBurn && profile != null ->
+                (profile.bmr * elapsedDayFraction(date)).roundToInt()
+            else -> null
+        }
+    }
+
+    fun isFavorite(entry: FoodEntry): Boolean = entry.favoriteKey in favoriteKeys
+
+    /**
+     * Compare photo [ByteArray]s by content, so identity swaps that keep the
+     * same pixels do not bust every Home collector while genuinely new pixels
+     * still emit through the StateFlow dedupe.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is HomeUiState) return false
+        return date == other.date &&
+            profile == other.profile &&
+            goalJournal == other.goalJournal &&
+            todayEntries == other.todayEntries &&
+            homeDisplay == other.homeDisplay &&
+            homeTopNutrients == other.homeTopNutrients &&
+            foodLogMacroChips == other.foodLogMacroChips &&
+            measuredActiveAverageCalories == other.measuredActiveAverageCalories &&
+            healthEnergyActiveByDay == other.healthEnergyActiveByDay &&
+            manualActiveByDay == other.manualActiveByDay &&
+            activitySnapshot == other.activitySnapshot &&
+            optionalNutrientGoals == other.optionalNutrientGoals &&
+            foodLogSortOrder == other.foodLogSortOrder &&
+            preferGramsByDefault == other.preferGramsByDefault &&
+            lastRecalcSheet == other.lastRecalcSheet &&
+            recalcSheet == other.recalcSheet &&
+            skipPhotoNotePrompt == other.skipPhotoNotePrompt &&
+            photoNoteSkipCount == other.photoNoteSkipCount &&
+            photoAccuracyGuideCount == other.photoAccuracyGuideCount &&
+            hasSeenCameraScaleTip == other.hasSeenCameraScaleTip &&
+            weightMetric == other.weightMetric &&
+            favoriteKeys == other.favoriteKeys &&
+            pendingAnalysis == other.pendingAnalysis &&
+            pendingImageBytes.contentEquals(other.pendingImageBytes) &&
+            pendingAnalysisImages.size == other.pendingAnalysisImages.size &&
+            pendingAnalysisImages.indices.all { pendingAnalysisImages[it].contentEquals(other.pendingAnalysisImages[it]) } &&
+            pendingReviewSource == other.pendingReviewSource &&
+            recoveredReview == other.recoveredReview &&
+            pendingInputImageBytes.contentEquals(other.pendingInputImageBytes) &&
+            pendingFoodSource == other.pendingFoodSource &&
+            pendingDraftImageFilename == other.pendingDraftImageFilename &&
+            pendingInputNote == other.pendingInputNote &&
+            pendingInputConfirmedPortionGrams == other.pendingInputConfirmedPortionGrams &&
+            pendingPromptText == other.pendingPromptText &&
+            pendingQueueEntryId == other.pendingQueueEntryId &&
+            pendingPortionPreConfirmed == other.pendingPortionPreConfirmed &&
+            pendingInputDraftImageFilenames == other.pendingInputDraftImageFilenames &&
+            addFoodQuery == other.addFoodQuery &&
+            addFoodSuggestions == other.addFoodSuggestions &&
+            addFoodSavedTab == other.addFoodSavedTab &&
+            addFoodSavedRows == other.addFoodSavedRows &&
+            addFoodSuggestNetworkPending == other.addFoodSuggestNetworkPending &&
+            addFoodSuggestNetworkUnreachable == other.addFoodSuggestNetworkUnreachable &&
+            addFoodPackagedSearchEnabled == other.addFoodPackagedSearchEnabled &&
+            pendingIdentityName == other.pendingIdentityName &&
+            queueEntries == other.queueEntries &&
+            queueRunningId == other.queueRunningId &&
+            showAnalysisQueue == other.showAnalysisQueue &&
+            pendingGroundedReview == other.pendingGroundedReview &&
+            analyzing == other.analyzing &&
+            analysisPhase == other.analysisPhase &&
+            analysisPreview == other.analysisPreview &&
+            analysisPartial == other.analysisPartial &&
+            inferringUnits == other.inferringUnits &&
+            saving == other.saving &&
+            error == other.error &&
+            errorNotFoundBarcode == other.errorNotFoundBarcode &&
+            errorDetail == other.errorDetail &&
+            waterTrackingEnabled == other.waterTrackingEnabled &&
+            waterDailyGoalMl == other.waterDailyGoalMl &&
+            waterQuickPresetsMl == other.waterQuickPresetsMl &&
+            waterTodayMl == other.waterTodayMl &&
+            waterTodayEntries == other.waterTodayEntries &&
+            dailyNote == other.dailyNote &&
+            waterGoalDynamic == other.waterGoalDynamic &&
+            waterNextPlan == other.waterNextPlan &&
+            nicotineTrackingEnabled == other.nicotineTrackingEnabled &&
+            nicotineDailyLimit == other.nicotineDailyLimit &&
+            nicotineQuickKinds == other.nicotineQuickKinds &&
+            nicotinePresets == other.nicotinePresets &&
+            nicotineTodayCount == other.nicotineTodayCount &&
+            nicotineTodayEntries == other.nicotineTodayEntries &&
+            dailyNotesEnabled == other.dailyNotesEnabled &&
+            mealTimesEnabled == other.mealTimesEnabled &&
+            mealPlanningEnabled == other.mealPlanningEnabled &&
+            caffeineTrackingEnabled == other.caffeineTrackingEnabled &&
+            caffeineQuickKinds == other.caffeineQuickKinds &&
+            caffeinePresets == other.caffeinePresets &&
+            caffeineTodayMg == other.caffeineTodayMg &&
+            caffeineTodayEntries == other.caffeineTodayEntries &&
+            fastingEnabled == other.fastingEnabled &&
+            fastingGoalHours == other.fastingGoalHours &&
+            fastingEatHours == other.fastingEatHours &&
+            fastingAutoWindows == other.fastingAutoWindows &&
+            fastingPhase == other.fastingPhase &&
+            fastingElapsedMillis == other.fastingElapsedMillis &&
+            fastingNowMillis == other.fastingNowMillis &&
+            fastingEatingElapsedMillis == other.fastingEatingElapsedMillis &&
+            fastingNextFastStartMillis == other.fastingNextFastStartMillis &&
+            fastingGoalReached == other.fastingGoalReached &&
+            fastingAutoStarted == other.fastingAutoStarted &&
+            fastingLastEndedAtMillis == other.fastingLastEndedAtMillis &&
+            fastingLastFastStartedAtMillis == other.fastingLastFastStartedAtMillis &&
+            progressiveMeal == other.progressiveMeal &&
+            resumeProgressiveCapture == other.resumeProgressiveCapture &&
+            showProgressiveMealSheet == other.showProgressiveMealSheet &&
+            manualActiveKcal == other.manualActiveKcal &&
+            manualActiveTodayEntries == other.manualActiveTodayEntries &&
+            logTimeOverride == other.logTimeOverride &&
+            copiedEntries == other.copiedEntries &&
+            plannedAck == other.plannedAck &&
+            fillGapsBanner == other.fillGapsBanner &&
+            untrackedDays == other.untrackedDays &&
+            untrackedKcalByDay == other.untrackedKcalByDay &&
+            healthSyncFailed == other.healthSyncFailed &&
+            diaryLoaded == other.diaryLoaded
+    }
+
+    override fun hashCode(): Int {
+        var result = date.hashCode()
+        result = 31 * result + (profile?.hashCode() ?: 0)
+        result = 31 * result + goalJournal.hashCode()
+        result = 31 * result + todayEntries.hashCode()
+        result = 31 * result + homeDisplay.hashCode()
+        result = 31 * result + homeTopNutrients.hashCode()
+        result = 31 * result + foodLogMacroChips.hashCode()
+        result = 31 * result + measuredActiveAverageCalories
+        result = 31 * result + healthEnergyActiveByDay.hashCode()
+        result = 31 * result + manualActiveByDay.hashCode()
+        result = 31 * result + activitySnapshot.hashCode()
+        result = 31 * result + optionalNutrientGoals.hashCode()
+        result = 31 * result + foodLogSortOrder.hashCode()
+        result = 31 * result + preferGramsByDefault.hashCode()
+        result = 31 * result + (lastRecalcSheet?.hashCode() ?: 0)
+        result = 31 * result + (recalcSheet?.hashCode() ?: 0)
+        result = 31 * result + skipPhotoNotePrompt.hashCode()
+        result = 31 * result + photoNoteSkipCount
+        result = 31 * result + photoAccuracyGuideCount
+        result = 31 * result + hasSeenCameraScaleTip.hashCode()
+        result = 31 * result + weightMetric.hashCode()
+        result = 31 * result + favoriteKeys.hashCode()
+        result = 31 * result + pendingAnalysis.hashCode()
+        result = 31 * result + (pendingImageBytes?.contentHashCode() ?: 0)
+        result = 31 * result + pendingAnalysisImages.fold(1) { acc, bytes -> 31 * acc + bytes.contentHashCode() }
+        result = 31 * result + (pendingReviewSource?.hashCode() ?: 0)
+        result = 31 * result + (recoveredReview?.hashCode() ?: 0)
+        result = 31 * result + (pendingInputImageBytes?.contentHashCode() ?: 0)
+        result = 31 * result + (pendingFoodSource?.hashCode() ?: 0)
+        result = 31 * result + (pendingDraftImageFilename?.hashCode() ?: 0)
+        result = 31 * result + (pendingInputNote?.hashCode() ?: 0)
+        result = 31 * result + (pendingInputConfirmedPortionGrams?.hashCode() ?: 0)
+        result = 31 * result + (pendingPromptText?.hashCode() ?: 0)
+        result = 31 * result + (pendingQueueEntryId?.hashCode() ?: 0)
+        result = 31 * result + pendingPortionPreConfirmed.hashCode()
+        result = 31 * result + pendingInputDraftImageFilenames.hashCode()
+        result = 31 * result + addFoodQuery.hashCode()
+        result = 31 * result + addFoodSuggestions.hashCode()
+        result = 31 * result + addFoodSavedTab.hashCode()
+        result = 31 * result + addFoodSavedRows.hashCode()
+        result = 31 * result + addFoodSuggestNetworkPending.hashCode()
+        result = 31 * result + addFoodSuggestNetworkUnreachable.hashCode()
+        result = 31 * result + addFoodPackagedSearchEnabled.hashCode()
+        result = 31 * result + (pendingIdentityName?.hashCode() ?: 0)
+        result = 31 * result + queueEntries.hashCode()
+        result = 31 * result + (queueRunningId?.hashCode() ?: 0)
+        result = 31 * result + showAnalysisQueue.hashCode()
+        result = 31 * result + (pendingGroundedReview?.hashCode() ?: 0)
+        result = 31 * result + analyzing.hashCode()
+        result = 31 * result + (analysisPhase?.hashCode() ?: 0)
+        result = 31 * result + (analysisPreview?.hashCode() ?: 0)
+        result = 31 * result + (analysisPartial?.hashCode() ?: 0)
+        result = 31 * result + inferringUnits.hashCode()
+        result = 31 * result + saving.hashCode()
+        result = 31 * result + (error?.hashCode() ?: 0)
+        result = 31 * result + (errorNotFoundBarcode?.hashCode() ?: 0)
+        result = 31 * result + (errorDetail?.hashCode() ?: 0)
+        result = 31 * result + waterTrackingEnabled.hashCode()
+        result = 31 * result + waterDailyGoalMl
+        result = 31 * result + waterQuickPresetsMl.hashCode()
+        result = 31 * result + waterTodayMl
+        result = 31 * result + waterTodayEntries.hashCode()
+        result = 31 * result + (dailyNote?.hashCode() ?: 0)
+        result = 31 * result + waterGoalDynamic.hashCode()
+        result = 31 * result + (waterNextPlan?.hashCode() ?: 0)
+        result = 31 * result + nicotineTrackingEnabled.hashCode()
+        result = 31 * result + nicotineDailyLimit
+        result = 31 * result + nicotineQuickKinds.hashCode()
+        result = 31 * result + nicotinePresets.hashCode()
+        result = 31 * result + nicotineTodayCount
+        result = 31 * result + nicotineTodayEntries.hashCode()
+        result = 31 * result + dailyNotesEnabled.hashCode()
+        result = 31 * result + mealTimesEnabled.hashCode()
+        result = 31 * result + mealPlanningEnabled.hashCode()
+        result = 31 * result + caffeineTrackingEnabled.hashCode()
+        result = 31 * result + caffeineQuickKinds.hashCode()
+        result = 31 * result + caffeinePresets.hashCode()
+        result = 31 * result + caffeineTodayMg.hashCode()
+        result = 31 * result + caffeineTodayEntries.hashCode()
+        result = 31 * result + fastingEnabled.hashCode()
+        result = 31 * result + fastingGoalHours
+        result = 31 * result + fastingEatHours
+        result = 31 * result + fastingAutoWindows.hashCode()
+        result = 31 * result + fastingPhase.hashCode()
+        result = 31 * result + fastingElapsedMillis.hashCode()
+        result = 31 * result + fastingNowMillis.hashCode()
+        result = 31 * result + fastingEatingElapsedMillis.hashCode()
+        result = 31 * result + (fastingNextFastStartMillis?.hashCode() ?: 0)
+        result = 31 * result + fastingGoalReached.hashCode()
+        result = 31 * result + fastingAutoStarted.hashCode()
+        result = 31 * result + (fastingLastEndedAtMillis?.hashCode() ?: 0)
+        result = 31 * result + (fastingLastFastStartedAtMillis?.hashCode() ?: 0)
+        result = 31 * result + (progressiveMeal?.hashCode() ?: 0)
+        result = 31 * result + resumeProgressiveCapture.hashCode()
+        result = 31 * result + showProgressiveMealSheet.hashCode()
+        result = 31 * result + manualActiveKcal
+        result = 31 * result + manualActiveTodayEntries.hashCode()
+        result = 31 * result + (logTimeOverride?.hashCode() ?: 0)
+        result = 31 * result + copiedEntries.hashCode()
+        result = 31 * result + (plannedAck?.hashCode() ?: 0)
+        result = 31 * result + untrackedDays.hashCode()
+        result = 31 * result + untrackedKcalByDay.hashCode()
+        result = 31 * result + healthSyncFailed.hashCode()
+        result = 31 * result + diaryLoaded.hashCode()
+        return result
+    }
+}
+
+private fun elapsedDayFraction(day: LocalDate): Float {
+    if (!day.isEqual(LocalDate.now())) return 1f
+    return (LocalTime.now().toSecondOfDay() / 86_400f).coerceIn(0f, 1f)
+}
+
+/**
+ * Last-requested-wins guard for [HomeViewModel.refreshActivitySnapshot].
+ * Health Connect reads are slow and day-dependent (one aggregate call per day
+ * back), so an older day's read can land after a newer one and overwrite the
+ * snapshot — the "active calories of the previous day stick" bug (Codeberg
+ * #22). Each refresh calls [begin]; only the read holding the current token
+ * may write the snapshot ([isCurrent]). Mirrors the generation idiom used for food
+ * analysis ([AnalysisRunGate]).
+ */
+internal class ActivitySnapshotRefreshGuard {
+    private var generation = 0
+
+    /** Claims the current generation for a new refresh; invalidates prior ones. */
+    fun begin(): Int = ++generation
+
+    /** True only for the most recently begun refresh. */
+    fun isCurrent(gen: Int): Boolean = gen == generation
+}
+
+/**
+ * Live-run slot for food analysis (Codeberg #136). Generation-gated like
+ * [ActivitySnapshotRefreshGuard], but also tracks whether a run currently
+ * holds the slot: only a genuinely in-flight run refuses a new one, so a
+ * stale busy flag can no longer wedge every later run.
+ */
+internal class AnalysisRunGate {
+    private val lock = Any()
+    private var inFlight = false
+    private var generation = 0
+
+    /** Begins a run unless one is in flight; returns the new generation or null. */
+    fun tryBegin(): Int? = synchronized(lock) {
+        if (inFlight) return null
+        inFlight = true
+        ++generation
+    }
+
+    /** Cheap pre-probe for UI affordances; [tryBegin] stays authoritative. */
+    fun canBegin(): Boolean = synchronized(lock) { !inFlight }
+
+    /** Supersedes the current run: bumps the generation and releases the slot. */
+    fun invalidate() = synchronized(lock) {
+        ++generation
+        inFlight = false
+    }
+
+    /** Releases the slot only if [gen] is still the current run. */
+    fun end(gen: Int) = synchronized(lock) { if (gen == generation) inFlight = false }
+
+    /** Callback guard: true while [gen] is the current run. */
+    fun isCurrent(gen: Int) = synchronized(lock) { gen == generation }
+}
+
+class HomeViewModel(private val container: AppContainer) : ViewModel() {
+    private val _ui = MutableStateFlow(HomeUiState())
+    val ui: StateFlow<HomeUiState> = _ui.asStateFlow()
+    private val _selectedDate = MutableStateFlow(LocalDate.now())
+    // Fill-missing Home banner: once-per-day gate + session latch (see init).
+    private var fillGapsBannerShownToday = false
+    private var fillGapsBannerLatched = false
+    private var fillGapsLatestBanner: app.chompass.services.FillGapsBanner? = null
+    /** Typed analyze prompt. Lives here, not in the sheet, so Cancel keeps the draft (audit M5). */
+    private val _textInputDraft = MutableStateFlow("")
+    val textInputDraft: StateFlow<String> = _textInputDraft.asStateFlow()
+
+    companion object {
+        /** After this many empty-note photo analyzes, offer “don’t ask again”. */
+        const val PHOTO_NOTE_SKIP_OFFER_THRESHOLD = 3
+        /** Show the prominent accuracy tip card for the first N photo staging Analyzes. */
+        const val PHOTO_ACCURACY_GUIDE_COUNT = 3
+
+        /**
+         * Add Food search pacing. The offline wait is short enough to feel like
+         * typeahead but long enough that a fast typist never queues work on the
+         * search's shared offline mutex; the online wait is the familiar 300 ms
+         * search debounce plus a little, since that leg costs a network round
+         * trip. Both are measured from the keystroke.
+         */
+        const val OFFLINE_SEARCH_DEBOUNCE_MS = 120L
+        const val ONLINE_SEARCH_DEBOUNCE_MS = 350L
+        /** Hard wall-clock cap on the Open Food Facts leg inside the sheet. */
+        const val ONLINE_SEARCH_BUDGET_MS = 4_000L
+        /** Rows rendered in the Add Food zero-query list before it stops growing. */
+        const val ADD_FOOD_SAVED_ROW_CAP = 60
+    }
+
+    /** Live-run slot for food analysis; the busy UI flags are no longer a gate (Codeberg #136). */
+    private val analysisRunGate = AnalysisRunGate()
+    /** Last-requested-wins guard for [refreshActivitySnapshot] (Codeberg #22). */
+    private val activitySnapshotGuard = ActivitySnapshotRefreshGuard()
+
+    /**
+     * Bumped on any diary/favorites change (see the init combine) so the Add
+     * Food saved-food index knows it is stale. Kept after the hub re-log chips
+     * were replaced by the inline Saved Meals tabs, because it is still the one
+     * signal that says "the user's foods changed".
+     */
+    private var quickRelogEpoch = 0
+    @Volatile private var daySwitchStartedAtNs = 0L
+    @Volatile private var relogAckAtNs = 0L
+    @Volatile private var relogAckPriorCount = -1
+    private var uiAckWaiter: CompletableDeferred<Long>? = null
+    private var waterAckWaiter: CompletableDeferred<Long>? = null
+    @Volatile private var waterAckAtNs = 0L
+    @Volatile private var waterAckPriorMl = -1
+
+    /**
+     * Suggestion index for the unified Add Food search. A sibling of the hub
+     * chip cache rather than an extension of it: that one is two fixed rows
+     * scoped to the current day, this one is the whole searchable set and does
+     * not care what day is shown. Invalidation rides [quickRelogEpoch] — the
+     * same signal, so there is only one thing to keep correct.
+     */
+    private var savedIndexCache: List<SavedFoodIndexEntry>? = null
+    private var savedIndexCacheEpoch = -1
+    private var savedIndexLoad: CompletableDeferred<List<SavedFoodIndexEntry>>? = null
+
+    /** Monotonic guard: only the newest query may publish suggestions. */
+    private var suggestGeneration = 0
+    private var suggestJob: Job? = null
+
+    /**
+     * The Open Food Facts leg of the current query, held apart from
+     * [suggestJob] so the packaged-products switch can start or stop it without
+     * restarting the search around it.
+     */
+    private var packagedJob: Job? = null
+
+    /**
+     * Everything the current Add Food query has gathered, kept by origin.
+     *
+     * Split rather than merged because the two halves have different
+     * lifetimes: the bundled rows belong to the query and change only when it
+     * does, while the packaged rows come and go with a switch the user can
+     * flip at any time. Keeping them apart is what lets that switch add or
+     * remove one source instead of re-running the whole search.
+     *
+     * Owned by the ViewModel rather than a coroutine local because it outlives
+     * the job that filled it — the switch reads it long after the query
+     * settled. Replaced wholesale on every new query, so no entry here ever
+     * belongs to a query the user has moved past.
+     */
+    private class AddFoodSearchState(
+        val query: String,
+        val index: List<SavedFoodIndexEntry>,
+        val recipes: List<Recipe>,
+        var offline: List<DatabaseSearchResult> = emptyList(),
+        var online: List<DatabaseSearchResult> = emptyList(),
+        /** Last packaged leg ended without reaching Open Food Facts (Codeberg #120 facet). */
+        var onlineUnreachable: Boolean = false,
+    )
+
+    private var addFoodSearch: AddFoodSearchState? = null
+
+    /** Warm the Add Food sheet's saved foods while it animates open (FAB tap). */
+    fun prefetchAddFoodIndex() {
+        viewModelScope.launch {
+            savedFoodIndexCached()
+            // Both offline indexes are `by lazy` in AppContainer and open their
+            // bundled SQLite asset on first touch. Doing that here keeps it off
+            // the first keystroke, where it would land inside the search's
+            // shared offline mutex.
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    container.usdaFoodIndex
+                    container.swissFoodIndex
+                }
+            }
+        }
+    }
+
+    private suspend fun savedFoodIndexCached(): List<SavedFoodIndexEntry> {
+        if (savedIndexCacheEpoch == quickRelogEpoch) {
+            savedIndexCache?.let { return it }
+        }
+        savedIndexLoad?.let { return it.await() }
+        val deferred = CompletableDeferred<List<SavedFoodIndexEntry>>()
+        savedIndexLoad = deferred
+        val startEpoch = quickRelogEpoch
+        viewModelScope.launch {
+            // Degrade to an empty index rather than hanging the search: database
+            // hits and the Analyze row still work without it.
+            val fresh = runCatching {
+                withContext(Dispatchers.Default) { container.foodRepository.savedFoodIndex() }
+            }.getOrDefault(emptyList())
+            savedIndexLoad = null
+            if (startEpoch == quickRelogEpoch) {
+                savedIndexCache = fresh
+                savedIndexCacheEpoch = startEpoch
+            }
+            deferred.complete(fresh)
+        }
+        return deferred.await()
+    }
+
+    private data class AnalysisStart(
+        val generation: Int,
+        val previousDraftImage: String?,
+    )
+
+    private fun beginAnalysis(
+        phased: Boolean = false,
+        configure: (HomeUiState) -> HomeUiState,
+    ): AnalysisStart? {
+        // Gate only on the live-run slot: the busy UI flags are overwritten by
+        // the configure copy below, so refusing on them wedges stale state
+        // instead of real runs (Codeberg #136).
+        val gen = analysisRunGate.tryBegin() ?: return null
+        val previousDraftImage = _ui.value.pendingDraftImageFilename
+        container.analyzingFood.value = true
+        _ui.value = configure(
+            _ui.value.copy(
+                error = null,
+                errorNotFoundBarcode = null,
+                errorDetail = null,
+                pendingAnalysis = null,
+                pendingIdentityName = null,
+                pendingReviewSource = null,
+                pendingPortionPreConfirmed = false,
+                analyzing = true,
+                analysisPhase = if (phased) EntryAnalysisPhase.Preparing else null,
+                analysisPreview = null,
+                analysisPartial = null,
+                inferringUnits = false,
+            )
+        )
+        return AnalysisStart(gen, previousDraftImage)
+    }
+
+    /**
+     * Invalidate any in-flight analysis so a tip / add-photo restart can call
+     * [beginAnalysis] immediately. Keeps staged image bytes for re-analyze.
+     */
+    private fun cancelInFlightAnalysisKeepInput() {
+        analysisRunGate.invalidate()
+        container.analyzingFood.value = false
+        _ui.update { it.copy(
+            pendingAnalysis = null,
+            pendingIdentityName = null,
+            pendingReviewSource = null,
+            analyzing = false,
+            analysisPhase = null,
+            analysisPreview = null,
+            analysisPartial = null,
+            inferringUnits = false,
+            error = null,
+            errorNotFoundBarcode = null,
+            errorDetail = null,
+        ) }
+    }
+
+    private fun onFoodAnalysisProgress(generation: Int, progress: FoodAnalysisProgress) {
+        if (!analysisRunGate.isCurrent(generation)) return
+        when (progress) {
+            is FoodAnalysisProgress.Phase -> {
+                _ui.update { it.copy(analysisPhase = progress.phase) }
+            }
+            is FoodAnalysisProgress.Partial -> {
+                val preview = progress.partial.toPreviewAnalysis()
+                _ui.update { it.copy(
+                    analysisPartial = progress.partial,
+                    analysisPreview = preview ?: _ui.value.analysisPreview,
+                ) }
+            }
+            is FoodAnalysisProgress.Parsed -> {
+                if (progress.unitsPending) {
+                    _ui.update { it.copy(
+                        analysisPhase = null,
+                        analysisPreview = progress.analysis,
+                        analysisPartial = app.chompass.services.ai.PartialFoodAnalysis.fromComplete(
+                            progress.analysis,
+                            streaming = false,
+                        ),
+                        pendingAnalysis = progress.analysis,
+                        analyzing = false,
+                        inferringUnits = true,
+                    ) }
+                    container.analyzingFood.value = false
+                } else {
+                    _ui.update { it.copy(
+                        analysisPreview = progress.analysis,
+                        analysisPartial = app.chompass.services.ai.PartialFoodAnalysis.fromComplete(
+                            progress.analysis,
+                            streaming = false,
+                        ),
+                    ) }
+                }
+            }
+            is FoodAnalysisProgress.Complete -> {
+                _ui.update { it.copy(
+                    pendingAnalysis = progress.analysis,
+                    inferringUnits = false,
+                    analysisPreview = null,
+                    analysisPartial = null,
+                    analysisPhase = null,
+                ) }
+            }
+        }
+    }
+
+    private fun failAnalysis(gen: Int, message: String?, notFoundBarcode: String? = null, detail: String? = null) {
+        if (!analysisRunGate.isCurrent(gen)) return
+        autoSaveFailedInput(message)
+        _ui.update { it.copy(
+            analyzing = false,
+            analysisPhase = null,
+            analysisPreview = null,
+            analysisPartial = null,
+            inferringUnits = false,
+            error = message,
+            errorNotFoundBarcode = notFoundBarcode,
+            errorDetail = detail,
+        ) }
+    }
+
+    /**
+     * Codeberg #53: a failed AI call must not discard the photos + description.
+     * Every failed prompt (photo or text) is persisted into the analysis queue
+     * (PENDING, runnable later — e.g. against a home-PC local HTTP model).
+     * Retries of the same input update the same entry (via
+     * [HomeUiState.pendingQueueEntryId]); a successful retry marks it DONE.
+     * Barcode/search failures carry no prompt input and are not recorded.
+     */
+    private fun autoSaveFailedInput(message: String?) {
+        val s = _ui.value
+        val images = s.pendingAnalysisImages.filter { it.isNotEmpty() }
+        val text = s.pendingPromptText?.trim().orEmpty()
+        val note = text.ifEmpty { s.pendingInputNote?.trim().orEmpty() }
+        if (images.isEmpty() && note.isEmpty()) return
+        viewModelScope.launch {
+            val store = container.analysisQueue
+            val existingId = s.pendingQueueEntryId
+            if (existingId != null && store.item(existingId) != null) {
+                // Same input failed again (retry / queued run): update in place.
+                store.markFailed(existingId, message)
+                return@launch
+            }
+            val id = UUID.randomUUID()
+            val filenames = store.storeImages(id, images)
+            store.upsert(
+                QueuedAnalysis(
+                    id = id,
+                    createdAt = Instant.now(),
+                    targetDate = _selectedDate.value,
+                    imageFilenames = filenames,
+                    note = note.ifEmpty { null },
+                    confirmedPortionGrams = s.pendingInputConfirmedPortionGrams,
+                    singleIngredient = s.progressiveMeal?.items?.isNotEmpty() == true,
+                    source = s.pendingFoodSource
+                        ?: if (images.isNotEmpty()) FoodSource.SNAP_FOOD else FoodSource.TEXT_INPUT,
+                    status = QueueStatus.PENDING,
+                    error = message,
+                )
+            )
+            _ui.update { it.copy(pendingQueueEntryId = id) }
+            // Link the persisted input draft (if any) so a successful retry
+            // resolves this entry instead of leaving it PENDING forever.
+            val draft = container.prefs.pendingFoodInputDraft.first()
+            if (draft != null && draft.queueEntryId == null) {
+                container.prefs.setPendingFoodInputDraft(draft.copy(queueEntryId = id))
+            }
+        }
+    }
+
+    private fun endAnalysis(gen: Int) {
+        analysisRunGate.end(gen)
+        if (analysisRunGate.isCurrent(gen)) {
+            container.analyzingFood.value = false
+        }
+    }
+
+    /**
+     * Shared begin → discard draft → try/catch AiError → end envelope for food
+     * analysis entry points. Call from an existing coroutine via [withFoodAnalysis]
+     * when prep work must run before [beginAnalysis].
+     */
+    private fun runFoodAnalysis(
+        phased: Boolean = false,
+        defaultErrorRes: Int = R.string.error_analysis_failed,
+        shouldEnd: () -> Boolean = { true },
+        configure: (HomeUiState) -> HomeUiState,
+        block: suspend (AnalysisStart) -> Unit,
+    ) {
+        viewModelScope.launch {
+            withFoodAnalysis(phased, defaultErrorRes, shouldEnd, configure = configure, block = block)
+        }
+    }
+
+    /**
+     * Shared begin → discard draft → try/catch AiError → end envelope for food
+     * analysis entry points. Returns true when the run started; false when
+     * [beginAnalysis] refused it (slot busy — callers may surface that).
+     */
+    private suspend fun withFoodAnalysis(
+        phased: Boolean = false,
+        defaultErrorRes: Int = R.string.error_analysis_failed,
+        shouldEnd: () -> Boolean = { true },
+        /** Appended to the localized AiError message when non-blank (queue "Run with…" no-fallback note). */
+        aiErrorSuffix: String? = null,
+        configure: (HomeUiState) -> HomeUiState,
+        block: suspend (AnalysisStart) -> Unit,
+    ): Boolean {
+        val start = beginAnalysis(phased = phased, configure = configure) ?: return false
+        // A fresh analysis supersedes any recovered review chip.
+        _ui.update { it.copy(recoveredReview = null) }
+        try {
+            // Inside the try: a failed draft discard (DataStore write) must not
+            // strand the run slot (#136) — the finally below always releases it.
+            discardPendingDraft(start.previousDraftImage)
+            block(start)
+        } catch (e: AiError) {
+            val msg = listOf(e.userMessage(container.appContext), aiErrorSuffix)
+                .filter { !it.isNullOrBlank() }
+                .joinToString(" ")
+            failAnalysis(start.generation, msg, detail = errorDetail(e))
+        } catch (e: OpenFoodFactsService.LookupException) {
+            // LookupException messages are the barcode surface's user copy
+            // (not-found / trouble / unreadable), so they render verbatim;
+            // every other throwable maps to the localized default.
+            failAnalysis(
+                start.generation,
+                e.message ?: container.appContext.getString(defaultErrorRes),
+                notFoundBarcode = (e as? OpenFoodFactsService.LookupException.NotFound)?.code,
+            )
+        } catch (e: Throwable) {
+            failAnalysis(start.generation, container.appContext.getString(defaultErrorRes), detail = errorDetail(e))
+        } finally {
+            if (shouldEnd()) endAnalysis(start.generation)
+        }
+        return true
+    }
+
+    init {
+        observePerfBench()
+        // Debug-only Codeberg #84 repro: seed the meal-builder sheet with
+        // canned ingredients so the pinned-footer layout is verifiable on
+        // device (consume-and-clear, same semantics as the perf-bench inbox).
+        container.progressiveSeedInbox
+            .onEach { count ->
+                if (count == null) return@onEach
+                container.progressiveSeedInbox.value = null
+                seedProgressiveMealDemo(count)
+            }
+            .launchIn(viewModelScope)
+        // Debug-only: `debug_barcode` hands a raw scan to the real lookup path.
+        container.barcodeLookupInbox
+            .onEach { code ->
+                if (code == null) return@onEach
+                container.barcodeLookupInbox.value = null
+                if (_ui.value.isEntryAnalysisBusy) {
+                    DebugTrace.event("op=barcode phase=drop code=$code reason=analysisBusy")
+                } else {
+                    lookupBarcode(code)
+                }
+            }
+            .launchIn(viewModelScope)
+        // Analysis queue + prompt history (Codeberg #53): load once (with
+        // retention pruning) and mirror mutations into ui state for the badge
+        // and the queue sheet.
+        viewModelScope.launch {
+            runCatching { container.analysisQueue.ensureLoaded() }
+        }
+        viewModelScope.launch {
+            container.analysisQueue.entries.collect { entries ->
+                _ui.update { it.copy(queueEntries = entries) }
+            }
+        }
+        // Fill-missing banner: at most once per day. The shown-today pref is
+        // followed reactively (a debug seed can reset it mid-launch), but the
+        // session latch wins once the chip is on screen: the chip's own
+        // shown-write re-emits today without collapsing the chip, and after a
+        // process restart the chip stays hidden for the rest of the day.
+        container.prefs.fillMissingBannerLastShownDay
+            .onEach { day ->
+                fillGapsBannerShownToday = day == LocalDate.now().toEpochDay()
+                refreshFillGapsBanner()
+            }
+            .launchIn(viewModelScope)
+        container.fillGapsEngine.banner
+            .onEach { banner ->
+                fillGapsLatestBanner = banner
+                refreshFillGapsBanner()
+            }
+            .launchIn(viewModelScope)
+        viewModelScope.launch {
+            // Hero ⓘ → recalc details: restore the latest goal-change explanation
+            // (AI Recalculate or Adaptive) so the link can open the sheet on demand.
+            container.prefs.loadLastGoalChangeSheet()?.let { stored ->
+                _ui.update { it.copy(lastRecalcSheet = stored) }
+            }
+        }
+        combine(
+            container.profileRepository.profile,
+            _selectedDate.flatMapLatest { day -> container.foodRepository.entriesForDate(day) },
+            container.foodRepository.favoriteKeys,
+            container.prefs.foodLogSortOrder,
+            _selectedDate
+        ) { p, dayEntries, favKeys, sortOrder, day ->
+            // Date or favorites change makes chips stale. A same-day food write
+            // does not — relog/save prepends the template so the next hub open
+            // stays instant instead of rescanning 90 days.
+            if (day != _ui.value.date || favKeys != _ui.value.favoriteKeys) {
+                quickRelogEpoch++
+            }
+            _ui.value.copy(
+                profile = p,
+                date = day,
+                todayEntries = dayEntries,
+                diaryLoaded = true,
+                foodLogSortOrder = FoodLogSortOrder.fromStorage(sortOrder),
+                favoriteKeys = favKeys
+            )
+        }
+            .onEach { next ->
+                // Merge, never replace: the combine transform snapshots `_ui.value` in a
+                // separate coroutine (5-flow combine uses an internal channel), so a
+                // wholesale `_ui.value = next` can clobber fields written meanwhile
+                // (e.g. the hero ⓘ recalc-sheet restore in init). Only the fields this
+                // chain owns are copied onto the current state.
+                _ui.update { cur ->
+                    cur.copy(
+                        profile = next.profile,
+                        date = next.date,
+                        todayEntries = next.todayEntries,
+                        foodLogSortOrder = next.foodLogSortOrder,
+                        favoriteKeys = next.favoriteKeys,
+                    )
+                }
+                if (PerfLog.enabled) {
+                    val switchAt = daySwitchStartedAtNs
+                    if (switchAt != 0L && next.date == _selectedDate.value) {
+                        daySwitchStartedAtNs = 0L
+                        val ms = (System.nanoTime() - switchAt) / 1_000_000
+                        PerfLog.event(
+                            "op=daySwitch phase=listReady ms=$ms date=${next.date} entries=${next.todayEntries.size}",
+                        )
+                    }
+                    val ackAt = relogAckAtNs
+                    if (ackAt != 0L && next.todayEntries.size > relogAckPriorCount) {
+                        relogAckAtNs = 0L
+                        val ms = (System.nanoTime() - ackAt) / 1_000_000
+                        PerfLog.event(
+                            "op=relog phase=uiAck ms=$ms entries=${next.todayEntries.size}",
+                        )
+                        uiAckWaiter?.complete(ms)
+                        uiAckWaiter = null
+                    }
+                    // Codeberg #56 repro instrumentation (TEMP, debug-only): log
+                    // every home-list emission with ids+meals so logcat can tell a
+                    // state drop (entry missing here) from a render drop (present
+                    // here, not on screen) when compared against
+                    // op=homeList phase=renderGroups.
+                    val listView = next.todayEntries.joinToString(",") { e ->
+                        "${e.id.toString().take(8)}:${e.mealType}:${e.timestamp.epochSecond}"
+                    }
+                    PerfLog.event(
+                        "op=homeList phase=emission date=${next.date} sort=${next.foodLogSortOrder} n=${next.todayEntries.size} entries=[$listView]",
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.goalJournal
+            .onEach { entries ->
+                _ui.update { it.copy(goalJournal = entries) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.untrackedDays
+            .onEach { dates -> _ui.update { it.copy(untrackedDays = dates) } }
+            .launchIn(viewModelScope)
+        container.prefs.untrackedKcalByDay
+            .onEach { map -> _ui.update { it.copy(untrackedKcalByDay = map) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.homeDisplayPreferences
+            .onEach { display ->
+                _ui.update { it.copy(
+                    homeDisplay = display,
+                    homeTopNutrients = display.homeTopNutrients,
+                    foodLogMacroChips = display.foodLogMacroChips,
+                ) }
+                refreshActivitySnapshot()
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.healthEnergyMeasuredActive
+            .onEach { measuredActive ->
+                _ui.update { it.copy(measuredActiveAverageCalories = measuredActive) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.healthEnergyActiveByDay
+            .onEach { map ->
+                _ui.update { it.copy(healthEnergyActiveByDay = map) }
+            }
+            .launchIn(viewModelScope)
+
+        _selectedDate
+            .onEach { refreshActivitySnapshot() }
+            .launchIn(viewModelScope)
+
+        container.prefs.optionalNutrientGoals
+            .onEach { goals ->
+                _ui.update { it.copy(optionalNutrientGoals = goals) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.preferGramsByDefault
+            .onEach { preferGrams ->
+                _ui.update { it.copy(preferGramsByDefault = preferGrams) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.skipPhotoNotePrompt
+            .onEach { skip ->
+                _ui.update { it.copy(skipPhotoNotePrompt = skip) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.photoNoteSkipCount
+            .onEach { count ->
+                _ui.update { it.copy(photoNoteSkipCount = count) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.photoAccuracyGuideCount
+            .onEach { count ->
+                _ui.update { it.copy(photoAccuracyGuideCount = count) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.hasSeenCameraScaleTip
+            .onEach { seen ->
+                _ui.update { it.copy(hasSeenCameraScaleTip = seen) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.weightUnit
+            .onEach { unit ->
+                _ui.update { it.copy(weightMetric = unit == "kg") }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.waterTrackingEnabled
+            .onEach { enabled -> _ui.update { it.copy(waterTrackingEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        // The Add Food sheet's packaged-products toggle renders straight off
+        // this, so a change made on the Settings screen is already applied by
+        // the time the sheet opens — and a change made in the sheet comes back
+        // through the same flow.
+        container.prefs.foodSearchOpenFoodFactsEnabled
+            .onEach { enabled -> _ui.update { it.copy(addFoodPackagedSearchEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        // Effective water goal: the stored manual goal, or the dynamic calculator's
+        // result when the feature is on (issue #3). Recomputes on any input change
+        // (profile weight/activity, temperature, food diary, dynamic toggles).
+        combine(
+            combine(
+                container.prefs.waterDailyGoalMl,
+                container.prefs.waterDynamicEnabled,
+                container.prefs.waterBaseSource,
+                container.weatherRepository.state,
+                container.prefs.waterUseProfileActivity,
+            ) { manualGoal, dyn, source, weather, useAct ->
+                WaterDynamicPrefs(manualGoal, dyn, source, weather.effectiveHighC, useAct)
+            },
+            container.prefs.waterFoodWaterEnabled,
+            container.profileRepository.profile,
+            container.foodRepository.entriesForDate(LocalDate.now()),
+        ) { prefs, foodWater, profile, todayEntries ->
+            if (!prefs.dynamicEnabled) {
+                prefs.manualGoalMl to false
+            } else {
+                val todayFoodGrams = if (foodWater) {
+                    WaterGoalCalculator.estimateDiaryGrams(todayEntries)
+                } else {
+                    0
+                }
+                val goal = WaterGoalCalculator.dailyNetGoalMl(
+                    baseSource = prefs.baseSource,
+                    weightKg = profile?.weightKg,
+                    manualBaseMl = prefs.manualGoalMl,
+                    expectedHighC = prefs.tempC,
+                    activityLevel = profile?.activityLevel ?: ActivityLevel.SEDENTARY,
+                    useProfileActivity = prefs.useProfileActivity,
+                    foodGramsToday = todayFoodGrams,
+                    foodWaterEnabled = foodWater,
+                )
+                goal to true
+            }
+        }
+            .onEach { (goal, dynamic) ->
+                _ui.update { it.copy(waterDailyGoalMl = goal, waterGoalDynamic = dynamic) }
+                refreshWaterPlan()
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.waterQuickPresetsMl
+            .onEach { presets -> _ui.update { it.copy(waterQuickPresetsMl = presets) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.nicotineTrackingEnabled
+            .onEach { enabled -> _ui.update { it.copy(nicotineTrackingEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.dailyNotesEnabled
+            .onEach { enabled -> _ui.update { it.copy(dailyNotesEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.mealTimesEnabled
+            .onEach { enabled -> _ui.update { it.copy(mealTimesEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.mealPlanningEnabled
+            .onEach { enabled -> _ui.update { it.copy(mealPlanningEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.nicotineDailyLimit
+            .onEach { limit -> _ui.update { it.copy(nicotineDailyLimit = limit) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.nicotineQuickKinds
+            .onEach { kinds -> _ui.update { it.copy(nicotineQuickKinds = kinds) } }
+            .launchIn(viewModelScope)
+        container.prefs.nicotinePresets
+            .onEach { catalog -> _ui.update { it.copy(nicotinePresets = catalog.presets) } }
+            .launchIn(viewModelScope)
+
+        combine(container.nicotineRepository.entries, _selectedDate) { entries, day ->
+            val zone = ZoneId.systemDefault()
+            val dayEntries = entries.filter { it.date.atZone(zone).toLocalDate() == day }
+            dayEntries.sumOf { it.count } to dayEntries
+        }
+            .onEach { (total, dayEntries) ->
+                _ui.update { it.copy(nicotineTodayCount = total, nicotineTodayEntries = dayEntries) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.caffeineTrackingEnabled
+            .onEach { enabled -> _ui.update { it.copy(caffeineTrackingEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.caffeineQuickKinds
+            .onEach { kinds -> _ui.update { it.copy(caffeineQuickKinds = kinds) } }
+            .launchIn(viewModelScope)
+        container.prefs.caffeinePresets
+            .onEach { catalog -> _ui.update { it.copy(caffeinePresets = catalog.presets) } }
+            .launchIn(viewModelScope)
+
+        // Hero total = tracker logs + food-entry caffeine for the selected day
+        // (one "today's caffeine" number; the limit applies to both sources).
+        combine(
+            container.caffeineRepository.entries,
+            _selectedDate.flatMapLatest { day -> container.foodRepository.entriesForDate(day) },
+            _selectedDate,
+        ) { entries, foodEntries, day ->
+            val zone = ZoneId.systemDefault()
+            val dayEntries = entries.filter { it.date.atZone(zone).toLocalDate() == day }
+            CaffeineEntry.dayCaffeineMg(foodEntries, dayEntries) to dayEntries
+        }
+            .onEach { (total, dayEntries) ->
+                _ui.update { it.copy(caffeineTodayMg = total, caffeineTodayEntries = dayEntries) }
+            }
+            .launchIn(viewModelScope)
+
+        container.prefs.fastingEnabled
+            .onEach { enabled -> _ui.update { it.copy(fastingEnabled = enabled) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.fastingGoalHours
+            .onEach { goal -> _ui.update { it.copy(fastingGoalHours = goal) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.fastingEatHours
+            .onEach { eat -> _ui.update { it.copy(fastingEatHours = eat) } }
+            .launchIn(viewModelScope)
+
+        container.prefs.fastingAutoWindows
+            .onEach { auto -> _ui.update { it.copy(fastingAutoWindows = auto) } }
+            .launchIn(viewModelScope)
+
+        // Session changes (start/stop/cancel) re-derive the display state; the
+        // minute ticker below keeps the elapsed label rolling without any write.
+        container.fastingRepository.session
+            .onEach { refreshFastingTick(it) }
+            .launchIn(viewModelScope)
+
+        combine(container.waterRepository.entries, _selectedDate) { entries, day ->
+            val zone = ZoneId.systemDefault()
+            val dayEntries = entries.filter { it.date.atZone(zone).toLocalDate() == day }
+            dayEntries.sumOf { it.milliliters } to dayEntries
+        }
+            .onEach { (total, dayEntries) ->
+                _ui.update { it.copy(waterTodayMl = total, waterTodayEntries = dayEntries) }
+                refreshWaterPlan()
+                val sipAt = waterAckAtNs
+                if (sipAt != 0L && total > waterAckPriorMl) {
+                    waterAckAtNs = 0L
+                    val ms = (System.nanoTime() - sipAt) / 1_000_000
+                    PerfLog.event("op=waterSip phase=uiAck ms=$ms ml=$total")
+                    waterAckWaiter?.complete(ms)
+                    waterAckWaiter = null
+                }
+            }
+            .launchIn(viewModelScope)
+
+        combine(container.notesRepository.notes, _selectedDate) { notes, day ->
+            notes.firstOrNull { it.date == day }?.text
+        }
+            .onEach { note -> _ui.update { it.copy(dailyNote = note) } }
+            .launchIn(viewModelScope)
+
+        combine(
+            combine(
+                container.prefs.waterTrackingEnabled,
+                container.prefs.waterReminderEnabled,
+                container.prefs.waterCupSizeMl,
+            ) { tracking, reminder, cup -> Triple(tracking, reminder, cup) },
+            combine(
+                container.prefs.waterAwakeStartHour,
+                container.prefs.waterAwakeStartMinute,
+                container.prefs.waterAwakeEndHour,
+                container.prefs.waterAwakeEndMinute,
+            ) { sh, sm, eh, em -> WaterWindowPrefs(sh, sm, eh, em) },
+        ) { _: Triple<Boolean, Boolean, Int>, _: WaterWindowPrefs -> Unit }
+            .onEach { refreshWaterPlan() }
+            .launchIn(viewModelScope)
+
+        // A fired reminder (or simply time passing) changes the next fire
+        // without any pref/entry emission — roll the caption over each minute
+        // (one in-memory DataStore read, same cost as the reminder chain's own
+        // fire-time recompute). Also ticks the fasting elapsed label.
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000)
+                refreshWaterPlan()
+                refreshFastingTick()
+            }
+        }
+
+        combine(container.manualActiveRepository.entries, _selectedDate) { entries, day ->
+            val byDay = app.chompass.models.DayTypeActiveStats.sumManualByDay(entries)
+            val today = entries.filter { it.date == day.toString() }.reversed()
+            Triple(today.sumOf { it.calories }, byDay, today)
+        }
+            .onEach { (total, byDay, today) ->
+                _ui.update {
+                    it.copy(
+                        manualActiveKcal = total,
+                        manualActiveByDay = byDay,
+                        manualActiveTodayEntries = today,
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
+
+        viewModelScope.launch {
+            val analysisDraft = container.prefs.pendingFoodAnalysisDraft.first()
+            if (analysisDraft != null) {
+                if (analysisDraft.awaitingReview) {
+                    // Dismissed by the user: surface the recovered-review chip
+                    // instead of reopening the sheet uninvited.
+                    _ui.update { it.copy(recoveredReview = analysisDraft) }
+                } else {
+                    restorePendingDraft(analysisDraft)
+                }
+            } else {
+                container.prefs.pendingFoodInputDraft.first()?.let { restorePendingInputDraft(it) }
+            }
+        }
+    }
+
+    fun setSelectedDate(date: LocalDate) {
+        if (PerfLog.enabled && date != _selectedDate.value) {
+            daySwitchStartedAtNs = System.nanoTime()
+        }
+        _selectedDate.value = date
+    }
+
+    /** Codeberg #77 part 3: session clock for new food logs. Null = now. */
+    fun setLogTimeOverride(time: LocalTime?) {
+        _ui.update { it.copy(logTimeOverride = time?.withSecond(0)?.withNano(0)) }
+    }
+
+    fun addWater(milliliters: Int) {
+        if (milliliters <= 0) return
+        viewModelScope.launch {
+            container.waterRepository.add(
+                WaterEntry(date = timestampForSelectedDay(), milliliters = milliliters),
+            )
+        }
+    }
+
+    /** Edits an existing sip's amount in place (keeps its time of day). */
+    fun updateWater(id: UUID, milliliters: Int) {
+        if (milliliters <= 0) return
+        viewModelScope.launch { container.waterRepository.update(id, milliliters) }
+    }
+
+    /** Removes an individual sip (history sheet delete). */
+    fun deleteWater(id: UUID) {
+        viewModelScope.launch { container.waterRepository.delete(id) }
+    }
+
+    /** Saves (or, when blank, clears) the note for the selected day. */
+    fun setDailyNote(text: String) {
+        val day = _selectedDate.value
+        viewModelScope.launch { container.notesRepository.setNote(day, text) }
+    }
+
+    /** Clears the note for the selected day. */
+    fun clearDailyNote() {
+        val day = _selectedDate.value
+        viewModelScope.launch { container.notesRepository.deleteNote(day) }
+    }
+
+    fun addNicotine(kind: String, count: Int = 1, mg: Double? = null) {
+        if (count <= 0) return
+        viewModelScope.launch {
+            container.nicotineRepository.add(
+                NicotineEntry.forNow(kind = kind, count = count, mg = mg),
+            )
+        }
+    }
+
+    fun addCaffeine(
+        kind: String,
+        mg: Double? = null,
+        milkKind: MilkKind? = null,
+        milkMl: Int = 0,
+    ) {
+        val effective = mg
+            ?: _ui.value.caffeinePresets.firstOrNull { it.id == kind }?.defaultMg
+            ?: builtinCaffeineDefaultMg(kind)
+        if (effective == null || effective <= 0) return
+        viewModelScope.launch {
+            val at = Instant.now()
+            val linkedId = if (milkKind != null && milkMl > 0) {
+                val food = milkKind.toFoodEntry(
+                    ml = milkMl,
+                    at = at,
+                    mealId = MealType.currentMealId,
+                    name = container.appContext.getString(milkKind.labelRes),
+                )
+                container.foodRepository.addEntry(food)
+                food.id
+            } else {
+                null
+            }
+            container.caffeineRepository.add(
+                CaffeineEntry(
+                    kind = app.chompass.models.normalizeKindId(kind),
+                    mg = effective,
+                    date = at,
+                    linkedFoodEntryId = linkedId,
+                ),
+            )
+        }
+    }
+
+    fun updateCaffeine(id: UUID, kind: String, mg: Double) {
+        viewModelScope.launch { container.caffeineRepository.update(id, kind, mg) }
+    }
+
+    fun deleteCaffeine(id: UUID) {
+        viewModelScope.launch {
+            val existing = container.caffeineRepository.entries.first().firstOrNull { it.id == id }
+            val linked = existing?.linkedFoodEntryId
+            if (linked != null) {
+                val food = container.foodRepository.entries.first().firstOrNull { it.id == linked }
+                if (food != null) container.foodRepository.deleteEntry(food)
+            }
+            container.caffeineRepository.delete(id)
+        }
+    }
+
+    // -- Intermittent fasting timer (local-only) -------------------------
+
+    fun startFast() {
+        viewModelScope.launch { container.fastingRepository.start() }
+    }
+
+    fun stopFast() {
+        viewModelScope.launch { container.fastingRepository.stop() }
+    }
+
+    /** Launcher quick action (#182): start when idle, stop when fasting. */
+    fun toggleFast() {
+        viewModelScope.launch {
+            val s = container.fastingRepository.current()
+            if (s.isFasting) container.fastingRepository.stop() else container.fastingRepository.start()
+        }
+    }
+
+    /**
+     * Re-derives the fasting cycle display fields (phase, elapsed, goal
+     * reached) from the session + windows; called on session change and each
+     * minute. When auto windows are on, first drives any transition whose
+     * boundary already passed (missed-alarm catch-up, same heal as the
+     * planners) so the cycle stays on schedule.
+     */
+    private fun refreshFastingTick(session: app.chompass.models.FastingSession? = null) {
+        viewModelScope.launch {
+            if (session == null) FastingAutoPlanner.heal(container)
+            val s = session ?: container.fastingRepository.current()
+            val now = System.currentTimeMillis()
+            val goal = container.prefs.fastingGoalHours.first()
+            val eat = container.prefs.fastingEatHours.first()
+            val auto = container.prefs.fastingAutoWindows.first()
+            val windowEnds = s.eatingWindowEndsAtMillis(eat, now)
+            val phase = when {
+                s.isFasting -> FastingPhase.FASTING
+                // Auto mode: the schedule is the boundary, so any stop
+                // opens the eating phase until the next start time.
+                auto && s.lastEndedAtMillis != null -> FastingPhase.EATING
+                windowEnds != null -> FastingPhase.EATING
+                else -> FastingPhase.IDLE
+            }
+            val nextFastStart = when {
+                s.isFasting -> null
+                // Auto cycle needs a goal length to be meaningful (the fast
+                // would never end otherwise); without one, fall back to the
+                // relative eating-window anchor so the bar still counts down.
+                auto && goal > 0 -> nextFastingStartMillis(
+                    container.prefs.fastingStartHour.first(),
+                    container.prefs.fastingStartMinute.first(),
+                    now,
+                )
+                else -> windowEnds
+            }
+            // Eating-window elapsed is anchored to the last stop whenever the
+            // eating phase is active (auto mode included) — mirrors the PWA
+            // fasting card instead of zeroing out outside the manual window.
+            val lastEnded = s.lastEndedAtMillis
+            val eatElapsed = if (phase == FastingPhase.EATING && lastEnded != null) {
+                (now - lastEnded).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            _ui.update {
+                it.copy(
+                    fastingPhase = phase,
+                    fastingElapsedMillis = s.elapsedMillis(now),
+                    fastingNowMillis = now,
+                    fastingEatingElapsedMillis = eatElapsed,
+                    fastingNextFastStartMillis = nextFastStart,
+                    fastingGoalReached = s.goalReached(goal, now),
+                    fastingAutoStarted = s.autoStarted,
+                    fastingLastEndedAtMillis = lastEnded,
+                    fastingLastFastStartedAtMillis = s.lastFastStartedAtMillis,
+                )
+            }
+        }
+    }
+
+    /** Edits an existing log's kind/count/mg in place (keeps its timestamp). */
+    fun updateNicotine(id: UUID, kind: String, count: Int, mg: Double?) {
+        if (count <= 0) return
+        viewModelScope.launch { container.nicotineRepository.update(id, kind, count, mg) }
+    }
+
+    /** Removes an individual log (history sheet delete). */
+    fun deleteNicotine(id: UUID) {
+        viewModelScope.launch { container.nicotineRepository.delete(id) }
+    }
+
+    /**
+     * Re-derives the next planned drink (quantity + fire time) from live prefs
+     * and diary — the same "pure state → plan" re-derivation the reminder
+     * chain itself performs, so the Home caption always matches the armed
+     * alarm. Cheap: the planner reads current DataStore values once.
+     */
+    private fun refreshWaterPlan() {
+        viewModelScope.launch {
+            _ui.update { it.copy(waterNextPlan = WaterReminderPlanner.next(container)) }
+        }
+    }
+
+    fun addManualActive(name: String, calories: Int) {
+        if (calories <= 0) return
+        viewModelScope.launch {
+            container.manualActiveRepository.add(
+                ManualActiveEntry.forDay(_selectedDate.value, name, calories),
+            )
+            container.widgetSnapshotWriter.refresh()
+        }
+    }
+
+    fun updateManualActive(id: String, name: String, calories: Int) {
+        if (calories <= 0) return
+        viewModelScope.launch {
+            container.manualActiveRepository.update(id, name, calories)
+            container.widgetSnapshotWriter.refresh()
+        }
+    }
+
+    fun deleteManualActive(id: String) {
+        viewModelScope.launch {
+            container.manualActiveRepository.delete(id)
+            container.widgetSnapshotWriter.refresh()
+        }
+    }
+
+    fun refreshActivitySnapshot() {
+        val gen = activitySnapshotGuard.begin()
+        viewModelScope.launch {
+            val day = _selectedDate.value
+            val display = _ui.value.homeDisplay
+            val needsActivitySnapshot = needsActivitySnapshotFor(display)
+            val needsMeasuredEnergy = needsMeasuredEnergyFor(
+                display = display,
+                healthConnectEnabled = container.prefs.healthConnectEnabled.first(),
+                hasDebugActivityDays = !container.prefs.debugActivityDaysJson().isNullOrEmpty(),
+            )
+            if (!needsActivitySnapshot && !needsMeasuredEnergy) {
+                if (activitySnapshotGuard.isCurrent(gen)) {
+                    _ui.update { it.copy(activitySnapshot = HomeActivitySnapshot(date = day)) }
+                }
+                return@launch
+            }
+            val snapshot = container.homeActivityReader.readForDate(day)
+            if (activitySnapshotGuard.isCurrent(gen)) {
+                _ui.update { it.copy(activitySnapshot = snapshot) }
+            }
+        }
+    }
+
+    fun setFoodLogSortOrder(order: FoodLogSortOrder) {
+        viewModelScope.launch {
+            container.prefs.setFoodLogSortOrder(order.storageValue)
+        }
+    }
+
+    fun setHomeTopNutrients(selection: List<HomeTopNutrient>) {
+        viewModelScope.launch {
+            container.prefs.setHomeTopNutrients(HomeTopNutrient.toStorage(selection))
+        }
+    }
+
+    fun dismissCameraScaleTip() {
+        viewModelScope.launch {
+            container.prefs.setHasSeenCameraScaleTip(true)
+        }
+    }
+
+    fun analyzeText(description: String) {
+        runFoodAnalysis(phased = true, configure = { state ->
+            state.copy(
+                pendingImageBytes = null,
+                pendingAnalysisImages = emptyList(),
+                pendingFoodSource = FoodSource.TEXT_INPUT,
+                pendingDraftImageFilename = null,
+                pendingPromptText = description,
+            )
+        }) { start ->
+            val analysis = container.foodAnalysis.analyzeText(description) { progress ->
+                onFoodAnalysisProgress(start.generation, progress)
+            }
+            savePendingDraft(analysis, imageBytes = null, source = FoodSource.TEXT_INPUT, generation = start.generation)
+        }
+    }
+
+    fun analyzePhoto(bytes: ByteArray) {
+        runFoodAnalysis(phased = true, configure = { state ->
+            state.copy(
+                pendingImageBytes = bytes,
+                pendingAnalysisImages = listOf(bytes),
+                pendingFoodSource = FoodSource.SNAP_FOOD,
+                pendingDraftImageFilename = null,
+            )
+        }) { start ->
+            val singleIngredient = _ui.value.progressiveMeal?.items?.isNotEmpty() == true
+            val analysis = if (singleIngredient) {
+                container.foodAnalysis.analyzeFood(
+                    bytes,
+                    description = null,
+                    singleIngredient = true,
+                ) { progress ->
+                    onFoodAnalysisProgress(start.generation, progress)
+                }
+            } else {
+                container.foodAnalysis.analyzeAuto(bytes) { progress ->
+                    onFoodAnalysisProgress(start.generation, progress)
+                }
+            }
+            savePendingDraft(analysis, imageBytes = bytes, source = FoodSource.SNAP_FOOD, generation = start.generation)
+        }
+    }
+
+    fun analyzePhotos(
+        imageBytesList: List<ByteArray>,
+        note: String? = null,
+        confirmedPortionGrams: Double? = null,
+    ) {
+        viewModelScope.launch {
+            val images = imageBytesList.filter { it.isNotEmpty() }.take(10)
+            if (images.isEmpty()) return@launch
+            val displayBytes = when {
+                images.size >= 2 -> withContext(Dispatchers.Default) {
+                    FoodImageComposer.sideBySide(images[0], images[1])
+                }
+                else -> images.first()
+            }
+            val grams = confirmedPortionGrams?.takeIf { it > 0 }
+            val singleIngredient = _ui.value.progressiveMeal?.items?.isNotEmpty() == true
+            withFoodAnalysis(phased = true, configure = { state ->
+                state.copy(
+                    pendingImageBytes = displayBytes,
+                    pendingAnalysisImages = images,
+                    pendingFoodSource = FoodSource.SNAP_FOOD,
+                    pendingDraftImageFilename = null,
+                )
+            }) { start ->
+                if (images.isNotEmpty()) {
+                    savePendingInputDraft(
+                        images,
+                        note.orEmpty(),
+                        FoodSource.SNAP_FOOD,
+                        confirmedPortionGrams = grams,
+                        queueEntryId = _ui.value.pendingQueueEntryId,
+                    )
+                }
+                val analysis = container.foodAnalysis.analyzeFood(
+                    images,
+                    note?.takeIf { it.isNotBlank() },
+                    singleIngredient = singleIngredient,
+                    confirmedPortionGrams = grams,
+                ) { progress ->
+                    onFoodAnalysisProgress(start.generation, progress)
+                }.copy(customNote = note?.takeIf { it.isNotBlank() })
+                clearPendingInputDraft()
+                savePendingDraft(
+                    analysis,
+                    imageBytes = displayBytes,
+                    source = FoodSource.SNAP_FOOD,
+                    generation = start.generation,
+                    portionPreConfirmed = grams != null,
+                )
+            }
+        }
+    }
+
+    /**
+     * Photo staging Analyze: update skip / don’t-ask prefs, then run [analyzePhotos].
+     * [dontAskAgain] persists opt-out when the user checked the offer after ≥3 skips.
+     */
+    fun analyzePhotosFromStaging(
+        imageBytesList: List<ByteArray>,
+        note: String?,
+        confirmedPortionGrams: Double?,
+        dontAskAgain: Boolean = false,
+    ) {
+        viewModelScope.launch {
+            val trimmed = note?.trim().orEmpty()
+            if (dontAskAgain) {
+                container.prefs.setSkipPhotoNotePrompt(true)
+                container.prefs.setPhotoNoteSkipCount(0)
+            } else if (!_ui.value.skipPhotoNotePrompt) {
+                if (trimmed.isEmpty()) {
+                    container.prefs.setPhotoNoteSkipCount(_ui.value.photoNoteSkipCount + 1)
+                } else {
+                    container.prefs.setPhotoNoteSkipCount(0)
+                }
+            }
+            val guideCount = _ui.value.photoAccuracyGuideCount
+            if (guideCount < PHOTO_ACCURACY_GUIDE_COUNT) {
+                container.prefs.setPhotoAccuracyGuideCount(guideCount + 1)
+            }
+        }
+        analyzePhotos(imageBytesList, note, confirmedPortionGrams)
+    }
+
+    fun analyzePhotos(firstBytes: ByteArray, secondBytes: ByteArray) {
+        analyzePhotos(listOf(firstBytes, secondBytes))
+    }
+
+    /**
+     * "Camera + Note" flow — analyze a photo with extra textual context the
+     * user typed in (e.g. "extra cheese", "no oil"). Mirrors iOS
+     * `cameraMode == .snapFoodWithContext` → `GeminiService.analyzeFood(image, description:)`.
+     * Optional [confirmedPortionGrams] is passed as a controlled ground-truth instruction,
+     * separate from the free-form note.
+     */
+    fun analyzePhotoWithNote(
+        bytes: ByteArray,
+        note: String,
+        confirmedPortionGrams: Double? = null,
+    ) {
+        analyzePhotos(listOf(bytes), note, confirmedPortionGrams)
+    }
+
+    fun lookupBarcode(barcode: String) {
+        runFoodAnalysis(
+            defaultErrorRes = R.string.error_barcode_lookup_failed,
+            configure = { state ->
+                state.copy(
+                    pendingImageBytes = null,
+                    pendingAnalysisImages = emptyList(),
+                    pendingFoodSource = FoodSource.BARCODE,
+                    pendingDraftImageFilename = null,
+                )
+            },
+        ) { start ->
+            val lookup = OpenFoodFactsService.lookupWithImage(barcode, container.prefs)
+            savePendingDraft(
+                analysis = lookup.analysis,
+                imageBytes = lookup.productImageBytes,
+                source = FoodSource.BARCODE,
+                generation = start.generation,
+            )
+        }
+    }
+
+    /**
+     * Unified Add Food search. Publishes up to three times per query, widening
+     * the result set each time so the user is never waiting on a slower source:
+     *
+     *  1. immediately, from the cached local index;
+     *  2. after a short debounce, adding the bundled USDA / Swiss rows;
+     *  3. after the network leg's own debounce, adding Open Food Facts.
+     *
+     * Legs 1 and 2 are entirely on-device, which is why they may run on every
+     * keystroke. Leg 3 leaves the phone, so it is gated on
+     * [HomeUiState.addFoodPackagedSearchEnabled] — the packaged-products
+     * switch, on out of the box and one tap off on the databases heading.
+     *
+     * The ranker's score bands keep the local rows on top throughout, so later
+     * legs only ever append — the row under the user's finger never moves.
+     */
+    fun onAddFoodQueryChange(raw: String) {
+        _ui.update { it.copy(addFoodQuery = raw) }
+        val gen = ++suggestGeneration
+        suggestJob?.cancel()
+        packagedJob?.cancel()
+        val query = raw.trim()
+        if (query.isEmpty()) {
+            addFoodSearch = null
+            _ui.update {
+                it.copy(
+                    addFoodSuggestions = emptyList(),
+                    addFoodSuggestNetworkPending = false,
+                    addFoodSuggestNetworkUnreachable = false,
+                )
+            }
+            return
+        }
+        suggestJob = viewModelScope.launch {
+            val state = AddFoodSearchState(
+                query = query,
+                index = savedFoodIndexCached(),
+                recipes = runCatching { container.recipeRepository.recipes.first() }
+                    .getOrDefault(emptyList()),
+            )
+            addFoodSearch = state
+
+            // The packaged-products switch, on unless the user turns it off.
+            // Read from UI state rather than the store so a toggle flipped in
+            // the sheet applies to this very query instead of the one after the
+            // write lands. FoodDatabaseSearch re-checks the same preference on
+            // its own before it fans out, so a stale read here can only ever be
+            // too permissive by one query, never too permissive on the wire.
+            publishAddFoodSuggestions(state, gen, _ui.value.addFoodPackagedSearchEnabled)
+
+            delay(OFFLINE_SEARCH_DEBOUNCE_MS)
+            currentCoroutineContext().ensureActive()
+            state.offline = runCatching {
+                container.foodDatabaseSearch.searchOffline(query)
+            }.getOrDefault(emptyList())
+            // Re-read: the user may have flipped the opt-in during the debounce.
+            val optedIn = _ui.value.addFoodPackagedSearchEnabled
+            publishAddFoodSuggestions(state, gen, networkPending = optedIn)
+            if (!optedIn) return@launch
+            // Typing, so the network leg keeps the debounce that stops a
+            // request per keystroke. A deliberate flip of the switch does not
+            // (see [startPackagedLeg]).
+            startPackagedLeg(state, gen, debounceMs = ONLINE_SEARCH_DEBOUNCE_MS - OFFLINE_SEARCH_DEBOUNCE_MS)
+        }
+    }
+
+    /**
+     * Rank what the current query has gathered so far and hand it to the UI.
+     *
+     * Both guards matter: cancel() stops the coroutine, and the generation
+     * check catches a cancelled-but-not-yet-suspended one trying to write state
+     * for a query the user has moved past.
+     */
+    private suspend fun publishAddFoodSuggestions(
+        state: AddFoodSearchState,
+        gen: Int,
+        networkPending: Boolean,
+    ) {
+        if (gen != suggestGeneration) return
+        val database = state.offline + state.online
+        val ranked = withContext(Dispatchers.Default) {
+            FoodSuggestionRanker.rank(state.query, state.index, state.recipes, database)
+        }
+        if (gen != suggestGeneration) return
+        _ui.update {
+            if (it.addFoodSuggestions == ranked &&
+                it.addFoodSuggestNetworkPending == networkPending &&
+                it.addFoodSuggestNetworkUnreachable == state.onlineUnreachable
+            ) {
+                it
+            } else {
+                it.copy(
+                    addFoodSuggestions = ranked,
+                    addFoodSuggestNetworkPending = networkPending,
+                    addFoodSuggestNetworkUnreachable = state.onlineUnreachable,
+                )
+            }
+        }
+    }
+
+    /**
+     * The Open Food Facts leg, on its own job so it can start and stop without
+     * the rest of the search starting over. Everything already gathered stays
+     * on [AddFoodSearchState], so the rows on screen do not move while this
+     * runs: the packaged ones are appended when they land.
+     *
+     * [debounceMs] is the whole difference between the two callers. Typing pays
+     * it, so a query in progress makes one request rather than one per
+     * keystroke. Flipping the switch does not: the user has just asked for
+     * these rows and is watching for them.
+     */
+    private fun startPackagedLeg(state: AddFoodSearchState, gen: Int, debounceMs: Long) {
+        packagedJob?.cancel()
+        packagedJob = viewModelScope.launch {
+            if (debounceMs > 0) {
+                delay(debounceMs)
+                currentCoroutineContext().ensureActive()
+            }
+            // Open Food Facts walks a candidate-query chain with per-candidate
+            // backoff, so its own budget runs to tens of seconds. Acceptable in a
+            // dedicated search screen, not in the primary logging path.
+            val outcome = try {
+                withTimeoutOrNull(ONLINE_SEARCH_BUDGET_MS) {
+                    container.foodDatabaseSearch.searchOnline(state.query)
+                } ?: FoodDatabaseSearch.OnlineSearchOutcome(
+                    results = emptyList(),
+                    // A leg that outlived its budget never answered: the sheet
+                    // must say "unreachable", not "nothing matched".
+                    unreachable = true,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                FoodDatabaseSearch.OnlineSearchOutcome(emptyList(), unreachable = true)
+            }
+            // The switch may have gone off again while the request was out.
+            // Landing those rows now would put back exactly what the user just
+            // asked to remove.
+            if (!_ui.value.addFoodPackagedSearchEnabled) return@launch
+            state.online = outcome.results
+            state.onlineUnreachable = outcome.unreachable
+            publishAddFoodSuggestions(state, gen, networkPending = false)
+        }
+    }
+
+    /**
+     * Fill the Add Food sheet's zero-query list from the saved-food index that
+     * the search already caches, so switching tabs costs no I/O and the rows
+     * are identical in shape to the search results that replace them.
+     */
+    fun selectAddFoodSavedTab(tab: SavedTab) {
+        _ui.update { it.copy(addFoodSavedTab = tab) }
+        viewModelScope.launch {
+            container.prefs.setLastSavedMealsSegment(tab.name)
+            refreshAddFoodSavedRows(tab)
+        }
+    }
+
+    /** Warm the zero-query list for whichever tab the user last used. */
+    fun prefetchAddFoodSavedRows() {
+        viewModelScope.launch {
+            val persisted = runCatching { container.prefs.lastSavedMealsSegment.first() }.getOrNull()
+            val tab = runCatching { SavedTab.valueOf(persisted.orEmpty()) }.getOrDefault(SavedTab.RECENTS)
+            _ui.update { it.copy(addFoodSavedTab = tab) }
+            refreshAddFoodSavedRows(tab)
+        }
+    }
+
+    private suspend fun refreshAddFoodSavedRows(tab: SavedTab) {
+        val index = savedFoodIndexCached()
+        val recipes = if (tab == SavedTab.RECIPES) {
+            runCatching { container.recipeRepository.recipes.first() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        val rows = withContext(Dispatchers.Default) {
+            when (tab) {
+                // Score is unused when there is no query to score against; the
+                // explicit sort per tab is the ordering.
+                SavedTab.RECENTS -> index.sortedByDescending { it.lastLogged }.map { it.asSuggestion() }
+                SavedTab.FREQUENT -> index.filter { it.logCount > 0 }
+                    .sortedWith(compareByDescending<SavedFoodIndexEntry> { it.logCount }
+                        .thenBy { it.template.name.lowercase(Locale.ROOT) })
+                    .map { it.asSuggestion() }
+                SavedTab.FAVORITES -> index.filter { it.kind == SuggestionKind.FAVORITE }
+                    .map { it.asSuggestion() }
+                SavedTab.RECIPES -> recipes.map { FoodSuggestion.SavedRecipe(it, score = 0.0) }
+            }.take(ADD_FOOD_SAVED_ROW_CAP)
+        }
+        _ui.update { if (it.addFoodSavedTab == tab) it.copy(addFoodSavedRows = rows) else it }
+    }
+
+    /**
+     * The sheet's packaged-products toggle was flipped. It is the Settings
+     * source switch under another skin, so this writes that preference — the
+     * flow above brings the new value back into [HomeUiState], and the Settings
+     * screen shows the same state next time it is opened.
+     *
+     * The UI state is updated here as well rather than waiting for the
+     * round-trip: the gate in [onAddFoodQueryChange] reads it, and the query is
+     * re-run immediately so switching on does not cost the user a retype and
+     * switching off drops both the packaged rows and the pending-network dots.
+     */
+    fun setAddFoodPackagedSearch(enabled: Boolean) {
+        if (_ui.value.addFoodPackagedSearchEnabled == enabled) return
+        _ui.update { it.copy(addFoodPackagedSearchEnabled = enabled) }
+        // Rows the switch takes away go now, before anything suspends: the
+        // cancel and the drop are the user's answer to the tap, and neither
+        // needs a preference written first.
+        if (!enabled) {
+            packagedJob?.cancel()
+            packagedJob = null
+            addFoodSearch?.online = emptyList()
+            addFoodSearch?.onlineUnreachable = false
+        }
+        // The switch adds or removes one source. It does not restart the
+        // search: re-running the query would drop every row for a frame, redo
+        // two SQLite queries that cannot have changed, and re-rank from
+        // nothing, all of which the user sees as the list flinching. What they
+        // asked for is the packaged rows to appear or go away.
+        val state = addFoodSearch
+        viewModelScope.launch {
+            // Repaint first, so the list answers the tap while the write is
+            // still in flight: dots by the databases heading on the way in,
+            // the packaged rows already gone on the way out.
+            if (state != null) {
+                publishAddFoodSuggestions(state, suggestGeneration, networkPending = enabled)
+            }
+            // Then the preference — and only then the leg that depends on it.
+            // This preference IS the gate FoodDatabaseSearch re-checks before
+            // it fans out, so starting the request first is a race the request
+            // loses: it reads the preference still sitting at false and comes
+            // back with nothing, which is why switching off and back on used to
+            // return no packaged rows at all. Typing never hit this because its
+            // debounce happened to outlast the write.
+            runCatching { container.prefs.setFoodSearchOpenFoodFactsEnabled(enabled) }
+            if (enabled && state != null) {
+                startPackagedLeg(state, suggestGeneration, debounceMs = 0)
+            }
+        }
+    }
+
+    /** Sheet dismissed / query cleared: drop the search and cancel any in-flight leg. */
+    fun clearAddFoodQuery() {
+        suggestGeneration++
+        suggestJob?.cancel()
+        suggestJob = null
+        packagedJob?.cancel()
+        packagedJob = null
+        addFoodSearch = null
+        _ui.update {
+            it.copy(
+                addFoodQuery = "",
+                addFoodSuggestions = emptyList(),
+                addFoodSuggestNetworkPending = false,
+                addFoodSuggestNetworkUnreachable = false,
+            )
+        }
+    }
+
+    /** Every keystroke of the Type-it-out sheet lands here; see [_textInputDraft]. */
+    fun onTextInputDraftChange(text: String) {
+        _textInputDraft.value = text
+    }
+
+    /** Submitted prompts live on in the analysis queue; the draft has served. */
+    fun clearTextInputDraft() {
+        _textInputDraft.value = ""
+    }
+
+    /**
+     * Tap on a suggestion row. Saved foods log straight away (the chips have
+     * always behaved that way); recipes log every ingredient; database rows go
+     * through the review sheet because their portion still needs confirming.
+     */
+    fun pickSuggestion(suggestion: FoodSuggestion) {
+        when (suggestion) {
+            is FoodSuggestion.SavedFood -> relogMeal(suggestion.template)
+            is FoodSuggestion.SavedRecipe -> logRecipe(suggestion.recipe)
+            is FoodSuggestion.DatabaseHit -> selectFoodSearchResult(suggestion.result)
+        }
+    }
+
+    /** Long-press on a suggestion row: review before logging instead of logging. */
+    fun reviewSuggestion(suggestion: FoodSuggestion) {
+        when (suggestion) {
+            is FoodSuggestion.SavedFood -> reviewSavedMeal(suggestion.template)
+            is FoodSuggestion.SavedRecipe -> logRecipe(suggestion.recipe)
+            is FoodSuggestion.DatabaseHit -> selectFoodSearchResult(suggestion.result)
+        }
+    }
+
+    /**
+     * Plan action (meal planning mode): place a saved meal/recipe on a chosen
+     * upcoming day as a planned entry — not logged as eaten.
+     */
+    fun planSuggestion(suggestion: FoodSuggestion, date: LocalDate) {
+        when (suggestion) {
+            is FoodSuggestion.SavedFood -> planSavedMeal(suggestion.template, date)
+            is FoodSuggestion.SavedRecipe -> planRecipe(suggestion.recipe, date)
+            is FoodSuggestion.DatabaseHit -> Unit
+        }
+    }
+
+    /** Places a saved meal on [date], keeping the template's slot (planning intent). */
+    fun planSavedMeal(template: FoodEntry, date: LocalDate) {
+        viewModelScope.launch {
+            container.foodRepository.addEntry(
+                template.duplicatedForLogging(timestampForFoodLog(date), mealType = template.mealType)
+                    .copy(planned = true),
+                writeHealth = false,
+            )
+            ackPlanned(date)
+        }
+    }
+
+    /** Places a recipe's rows on [date] as planned entries. */
+    fun planRecipe(recipe: app.chompass.models.Recipe, date: LocalDate) {
+        viewModelScope.launch {
+            container.recipeRepository.logRecipe(
+                recipe,
+                timestampForFoodLog(date),
+                mealType = recipe.mealType,
+                planned = true,
+            )
+            ackPlanned(date)
+        }
+    }
+
+    private fun ackPlanned(date: LocalDate) {
+        val tick = (_ui.value.plannedAck?.first ?: 0) + 1
+        _ui.update { it.copy(plannedAck = tick to date) }
+    }
+
+    /** Dismisses the "planned for" snackbar message after it is shown. */
+    fun clearPlannedAck() {
+        _ui.update { it.copy(plannedAck = null) }
+    }
+
+    fun clearSavedFavoriteAck() {
+        _ui.update { it.copy(savedFavoriteAck = null) }
+    }
+
+    private var healthNudgeShown = false
+
+    /**
+     * Health Connect mirror in the background (the slowest save step). When a
+     * write stays queued, surface the sync-failure nudge once per session —
+     * the queue retries on the next foreground sync either way.
+     */
+    private fun mirrorToHealthBackground(entries: List<FoodEntry>) {
+        if (entries.isEmpty()) return
+        viewModelScope.launch {
+            if (entries.any { !container.foodRepository.mirrorEntryToHealth(it) }) {
+                markHealthSyncFailed()
+            }
+        }
+    }
+
+    private fun markHealthSyncFailed() {
+        if (healthNudgeShown) return
+        healthNudgeShown = true
+        _ui.update { it.copy(healthSyncFailed = true) }
+    }
+
+    /** Dismisses the Health Connect failure snackbar after it is shown. */
+    fun ackHealthSyncFailed() {
+        _ui.update { it.copy(healthSyncFailed = false) }
+    }
+
+    /**
+     * ISO date -> resolved day-type profile id for [dates] (UI-UX §10).
+     * Empty map while the plan is off — resolver answers null per day anyway.
+     */
+    fun weekDayTypes(dates: List<LocalDate>): Map<String, String> =
+        resolveDayTypeIds(_ui.value.profile, dates)
+
+    /**
+     * Add Food "Search food" database pick: resolve the hit to a full
+     * [FoodAnalysis] (OFF barcode lookup for micros, or offline USDA/Swiss row)
+     * and prefill the review sheet with its provenance badge.
+     */
+    fun selectFoodSearchResult(result: DatabaseSearchResult) {
+        runFoodAnalysis(
+            defaultErrorRes = R.string.error_search_food_failed,
+            configure = { state ->
+                state.copy(
+                    pendingImageBytes = null,
+                    pendingAnalysisImages = emptyList(),
+                    pendingFoodSource = FoodSource.SEARCH,
+                    pendingDraftImageFilename = null,
+                )
+            },
+        ) { start ->
+            val analysis = container.foodDatabaseSearch.toAnalysis(result)
+            savePendingDraft(analysis, imageBytes = null, source = FoodSource.SEARCH, generation = start.generation)
+        }
+    }
+
+    /**
+     * Optional grounded entry: recognize components with the selected model provider,
+     * then ground nutrients against history / USDA / Open Food Facts.
+     */
+    fun analyzeGrounded(description: String?, imageBytes: ByteArray?) {
+        if (!GroundedEntryFeature.ENABLED) return
+        runFoodAnalysis(
+            phased = true,
+            shouldEnd = { _ui.value.pendingGroundedReview == null },
+            configure = { state ->
+                state.copy(
+                    pendingImageBytes = imageBytes,
+                    pendingFoodSource = FoodSource.GROUNDED,
+                    pendingDraftImageFilename = null,
+                    pendingGroundedReview = null,
+                )
+            },
+        ) { start ->
+            val images = listOfNotNull(imageBytes?.takeIf { it.isNotEmpty() })
+            val result = container.groundedFoodEntry.analyze(
+                description = description,
+                imageBytesList = images,
+                onProgress = { progress -> onFoodAnalysisProgress(start.generation, progress) },
+            )
+            val needsReview = result.resolutions.any { it.needsUserChoice }
+            if (needsReview) {
+                if (!analysisRunGate.isCurrent(start.generation)) return@runFoodAnalysis
+                analysisRunGate.end(start.generation)
+                container.analyzingFood.value = false
+                _ui.update { it.copy(
+                    pendingGroundedReview = PendingGroundedReview(
+                        result = result,
+                        description = description,
+                        imageBytes = imageBytes,
+                    ),
+                    pendingAnalysis = null,
+                    pendingIdentityName = null,
+                    analyzing = false,
+                    analysisPhase = null,
+                    inferringUnits = false,
+                    analysisPreview = null,
+                    analysisPartial = null,
+                ) }
+            } else {
+                savePendingDraft(
+                    result.analysis,
+                    imageBytes = imageBytes,
+                    source = FoodSource.GROUNDED,
+                    generation = start.generation,
+                )
+            }
+        }
+    }
+
+    fun resolveGroundedChoices(
+        selectedSourceIds: Map<Int, String>,
+        gramOverrides: Map<Int, Double>,
+    ) {
+        val pending = _ui.value.pendingGroundedReview ?: return
+        runFoodAnalysis(phased = true, configure = { state ->
+            state.copy(
+                pendingGroundedReview = null,
+                pendingImageBytes = pending.imageBytes,
+                pendingFoodSource = FoodSource.GROUNDED,
+                pendingDraftImageFilename = null,
+            )
+        }) { start ->
+            val result = container.groundedFoodEntry.analyze(
+                description = pending.description,
+                imageBytesList = listOfNotNull(pending.imageBytes),
+                onProgress = { progress -> onFoodAnalysisProgress(start.generation, progress) },
+                selectedSourceIds = selectedSourceIds,
+                gramOverrides = gramOverrides,
+                priorRecognition = pending.result.recognition,
+            )
+            savePendingDraft(
+                result.analysis,
+                imageBytes = pending.imageBytes,
+                source = FoodSource.GROUNDED,
+                generation = start.generation,
+            )
+        }
+    }
+
+    fun dismissGroundedReview() {
+        _ui.update { it.copy(pendingGroundedReview = null) }
+    }
+
+    fun saveAnalysis(
+        name: String? = null,
+        servingGrams: Double? = null,
+        scale: Double = 1.0,
+        mealType: String = MealType.currentMealId,
+        selectedServingUnit: String? = null,
+        selectedServingQuantity: Double? = null,
+        editedAnalysis: FoodAnalysis? = null,
+        logTime: LocalTime? = null,
+    ) {
+        val pendingAnalysis = _ui.value.pendingAnalysis
+        val analysis = editedAnalysis ?: pendingAnalysis ?: return
+        if (_ui.value.saving) return
+        val reviewSource = _ui.value.pendingReviewSource
+        val pendingFoodSource = _ui.value.pendingFoodSource
+        val pendingDraftImageFilename = _ui.value.pendingDraftImageFilename
+        viewModelScope.launch {
+            if (_ui.value.saving) return@launch
+            _ui.update { it.copy(saving = true) }
+            try {
+                withContext(Dispatchers.Default) {
+                val imageBytes = _ui.value.pendingImageBytes
+                val id = UUID.randomUUID()
+                // If this analysis came from a Saved Meals review, reuse the
+                // template's existing on-disk image so we don't duplicate the
+                // JPEG. Otherwise (fresh AI analysis), persist the in-memory
+                // bytes as a new file under the new entry id.
+                val filename = reviewSource?.imageFilename
+                    ?: pendingDraftImageFilename
+                    ?: imageBytes?.let { persistImage(it, id) }
+                // FoodResultSheet's editedAnalysis already has serving scale
+                // applied — only scale again when saving the raw pending analysis.
+                val effectiveScale = if (editedAnalysis != null) 1.0 else scale
+                fun s(v: Int) = (v * effectiveScale).roundToInt()
+                fun macro(v: Double) = v * effectiveScale
+                val entrySource = reviewSource?.source
+                    ?: pendingFoodSource
+                    ?: if (imageBytes != null) FoodSource.SNAP_FOOD else FoodSource.TEXT_INPUT
+                val rawName = name?.takeIf { it.isNotBlank() } ?: analysis.name
+                // The pending draft's name was already forked against the diary
+                // when it was saved (savePendingDraft): a re-encountered saved
+                // food keeps the raw name (identity reuse, #98), a new food was
+                // disambiguated — either way an unedited name needs no O(history)
+                // re-check at confirm time. Saved-meals relogs keep
+                // resolveNewFoodName's relog short-circuit so servings still merge.
+                val resolvedName = if (reviewSource == null && rawName == pendingAnalysis?.name) {
+                    rawName
+                } else {
+                    resolveNewFoodName(rawName, relogTemplate = reviewSource)
+                }
+                val constituents = if (effectiveScale == 1.0) {
+                    analysis.constituents
+                } else {
+                    app.chompass.services.ai.ConstituentReconcile.scaleAll(
+                        analysis.constituents,
+                        effectiveScale,
+                    )
+                }
+                val entry = analysis.toMicronutrients().scaled(effectiveScale, round1 = false).applyTo(
+                    FoodEntry(
+                        id = id,
+                        name = resolvedName,
+                        calories = s(analysis.calories),
+                        protein = macro(analysis.protein),
+                        carbs = macro(analysis.carbs),
+                        fat = macro(analysis.fat),
+                        timestamp = timestampForLogging(
+                            _selectedDate.value,
+                            Instant.now(),
+                            ZoneId.systemDefault(),
+                            logTime ?: _ui.value.logTimeOverride,
+                        ),
+                        imageFilename = filename,
+                        emoji = analysis.emoji,
+                        source = entrySource,
+                        mealType = mealType,
+                        servingSizeGrams = servingGrams ?: analysis.servingSizeGrams,
+                        servingUnitOptions = analysis.servingUnitOptions,
+                        selectedServingUnit = if (analysis.servingUnitOptions.isEmpty()) null else selectedServingUnit,
+                        selectedServingQuantity = if (analysis.servingUnitOptions.isEmpty()) null else selectedServingQuantity,
+                        customNote = analysis.customNote,
+                        grounding = analysis.grounding,
+                        constituents = constituents,
+                        productMetadata = analysis.productMetadata,
+                        microsCompositionSignature = app.chompass.models.microsCompositionSignature(constituents),
+                        planned = plannedFor(
+                            _ui.value.mealPlanningEnabled,
+                            planAction = false,
+                            targetDate = _selectedDate.value,
+                            today = LocalDate.now(),
+                        ),
+                    )
+                )
+                // Capture the saved identity this save merges into (if any)
+                // BEFORE the row lands — after it, the fresh row would be its
+                // own newest template. Scan / AI-analysis saves only (#98);
+                // saved-meals relogs merge by construction and are excluded.
+                val mergeTemplate = if (reviewSource == null) {
+                    container.foodRepository.savedTemplateFor(
+                        resolvedName,
+                        analysisBarcode(analysis, entrySource),
+                    )
+                } else {
+                    null
+                }
+                // Commit the diary row and clear the consumed pending draft in
+                // one DataStore edit (crash before the edit restores the review
+                // sheet from the pre-commit draft; crash after leaves the row and
+                // no stale draft — strictly better than the old two-edit window
+                // that could restore a review which double-logs on re-save).
+                container.foodRepository.addEntry(entry, clearDraft = true, writeHealth = false)
+                promoteSavedIndex(entry)
+                // Keep a persisted favorite's macros in step with the newest
+                // serving snapshot when this save merged into it (#98) —
+                // placeholder favorites get filled, >25 % drift refreshes.
+                container.foodRepository.refreshFavoriteOnMerge(mergeTemplate, entry)
+                // Health Connect mirroring is the slowest save step (IPC). Run it
+                // in the background so the review sheet can dismiss as soon as the
+                // diary row is on disk instead of after the HC round-trip.
+                mirrorToHealthBackground(listOf(entry))
+                _ui.update { it.copy(
+                    pendingAnalysis = null,
+                    pendingIdentityName = null,
+                    pendingImageBytes = null,
+                    pendingAnalysisImages = emptyList(),
+                    pendingFoodSource = null,
+                    pendingDraftImageFilename = null,
+                    pendingReviewSource = null
+                ) }
+                }
+            } finally {
+                _ui.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    /**
+     * Saves a fresh barcode review straight to favorites without a diary row
+     * Builds the same entry [saveAnalysis] would, then upserts it into
+     * the favorites list only: no addEntry, no Health Connect mirror, no
+     * saved-index promotion — the food can be logged later from Saved Meals.
+     * Favorite identity stays the trimmed lowercase name, so two products
+     * sharing a name replace each other (inserted=false, no Undo).
+     */
+    fun saveScannedFavorite(
+        name: String? = null,
+        servingGrams: Double? = null,
+        scale: Double = 1.0,
+        mealType: String = MealType.currentMealId,
+        selectedServingUnit: String? = null,
+        selectedServingQuantity: Double? = null,
+        editedAnalysis: FoodAnalysis? = null,
+        logTime: LocalTime? = null,
+    ) {
+        val pendingAnalysis = _ui.value.pendingAnalysis
+        val analysis = editedAnalysis ?: pendingAnalysis ?: return
+        if (_ui.value.saving) return
+        // Favorites save is for fresh barcode reviews only: saved-meals
+        // relogs and progressive meals keep their own flows.
+        if (_ui.value.pendingReviewSource != null) return
+        if (_ui.value.pendingFoodSource != FoodSource.BARCODE) return
+        val pendingDraftImageFilename = _ui.value.pendingDraftImageFilename
+        viewModelScope.launch {
+            if (_ui.value.saving) return@launch
+            _ui.update { it.copy(saving = true) }
+            try {
+                withContext(Dispatchers.Default) {
+                    val imageBytes = _ui.value.pendingImageBytes
+                    val id = UUID.randomUUID()
+                    val filename = pendingDraftImageFilename
+                        ?: imageBytes?.let { persistImage(it, id) }
+                    // The sheet's editedAnalysis already carries the serving scale.
+                    val effectiveScale = if (editedAnalysis != null) 1.0 else scale
+                    fun s(v: Int) = (v * effectiveScale).roundToInt()
+                    fun macro(v: Double) = v * effectiveScale
+                    val resolvedName = name?.takeIf { it.isNotBlank() } ?: analysis.name
+                    if (resolvedName.isBlank()) return@withContext
+                    val constituents = if (effectiveScale == 1.0) {
+                        analysis.constituents
+                    } else {
+                        app.chompass.services.ai.ConstituentReconcile.scaleAll(
+                            analysis.constituents,
+                            effectiveScale,
+                        )
+                    }
+                    val entry = analysis.toMicronutrients().scaled(effectiveScale, round1 = false).applyTo(
+                        FoodEntry(
+                            id = id,
+                            name = resolvedName,
+                            calories = s(analysis.calories),
+                            protein = macro(analysis.protein),
+                            carbs = macro(analysis.carbs),
+                            fat = macro(analysis.fat),
+                            timestamp = timestampForLogging(
+                                _selectedDate.value,
+                                Instant.now(),
+                                ZoneId.systemDefault(),
+                                logTime ?: _ui.value.logTimeOverride,
+                            ),
+                            imageFilename = filename,
+                            emoji = analysis.emoji,
+                            source = FoodSource.BARCODE,
+                            mealType = mealType,
+                            servingSizeGrams = servingGrams ?: analysis.servingSizeGrams,
+                            servingUnitOptions = analysis.servingUnitOptions,
+                            selectedServingUnit = if (analysis.servingUnitOptions.isEmpty()) null else selectedServingUnit,
+                            selectedServingQuantity = if (analysis.servingUnitOptions.isEmpty()) null else selectedServingQuantity,
+                            customNote = analysis.customNote,
+                            grounding = analysis.grounding,
+                            constituents = constituents,
+                            productMetadata = analysis.productMetadata,
+                            microsCompositionSignature = app.chompass.models.microsCompositionSignature(constituents),
+                            planned = false,
+                        )
+                    )
+                    val existed = container.foodRepository.isFavorite(entry)
+                    val stored = container.foodRepository.upsertFavorite(entry)
+                    // Clear the consumed review; the diary is untouched.
+                    container.prefs.setPendingFoodAnalysisDraft(null)
+                    _ui.update { it.copy(
+                        pendingAnalysis = null,
+                        pendingIdentityName = null,
+                        pendingImageBytes = null,
+                        pendingAnalysisImages = emptyList(),
+                        pendingFoodSource = null,
+                        pendingDraftImageFilename = null,
+                        pendingReviewSource = null,
+                        savedFavoriteAck = SavedFavoriteAck(stored, inserted = !existed),
+                    ) }
+                    DebugTrace.event(
+                        "op=favorite phase=barcodeSave key=${stored.favoriteKey.replace(' ', '_')} inserted=${!existed}",
+                    )
+                }
+            } finally {
+                _ui.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    /**
+     * Commits the current pending review into the weigh-as-you-go draft.
+     * When [resumeCapture] is true, HomeScreen reopens the Add Food hub; otherwise
+     * the progressive meal sheet is shown so the user can Log meal / Add another.
+     */
+    fun addToProgressiveMeal(
+        name: String? = null,
+        servingGrams: Double? = null,
+        mealType: String = MealType.currentMealId,
+        selectedServingUnit: String? = null,
+        selectedServingQuantity: Double? = null,
+        editedAnalysis: FoodAnalysis,
+        resumeCapture: Boolean,
+        logTime: LocalTime? = null,
+    ) {
+        val imageBytes = _ui.value.pendingImageBytes
+        val source = _ui.value.pendingReviewSource?.source
+            ?: _ui.value.pendingFoodSource
+            ?: if (imageBytes != null) FoodSource.SNAP_FOOD else FoodSource.TEXT_INPUT
+        val analysis = editedAnalysis.copy(
+            name = name?.takeIf { it.isNotBlank() } ?: editedAnalysis.name,
+            servingSizeGrams = servingGrams ?: editedAnalysis.servingSizeGrams,
+        )
+        val item = ProgressiveMealItem(
+            analysis = analysis,
+            imageBytes = imageBytes,
+            mealType = mealType,
+            source = source,
+            selectedServingUnit = selectedServingUnit,
+            selectedServingQuantity = selectedServingQuantity,
+        )
+        val existing = _ui.value.progressiveMeal
+        val draft = ProgressiveMealDraft(
+            name = existing?.name.orEmpty(),
+            mealType = existing?.mealType ?: mealType,
+            items = (existing?.items ?: emptyList()) + item,
+            logTime = logTime ?: existing?.logTime,
+        )
+        val previousDraftImage = _ui.value.pendingDraftImageFilename
+        _ui.update { it.copy(
+            progressiveMeal = draft,
+            pendingAnalysis = null,
+            pendingIdentityName = null,
+            pendingImageBytes = null,
+            pendingAnalysisImages = emptyList(),
+            pendingFoodSource = null,
+            pendingDraftImageFilename = null,
+            pendingReviewSource = null,
+            resumeProgressiveCapture = resumeCapture,
+            showProgressiveMealSheet = !resumeCapture,
+        ) }
+        viewModelScope.launch {
+            discardPendingDraft(previousDraftImage)
+        }
+    }
+
+    fun removeProgressiveMealItem(id: UUID) {
+        val draft = _ui.value.progressiveMeal ?: return
+        val remaining = draft.items.filterNot { it.id == id }
+        _ui.value = if (remaining.isEmpty()) {
+            _ui.value.copy(
+                progressiveMeal = null,
+                showProgressiveMealSheet = false,
+                resumeProgressiveCapture = false,
+            )
+        } else {
+            _ui.value.copy(progressiveMeal = draft.copy(items = remaining))
+        }
+    }
+
+    fun updateProgressiveMealMeta(name: String, mealType: String) {
+        val draft = _ui.value.progressiveMeal ?: return
+        _ui.update { it.copy(progressiveMeal = draft.copy(name = name, mealType = mealType)) }
+    }
+
+    fun discardProgressiveMeal() {
+        _ui.update { it.copy(
+            progressiveMeal = null,
+            showProgressiveMealSheet = false,
+            resumeProgressiveCapture = false,
+        ) }
+    }
+
+    /**
+     * Debug-only (Codeberg #84 repro): open the meal-builder sheet with
+     * [count] canned ingredients. Not [addToProgressiveMeal] — that mutates
+     * pending-analysis state per call.
+     */
+    fun seedProgressiveMealDemo(count: Int) {
+        if (!BuildConfig.DEBUG) return
+        val items = (1..count).map { i ->
+            ProgressiveMealItem(
+                analysis = FoodAnalysis(
+                    name = "Demo ingredient $i",
+                    calories = 60 * i,
+                    protein = 4.0 * i,
+                    carbs = 5.0 * i,
+                    fat = 2.0 * i,
+                    servingSizeGrams = null,
+                    emoji = "🥗",
+                ),
+            )
+        }
+        _ui.update { it.copy(
+            progressiveMeal = ProgressiveMealDraft(items = items),
+            showProgressiveMealSheet = true,
+        ) }
+    }
+
+    fun consumeResumeProgressiveCapture() {
+        if (_ui.value.resumeProgressiveCapture) {
+            _ui.update { it.copy(resumeProgressiveCapture = false) }
+        }
+    }
+
+    fun showProgressiveMealSheet(show: Boolean) {
+        _ui.update { it.copy(showProgressiveMealSheet = show) }
+    }
+
+    /** Hide the meal sheet and reopen the Add Food hub for the next ingredient. */
+    fun continueProgressiveCapture() {
+        if (_ui.value.progressiveMeal?.items.isNullOrEmpty()) return
+        _ui.update { it.copy(
+            showProgressiveMealSheet = false,
+            resumeProgressiveCapture = true,
+        ) }
+    }
+
+    fun logProgressiveMeal() {
+        val draft = _ui.value.progressiveMeal ?: return
+        if (draft.items.isEmpty() || _ui.value.saving) return
+        viewModelScope.launch {
+            if (_ui.value.saving) return@launch
+            _ui.update { it.copy(saving = true) }
+            try {
+                val recipeLogId = UUID.randomUUID()
+                val timestamp = timestampForLogging(
+                    _selectedDate.value,
+                    Instant.now(),
+                    ZoneId.systemDefault(),
+                    draft.logTime ?: _ui.value.logTimeOverride,
+                )
+                val named = draft.name.trim().isNotEmpty()
+                val filenames = LinkedHashMap<java.util.UUID, String?>()
+                // Named meal: keep only the last photo (the plate, upstream #441);
+                // unnamed drafts keep per-item photos.
+                val thumbnailItemId = if (named) draft.items.lastOrNull { it.imageBytes != null }?.id else null
+                for (item in draft.items) {
+                    val bytes = item.imageBytes
+                    filenames[item.id] = when {
+                        bytes == null -> null
+                        named -> if (item.id == thumbnailItemId) persistImage(bytes, item.id) else null
+                        else -> persistImage(bytes, item.id)
+                    }
+                }
+                val knownKeys = container.foodRepository.existingFoodIdentityKeys()
+                val built = draft.toFoodEntries(
+                    recipeLogId = recipeLogId,
+                    timestamp = timestamp,
+                    imageFilenameFor = { item, _ -> filenames[item.id] },
+                    resolveName = { raw -> disambiguateFoodName(raw, knownKeys) },
+                ).map {
+                    it.copy(
+                        planned = plannedFor(
+                            _ui.value.mealPlanningEnabled,
+                            planAction = false,
+                            targetDate = _selectedDate.value,
+                            today = LocalDate.now(),
+                        )
+                    )
+                }
+                // One batched DataStore edit for the whole meal instead of one
+                // full-file write per ingredient; Health Connect mirrors in the
+                // background so the sheet dismisses right after the local commit.
+                container.foodRepository.addEntries(built, writeHealth = false)
+                mirrorToHealthBackground(built)
+                _ui.update { it.copy(
+                    progressiveMeal = null,
+                    showProgressiveMealSheet = false,
+                    resumeProgressiveCapture = false,
+                ) }
+            } finally {
+                _ui.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    /**
+     * Quick day-type switch (#60 phase 1, hero chip sheet): write or clear
+     * today's per-day override ([MacroPlan.dayAssignments]) and re-journal
+     * today with MANUAL_SWITCH provenance. `profileId == null` clears the
+     * override, falling back to the schedule's resolution for today.
+     *
+     * Tapping the type already in effect today is a no-op — re-selecting the
+     * resolved type must not create an override (which would only surface the
+     * "clear today's override" action without changing any target).
+     */
+    fun switchTodayDayType(profileId: String?) {
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val plan = current.macroPlan?.takeIf { it.enabled } ?: return@launch
+            val today = LocalDate.now()
+            val todayKey = today.toString()
+            if (profileId != null &&
+                MacroPlanResolver.targetsFor(current, today).profileId == profileId
+            ) {
+                return@launch
+            }
+            // D3 (audit M8+M9 decision): snapshot the pre-switch override and
+            // today's journal entry so the post-dismiss Undo snackbar can
+            // restore both. A later switch replaces the snapshot; process
+            // death drops it — a scoped surface, not an undo system.
+            dayTypeUndoData = DayTypeUndoData(
+                profileId = plan.dayAssignments[todayKey],
+                journalEntry = _ui.value.goalJournal.firstOrNull { it.date == todayKey },
+            )
+            val merged = if (profileId == null) {
+                plan.dayAssignments - todayKey
+            } else {
+                plan.dayAssignments + (todayKey to profileId)
+            }
+            val updated = plan.copy(dayAssignments = merged)
+                .let { it.copy(dayAssignments = it.prunedAssignments(today)) }
+            container.profileRepository.save(current.copy(macroPlan = updated))
+            // Journal with MANUAL_SWITCH provenance; the app-scope observer's
+            // follow-up write skips because the values now match.
+            runCatching { container.goalJournalService.recordManualSwitch() }
+        }
+    }
+
+    /** Mark or clear the viewed day as not tracked (#106). */
+    fun setViewedDayUntracked(untracked: Boolean, kcal: Int? = null) {
+        viewModelScope.launch {
+            val key = _ui.value.date.toString()
+            val dates = container.prefs.untrackedDays.first().toMutableSet()
+            val kcalMap = container.prefs.untrackedKcalByDay.first().toMutableMap()
+            if (untracked) {
+                dates += key
+                if (kcal != null && kcal >= 0) kcalMap[key] = kcal else kcalMap.remove(key)
+            } else {
+                dates -= key
+                kcalMap.remove(key)
+            }
+            container.prefs.setUntrackedDays(dates)
+            container.prefs.setUntrackedKcalByDay(kcalMap)
+        }
+    }
+
+    /** Pre-switch state for the day-type undo snackbar (audit D3). */
+    private var dayTypeUndoData: DayTypeUndoData? = null
+
+    /**
+     * D3 undo surface: restore the pre-switch override and today's
+     * pre-switch journal entry in one action. The profile save re-emits and
+     * the journal observer's follow-up write skips because the restored
+     * values match the restored plan's resolution.
+     */
+    fun undoTodayDayTypeSwitch() {
+        val undo = dayTypeUndoData ?: return
+        dayTypeUndoData = null
+        viewModelScope.launch {
+            val current = container.profileRepository.current() ?: return@launch
+            val plan = current.macroPlan?.takeIf { it.enabled } ?: return@launch
+            val todayKey = LocalDate.now().toString()
+            val restoredAssignments = if (undo.profileId == null) {
+                plan.dayAssignments - todayKey
+            } else {
+                plan.dayAssignments + (todayKey to undo.profileId)
+            }
+            container.profileRepository.save(
+                current.copy(macroPlan = plan.copy(dayAssignments = restoredAssignments))
+            )
+            val entries = container.prefs.goalJournal.first()
+            val updated = if (undo.journalEntry != null) {
+                GoalJournal.upsertRespectingFreeze(entries, undo.journalEntry, LocalDate.now())
+            } else {
+                entries.filterNot { it.date == todayKey }
+            }
+            if (updated != entries) container.prefs.setGoalJournal(updated)
+        }
+    }
+
+    private data class DayTypeUndoData(
+        val profileId: String?,
+        val journalEntry: GoalJournalEntry?,
+    )
+
+    suspend fun suggestMealWhatIf(entry: FoodEntry): String {
+        val snapshot = _ui.value
+        val profile = snapshot.profile
+            ?: return container.appContext.getString(R.string.finish_onboarding_hint)
+        return container.foodAnalysis.suggestMealWhatIf(
+            entry = entry,
+            dayEntries = snapshot.todayEntries,
+            profile = profile,
+            weightMetric = snapshot.weightMetric,
+            resolved = snapshot.resolvedDayTargets,
+        )
+    }
+
+    fun dismissPending() {
+        val snapshot = _ui.value
+        val previousDraftImage = snapshot.pendingDraftImageFilename
+        // A completed, unsaved AI review is worth an API call: keep the
+        // persisted draft for the recovered-review chip instead of discarding.
+        // Saved Meals / favorites reviews cost no AI call and stay dismissible.
+        val keepForRecovery = snapshot.analysisReadyForEdit && snapshot.pendingReviewSource == null
+        analysisRunGate.invalidate()
+        _ui.update { it.copy(
+            pendingAnalysis = null,
+            pendingIdentityName = null,
+            pendingImageBytes = null,
+            pendingAnalysisImages = emptyList(),
+            pendingFoodSource = null,
+            pendingDraftImageFilename = null,
+            pendingReviewSource = null,
+            pendingGroundedReview = null,
+            pendingPortionPreConfirmed = false,
+            analysisPhase = null,
+            analysisPreview = null,
+            analysisPartial = null,
+            inferringUnits = false,
+            analyzing = false,
+            error = null,
+            errorNotFoundBarcode = null,
+            errorDetail = null,
+        ) }
+        container.analyzingFood.value = false
+        viewModelScope.launch {
+            if (keepForRecovery) {
+                val recovered = parkRecoveredDraft(snapshot)
+                if (recovered != null) {
+                    _ui.update { it.copy(recoveredReview = recovered) }
+                }
+            } else {
+                discardPendingDraft(previousDraftImage)
+            }
+        }
+    }
+
+    /**
+     * Cancel the current (or completed) photo analysis and re-run with an optional
+     * tip note and/or exact grams. Used from the progressive Log sheet tip strip.
+     */
+    fun reanalyzeWithTip(note: String?, confirmedPortionGrams: Double?) {
+        val images = _ui.value.pendingAnalysisImages.ifEmpty {
+            listOfNotNull(_ui.value.pendingImageBytes)
+        }
+        if (images.isEmpty()) return
+        cancelInFlightAnalysisKeepInput()
+        analyzePhotos(images, note, confirmedPortionGrams)
+    }
+
+    /**
+     * Append photo(s) to the current pending set and re-analyze (label + plate, etc.).
+     * Preserves an optional tip note / grams so adding a photo does not wipe context.
+     */
+    fun appendPhotosAndReanalyze(
+        newImages: List<ByteArray>,
+        note: String? = null,
+        confirmedPortionGrams: Double? = null,
+    ) {
+        val added = newImages.filter { it.isNotEmpty() }
+        if (added.isEmpty()) return
+        val existing = _ui.value.pendingAnalysisImages.ifEmpty {
+            listOfNotNull(_ui.value.pendingImageBytes)
+        }
+        val merged = (existing + added).take(FoodPhotoSession.MAX_IMAGES)
+        if (merged.isEmpty()) return
+        val tip = note?.takeIf { it.isNotBlank() }
+            ?: _ui.value.pendingAnalysis?.customNote?.takeIf { it.isNotBlank() }
+            ?: _ui.value.pendingInputNote?.takeIf { it.isNotBlank() }
+        val grams = confirmedPortionGrams?.takeIf { it > 0 }
+            ?: _ui.value.pendingInputConfirmedPortionGrams?.takeIf { it > 0 }
+        cancelInFlightAnalysisKeepInput()
+        analyzePhotos(merged, tip, grams)
+    }
+
+    fun retryFailedInput() {
+        viewModelScope.launch {
+            val snapshot = _ui.value
+            val draft = container.prefs.pendingFoodInputDraft.first()
+            // Multi-photo retries replay the persisted draft files (the real
+            // images); single-photo-without-draft falls back to the in-memory
+            // bytes captured at attempt start.
+            val bytes = draft?.resolvedImageFilenames
+                ?.let { filenames ->
+                    withContext(Dispatchers.IO) {
+                        filenames.mapNotNull { filename ->
+                            runCatching { container.imageStore.file(filename).readBytes() }.getOrNull()
+                        }
+                    }
+                }
+                ?.takeIf { it.isNotEmpty() }
+                ?: snapshot.pendingInputImageBytes?.let { listOf(it) }
+                ?: emptyList()
+            if (bytes.isEmpty()) {
+                clearPendingInputDraft()
+                _ui.update { it.copy(
+                    pendingQueueEntryId = null,
+                    error = container.appContext.getString(R.string.error_failed_input_missing),
+                    errorNotFoundBarcode = null,
+                    errorDetail = null,
+                ) }
+                return@launch
+            }
+            // Keep the auto-saved queue entry linked so this retry resolves it.
+            _ui.update {
+                it.copy(pendingQueueEntryId = draft?.queueEntryId ?: snapshot.pendingQueueEntryId)
+            }
+            analyzePhotos(
+                bytes,
+                snapshot.pendingInputNote.orEmpty(),
+                snapshot.pendingInputConfirmedPortionGrams,
+            )
+        }
+    }
+
+    fun dismissFailedInput() {
+        viewModelScope.launch {
+            clearPendingInputDraft()
+            _ui.update { it.copy(error = null, errorNotFoundBarcode = null, errorDetail = null, pendingQueueEntryId = null, pendingPromptText = null) }
+        }
+    }
+
+    fun clearError() {
+        // No retryable input left: the failed prompt stays in the analysis
+        // queue (Codeberg #53), but the retry link is dropped so the next
+        // failure creates a fresh entry.
+        _ui.update { it.copy(error = null, errorNotFoundBarcode = null, errorDetail = null, pendingQueueEntryId = null, pendingPromptText = null) }
+    }
+
+    // -- Analysis queue (Codeberg #53) ------------------------------------
+
+    /**
+     * Manual enqueue from the photo staging sheet: store time + photos +
+     * description WITHOUT an AI call, runnable later from the queue sheet.
+     */
+    fun queueStaged(images: List<ByteArray>, note: String?, confirmedPortionGrams: Double?) {
+        viewModelScope.launch {
+            val filtered = images.filter { it.isNotEmpty() }
+            if (filtered.isEmpty()) return@launch
+            val id = UUID.randomUUID()
+            val filenames = container.analysisQueue.storeImages(id, filtered)
+            if (filenames.isEmpty()) return@launch
+            val trimmed = note?.trim().orEmpty()
+            container.analysisQueue.upsert(
+                QueuedAnalysis(
+                    id = id,
+                    createdAt = Instant.now(),
+                    targetDate = _selectedDate.value,
+                    imageFilenames = filenames,
+                    note = trimmed.takeIf { it.isNotEmpty() },
+                    confirmedPortionGrams = confirmedPortionGrams?.takeIf { it > 0 },
+                    source = FoodSource.SNAP_FOOD,
+                    status = QueueStatus.PENDING,
+                )
+            )
+            _ui.update { it.copy(pendingQueueEntryId = null, showAnalysisQueue = true) }
+        }
+    }
+
+    fun runQueuedItem(id: UUID) {
+        viewModelScope.launch { runQueuedItemInternal(id) }
+    }
+
+    /**
+     * Runs one queued entry with a one-off profile override (queue "Run with…"):
+     * this run dispatches [profile]'s provider/model/key while the globally
+     * active profile stays untouched.
+     */
+    fun runQueuedItemWith(id: UUID, profile: AiProfile) {
+        viewModelScope.launch { runQueuedItemInternal(id, profileOverride = profile) }
+    }
+
+    /**
+     * Runs each PENDING item in order; stops at the first success (the review
+     * sheet opens). Failures stay PENDING with the error recorded and the next
+     * item is tried.
+     */
+    fun runAllQueued() {
+        viewModelScope.launch {
+            val pending = _ui.value.queueEntries.filter { it.status == QueueStatus.PENDING }
+            for (item in pending) {
+                if (runQueuedItemInternal(item.id)) break
+            }
+        }
+    }
+
+    /**
+     * Runs one queued item through the shared analysis envelope (provider
+     * dispatch + fallback, streaming partials, error mapping — identical to a
+     * live analysis). A run result opens the FoodResultSheet review, logging
+     * to the entry's target day. Returns true when the review is ready.
+     * History entries (FAILED/DONE) re-run too (#99); [runAllQueued] stays
+     * PENDING-only.
+     */
+    private suspend fun runQueuedItemInternal(id: UUID, profileOverride: AiProfile? = null): Boolean {
+        val item = container.analysisQueue.item(id) ?: return false
+        if (!item.status.reRunnable) return false
+        if (!analysisRunGate.canBegin()) {
+            _ui.update { it.copy(error = container.appContext.getString(R.string.queue_run_refused_busy)) }
+            return false
+        }
+        _ui.update { it.copy(queueRunningId = id, showAnalysisQueue = false) }
+        try {
+            _selectedDate.value = item.targetDate
+            val images = item.imageFilenames.mapNotNull { filename ->
+                runCatching { container.analysisQueue.loadImage(filename) }.getOrNull()
+            }
+            // Record what this run will try (one-off override or active profile)
+            // so the queue row can show "Last tried: profile · model".
+            val cfg = container.prefs.aiCallConfig(profileOverride)
+            container.analysisQueue.upsert(
+                queuedEntryWithAttemptRecord(item, cfg.profile, hasImages = images.isNotEmpty())
+            )
+            val note = item.note?.trim()?.takeIf { it.isNotEmpty() }
+            val started = withFoodAnalysis(
+                phased = true,
+                // "Run with…" skips the global fallback chain on purpose — say
+                // so on failures (rate-limit surprise on the queue sheet).
+                aiErrorSuffix = profileOverride?.let {
+                    container.appContext.getString(R.string.queue_run_with_direct_note, it.name)
+                },
+                configure = { state ->
+                    state.copy(
+                        pendingImageBytes = images.firstOrNull(),
+                        pendingAnalysisImages = images,
+                        pendingFoodSource = item.source,
+                        pendingDraftImageFilename = null,
+                        pendingPromptText = null,
+                        // Failure auto-save updates this same entry (no duplicates);
+                        // success resolves it via savePendingDraft.
+                        pendingQueueEntryId = id,
+                    )
+                },
+            ) { start ->
+                if (images.isEmpty() && note.isNullOrBlank()) {
+                    throw AiError.InvalidResponse
+                }
+                // Text-only rows must take the text path: the multi-image
+                // analyzeFood refuses an empty image list, so note-only
+                // entries failed every retry before any provider call (#136).
+                val analysis = if (images.isEmpty()) {
+                    container.foodAnalysis.analyzeText(
+                        note!!,
+                        profileOverride = profileOverride,
+                    ) { progress ->
+                        onFoodAnalysisProgress(start.generation, progress)
+                    }
+                } else {
+                    container.foodAnalysis.analyzeFood(
+                        images,
+                        note,
+                        singleIngredient = item.singleIngredient,
+                        confirmedPortionGrams = item.confirmedPortionGrams,
+                        profileOverride = profileOverride,
+                    ) { progress ->
+                        onFoodAnalysisProgress(start.generation, progress)
+                    }
+                }.copy(customNote = note)
+                savePendingDraft(
+                    analysis,
+                    imageBytes = images.firstOrNull(),
+                    source = item.source,
+                    generation = start.generation,
+                )
+            }
+            // Lost the race between the probe above and beginAnalysis: say
+            // why instead of failing silently (#136).
+            if (!started) {
+                _ui.update { it.copy(error = container.appContext.getString(R.string.queue_run_refused_busy)) }
+                return false
+            }
+            return _ui.value.pendingAnalysis != null
+        } finally {
+            _ui.update { it.copy(queueRunningId = null) }
+        }
+    }
+
+    /** Edits note / confirmed grams / target day of a queued entry. */
+    fun updateQueued(
+        id: UUID,
+        note: String?,
+        confirmedPortionGrams: Double?,
+        targetDate: LocalDate,
+    ) {
+        viewModelScope.launch {
+            val item = container.analysisQueue.item(id) ?: return@launch
+            val trimmed = note?.trim().orEmpty()
+            container.analysisQueue.upsert(
+                item.copy(
+                    note = trimmed.takeIf { it.isNotEmpty() },
+                    confirmedPortionGrams = confirmedPortionGrams?.takeIf { it > 0 },
+                    targetDate = targetDate,
+                )
+            )
+        }
+    }
+
+    fun addQueuedPhotos(id: UUID, bytes: List<ByteArray>) {
+        viewModelScope.launch {
+            val item = container.analysisQueue.item(id) ?: return@launch
+            val filtered = bytes.filter { it.isNotEmpty() }
+            if (filtered.isEmpty()) return@launch
+            val newFiles = container.analysisQueue.storeImages(id, filtered)
+            if (newFiles.isEmpty()) return@launch
+            container.analysisQueue.upsert(
+                item.copy(
+                    imageFilenames = (item.imageFilenames + newFiles)
+                        .take(FoodPhotoSession.MAX_IMAGES),
+                )
+            )
+        }
+    }
+
+    fun removeQueuedPhoto(id: UUID, filename: String) {
+        viewModelScope.launch {
+            val item = container.analysisQueue.item(id) ?: return@launch
+            if (filename !in item.imageFilenames) return@launch
+            container.analysisQueue.upsert(
+                item.copy(imageFilenames = item.imageFilenames - filename)
+            )
+            container.analysisQueue.deleteImages(listOf(filename))
+        }
+    }
+
+    fun deleteQueued(id: UUID) {
+        viewModelScope.launch { container.analysisQueue.delete(id) }
+    }
+
+    fun clearQueueHistory() {
+        viewModelScope.launch { container.analysisQueue.clearHistory() }
+    }
+
+    // -- AI fill-missing banner + undo (Batch 2) ----------------------------
+
+    /** First composition of a visible banner: latch it for the session + arm the once-per-day gate. */
+    fun onFillGapsBannerShown() {
+        if (fillGapsBannerLatched) return
+        fillGapsBannerLatched = true
+        viewModelScope.launch { container.fillGapsEngine.markBannerShown() }
+    }
+
+    private fun refreshFillGapsBanner() {
+        val banner = if (fillGapsBannerShownToday && !fillGapsBannerLatched) null else fillGapsLatestBanner
+        _ui.update { it.copy(fillGapsBanner = banner) }
+    }
+
+    /** Banner X: sticky dismissal for this exact scan shape. */
+    fun onFillGapsBannerDismissed() {
+        val banner = _ui.value.fillGapsBanner ?: return
+        viewModelScope.launch { container.fillGapsEngine.dismissBanner(banner.signature) }
+    }
+
+    fun undoFillGaps() {
+        viewModelScope.launch { container.fillGapsEngine.undo() }
+    }
+
+    /** Snackbar expired without Undo: drop the snapshot so it doesn't resurface. */
+    fun consumeFillGapsUndo() {
+        container.fillGapsEngine.clearUndo()
+    }
+
+    fun openQueue() {
+        _ui.update { it.copy(showAnalysisQueue = true) }
+    }
+
+    fun dismissQueue() {
+        _ui.update { it.copy(showAnalysisQueue = false) }
+    }
+
+    /**
+     * Tap a row in Saved Meals (Recents / Frequent / Favorites) → open the
+     * FoodResultSheet for review instead of logging immediately. The user
+     * can edit name / serving / meal type, then tap "Log" to commit. Mirrors
+     * iOS RecentsView's `onReview` callback path.
+     */
+    fun reviewSavedMeal(template: FoodEntry) {
+        viewModelScope.launch {
+            val analysis = template.toAnalysis()
+            val bytes = template.imageFilename?.let {
+                withContext(Dispatchers.IO) {
+                    runCatching { container.imageStore.file(it).readBytes() }.getOrNull()
+                }
+            }
+            _ui.update { it.copy(
+                pendingAnalysis = analysis,
+                pendingImageBytes = bytes,
+                pendingAnalysisImages = listOfNotNull(bytes),
+                pendingFoodSource = template.source,
+                pendingDraftImageFilename = null,
+                pendingReviewSource = template,
+                pendingPortionPreConfirmed = false,
+                // A saved meal already is the source of record: nothing to offer,
+                // and any strip left over from a previous analysis is stale.
+                pendingIdentityName = template.name,
+                error = null,
+                errorNotFoundBarcode = null,
+                errorDetail = null,
+            ) }
+        }
+    }
+
+    fun deleteEntry(entry: FoodEntry) {
+        viewModelScope.launch {
+            container.foodRepository.deleteEntry(entry)
+            container.caffeineRepository.clearLinkedFood(entry.id)
+        }
+    }
+
+    fun restoreEntry(entry: FoodEntry) {
+        viewModelScope.launch {
+            container.foodRepository.addEntry(entry)
+        }
+    }
+
+    fun toggleFavorite(entry: FoodEntry) {
+        viewModelScope.launch {
+            container.foodRepository.toggleFavorite(entry)
+        }
+    }
+
+    /**
+     * Permanently edit a stored favorite (Codeberg #66): the saved-foods
+     * library row is updated in place; diary rows are untouched.
+     */
+    fun updateFavorite(original: FoodEntry, updated: FoodEntry) {
+        viewModelScope.launch {
+            container.foodRepository.updateFavorite(original, updated)
+        }
+    }
+
+    fun updateEntry(
+        original: FoodEntry,
+        updated: FoodEntry,
+        applyTimeToMeal: Boolean = false,
+    ) {
+        viewModelScope.launch {
+            val zone = ZoneId.systemDefault()
+            val siblings = if (applyTimeToMeal && original.timestamp != updated.timestamp) {
+                siblingEntriesForTimeApply(_ui.value.todayEntries, original, zone)
+            } else {
+                emptyList()
+            }
+            container.foodRepository.updateEntry(original, updated)
+            for (sibling in siblings) {
+                container.foodRepository.updateEntry(
+                    sibling,
+                    sibling.copy(timestamp = updated.timestamp),
+                )
+            }
+        }
+    }
+
+    /** One-tap "Log now" on a planned diary row (meal planning mode). */
+    fun logPlannedEntryNow(entry: FoodEntry) {
+        viewModelScope.launch {
+            val updated = confirmPlannedEntry(
+                entry,
+                LocalDate.now(),
+                Instant.now(),
+                ZoneId.systemDefault(),
+                _ui.value.mealTimesEnabled,
+                CurrentMealCatalog.value,
+            )
+            container.foodRepository.updateEntry(entry, updated)
+            // The row's stamp is now (≤ now), so the mirror passes the HC guard.
+            if (!container.foodRepository.mirrorEntryToHealth(updated)) markHealthSyncFailed()
+        }
+    }
+
+    /** Re-log a saved meal (from Saved Meals sheet) as a new entry timestamped to the selected day. */
+    fun relogMeal(template: FoodEntry) {
+        if (PerfLog.enabled) {
+            relogAckAtNs = System.nanoTime()
+            relogAckPriorCount = _ui.value.todayEntries.size
+        }
+        promoteSavedIndex(template)
+        viewModelScope.launch {
+            PerfLog.measure("relog", "addEntry", "name=${template.name}") {
+                val entry = template.duplicatedForLogging(timestampForFoodLog(), loggingMealId(template.mealType))
+                    .copy(
+                        planned = plannedFor(
+                            _ui.value.mealPlanningEnabled,
+                            planAction = false,
+                            targetDate = _selectedDate.value,
+                            today = LocalDate.now(),
+                        )
+                    )
+                container.foodRepository.addEntry(entry, writeHealth = false)
+                // Health Connect mirrors in the background so the relog ack does
+                // not wait on the HC binder (same contract as saveAnalysis).
+                mirrorToHealthBackground(listOf(entry))
+            }
+        }
+    }
+
+    /** Log every ingredient of a Recipe as its own diary row, timestamped to the selected day. */
+    fun logRecipe(recipe: app.chompass.models.Recipe) {
+        viewModelScope.launch {
+            val entries = container.recipeRepository.logRecipe(
+                recipe,
+                timestampForFoodLog(),
+                planned = plannedFor(
+                    _ui.value.mealPlanningEnabled,
+                    planAction = false,
+                    targetDate = _selectedDate.value,
+                    today = LocalDate.now(),
+                ),
+            )
+            // Health Connect mirrors in the background so the log path dismisses
+            // at once (same contract as saveAnalysis).
+            mirrorToHealthBackground(entries)
+        }
+    }
+
+    fun saveRecipe(recipe: app.chompass.models.Recipe) {
+        viewModelScope.launch {
+            container.recipeRepository.saveRecipe(recipe)
+        }
+    }
+
+    /** Copy rows onto the currently viewed day (selection-bar paste). */
+    fun copyEntriesToSelectedDay(entries: List<FoodEntry>) =
+        copyEntriesToDate(entries, _selectedDate.value)
+
+    /**
+     * Copy [entries] onto [targetDate] (Copy-from-day sheet; the target is the
+     * viewed day by default but is now pickable inside the sheet).
+     */
+    fun copyEntriesToDate(entries: List<FoodEntry>, targetDate: LocalDate) {
+        if (entries.isEmpty() || _ui.value.saving) return
+        viewModelScope.launch {
+            if (_ui.value.saving) return@launch
+            _ui.update { it.copy(saving = true) }
+            try {
+                // Upstream #149 / Android 6.0: reused copies log at now + current meal
+                // (not the source entry's clock time / meal bucket). One batched
+                // DataStore edit instead of one full-file write per copied row;
+                // Health Connect mirrors in the background.
+                val duplicated = entries.map {
+                    it.duplicatedForLogging(timestampForFoodLog(targetDate), loggingMealId(it.mealType))
+                        .copy(
+                            planned = plannedFor(
+                                _ui.value.mealPlanningEnabled,
+                                planAction = false,
+                                targetDate = targetDate,
+                                today = LocalDate.now(),
+                            )
+                        )
+                }
+                container.foodRepository.addEntries(duplicated, writeHealth = false)
+                mirrorToHealthBackground(duplicated)
+            } finally {
+                _ui.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    /** Remember selected diary rows for a later paste (selection-bar Copy). */
+    fun setCopiedEntries(entries: List<FoodEntry>) {
+        _ui.update { it.copy(copiedEntries = entries) }
+    }
+
+    /** Drop the paste clipboard (chip dismiss / app state reset). */
+    fun clearCopiedEntries() {
+        if (_ui.value.copiedEntries.isNotEmpty()) {
+            _ui.update { it.copy(copiedEntries = emptyList()) }
+        }
+    }
+
+    /**
+     * Save a user-typed entry with no AI involvement (manual macro input from
+     * issue #15). [logTime] is the clock picked in the dialog (defaults to the
+     * session's effective log time) — the target date stays the selected Home
+     * day, only the time-of-day moves.
+     */
+    fun saveManualEntry(
+        name: String,
+        calories: Int,
+        protein: Double,
+        carbs: Double,
+        fat: Double,
+        micronutrients: MicronutrientValues = MicronutrientValues(),
+        mealType: String = MealType.currentMealId,
+        servingSizeGrams: Double = 0.0,
+        servingUnitOptions: List<ServingUnitOption> = emptyList(),
+        selectedServingUnit: String? = null,
+        selectedServingQuantity: Double? = null,
+        logTime: LocalTime,
+    ) {
+        if (_ui.value.saving) return
+        viewModelScope.launch {
+            if (_ui.value.saving) return@launch
+            _ui.update { it.copy(saving = true) }
+            try {
+                val entry = micronutrients.applyTo(
+                    FoodEntry(
+                        name = disambiguateFoodName(
+                            name,
+                            container.foodRepository.existingFoodIdentityKeys(),
+                        ),
+                        calories = calories,
+                        protein = protein,
+                        carbs = carbs,
+                        fat = fat,
+                        timestamp = timestampForLogging(
+                            _selectedDate.value,
+                            Instant.now(),
+                            ZoneId.systemDefault(),
+                            logTime,
+                        ),
+                        source = FoodSource.MANUAL,
+                        mealType = mealType,
+                        servingSizeGrams = servingSizeGrams,
+                        servingUnitOptions = servingUnitOptions,
+                        selectedServingUnit = if (servingUnitOptions.isEmpty()) null else selectedServingUnit,
+                        selectedServingQuantity = if (servingUnitOptions.isEmpty()) null else selectedServingQuantity,
+                        planned = plannedFor(
+                            _ui.value.mealPlanningEnabled,
+                            planAction = false,
+                            targetDate = _selectedDate.value,
+                            today = LocalDate.now(),
+                        ),
+                    )
+                )
+                container.foodRepository.addEntry(entry, writeHealth = false)
+                // Health Connect mirroring is the slowest save step (IPC). Run it
+                // in the background so the sheet can dismiss as soon as the diary
+                // row is on disk (same contract as saveAnalysis).
+                mirrorToHealthBackground(listOf(entry))
+            } finally {
+                _ui.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    /**
+     * Water / non-food: selected day + wall clock. Food logs use
+     * [timestampForFoodLog] so a session stamp does not move sips.
+     */
+    private fun timestampForSelectedDay(): Instant = timestampForDate(_selectedDate.value)
+
+    private fun timestampForDate(day: LocalDate): Instant =
+        timestampForLogging(day, Instant.now(), ZoneId.systemDefault(), timeOverride = null)
+
+    private fun timestampForFoodLog(day: LocalDate = _selectedDate.value): Instant =
+        timestampForLogging(
+            day,
+            Instant.now(),
+            ZoneId.systemDefault(),
+            _ui.value.logTimeOverride,
+        )
+
+    private fun loggingMealId(templateMealType: String): String =
+        loggingSlotFor(
+            templateMealType,
+            _ui.value.mealTimesEnabled,
+            CurrentMealCatalog.value,
+            _ui.value.logTimeOverride,
+            LocalTime.now(),
+        )
+
+    private suspend fun savePendingDraft(
+        analysis: FoodAnalysis,
+        imageBytes: ByteArray?,
+        source: FoodSource,
+        generation: Int,
+        portionPreConfirmed: Boolean = false,
+    ) {
+        if (!analysisRunGate.isCurrent(generation)) return
+        // Scan / AI-analysis identity reuse (#98): a re-encountered saved food
+        // (same barcode, or the name *is* a saved identity) keeps its raw name
+        // so the log merges into that identity instead of forking into
+        // "Name (2)". Manual entries keep disambiguating — different food,
+        // same name still gets a suffix there.
+        val uniqueAnalysis = analysis.copy(
+            name = container.foodRepository.savedOrDisambiguatedName(
+                analysis.name,
+                analysisBarcode(analysis, source),
+            )
+        )
+        val imageFilename = imageBytes?.let { persistImage(it, UUID.randomUUID()) }
+        container.prefs.setPendingFoodAnalysisDraft(
+            PendingFoodAnalysisDraft(
+                analysis = uniqueAnalysis,
+                imageFilename = imageFilename,
+                source = source,
+                // Codeberg #16 family: keep the diary day the sheet was opened
+                // for, so a process-death restore still logs to that day.
+                targetDate = _selectedDate.value
+            )
+        )
+        if (!analysisRunGate.isCurrent(generation)) return
+        resolveQueueEntryOnSuccess(uniqueAnalysis, source)
+        _ui.update { it.copy(
+            analyzing = false,
+            analysisPhase = null,
+            analysisPreview = null,
+            analysisPartial = null,
+            inferringUnits = false,
+            pendingAnalysis = uniqueAnalysis,
+            pendingImageBytes = imageBytes,
+            pendingFoodSource = source,
+            pendingDraftImageFilename = imageFilename,
+            pendingReviewSource = null,
+            pendingInputImageBytes = null,
+            pendingInputNote = null,
+            pendingInputConfirmedPortionGrams = null,
+            pendingPromptText = null,
+            pendingQueueEntryId = null,
+            pendingPortionPreConfirmed = portionPreConfirmed,
+            pendingInputDraftImageFilenames = emptyList(),
+            pendingIdentityName = uniqueAnalysis.name,
+        ) }
+    }
+
+    /**
+     * Codeberg #53 success path: a successful analysis resolves the auto-saved
+     * queue entry for this input (markDone), or — for a fresh prompt that never
+     * failed — records a DONE history row so the prompt history is complete
+     * and past prompts stay re-runnable. Barcode/search/grounded flows carry
+     * no prompt input and are not recorded.
+     */
+    private suspend fun resolveQueueEntryOnSuccess(analysis: FoodAnalysis, source: FoodSource) {
+        val s = _ui.value
+        val images = s.pendingAnalysisImages.filter { it.isNotEmpty() }
+        val text = s.pendingPromptText?.trim().orEmpty()
+        if (images.isEmpty() && text.isEmpty()) return
+        val store = container.analysisQueue
+        val linkedId = s.pendingQueueEntryId
+        if (linkedId != null) {
+            store.markDone(linkedId, analysis)
+        } else {
+            val id = UUID.randomUUID()
+            val filenames = store.storeImages(id, images)
+            store.upsert(
+                QueuedAnalysis(
+                    id = id,
+                    createdAt = Instant.now(),
+                    targetDate = _selectedDate.value,
+                    imageFilenames = filenames,
+                    note = text.ifEmpty { analysis.customNote?.trim()?.takeIf { it.isNotEmpty() } },
+                    confirmedPortionGrams = s.pendingInputConfirmedPortionGrams,
+                    singleIngredient = s.progressiveMeal?.items?.isNotEmpty() == true,
+                    source = source,
+                    status = QueueStatus.DONE,
+                    result = analysis,
+                )
+            )
+        }
+    }
+
+    private fun restorePendingDraft(draft: PendingFoodAnalysisDraft) {
+        // Re-check collisions: the diary may have grown since the draft was saved.
+        viewModelScope.launch {
+            val bytes = draft.imageFilename?.let {
+                withContext(Dispatchers.IO) {
+                    runCatching { container.imageStore.file(it).readBytes() }.getOrNull()
+                }
+            }
+            // Restore the diary day the draft was opened for — a fresh ViewModel
+            // starts on today, and the modal review sheet hides the day strip, so
+            // without this the Log button would silently land on today (Codeberg
+            // #16 family: "entry landed on today's log" after process death).
+            _selectedDate.value = draft.targetDate
+            // Same reuse fork as savePendingDraft (#98): re-check against the
+            // grown diary, keeping the raw name when this draft re-encounters
+            // a saved food.
+            val unique = draft.analysis.copy(
+                name = container.foodRepository.savedOrDisambiguatedName(
+                    draft.analysis.name,
+                    analysisBarcode(draft.analysis, draft.source),
+                )
+            )
+            _ui.update { it.copy(
+                analyzing = false,
+                analysisPhase = null,
+                analysisPreview = null,
+                analysisPartial = null,
+                inferringUnits = false,
+                pendingAnalysis = unique,
+                pendingImageBytes = bytes,
+                pendingAnalysisImages = listOfNotNull(bytes),
+                pendingFoodSource = draft.source,
+                pendingDraftImageFilename = draft.imageFilename,
+                pendingReviewSource = null,
+                pendingInputImageBytes = null,
+                pendingInputNote = null,
+                pendingInputConfirmedPortionGrams = null,
+                pendingPortionPreConfirmed = false,
+                pendingInputDraftImageFilenames = emptyList(),
+                pendingQueueEntryId = null,
+                pendingPromptText = null,
+                error = null,
+                errorNotFoundBarcode = null,
+                errorDetail = null,
+            ) }
+        }
+    }
+
+    /**
+     * Keep [rawName] when re-logging the same Saved Meals food; otherwise
+     * append (2), (3), … if the name already identifies another food.
+     */
+    private suspend fun resolveNewFoodName(rawName: String, relogTemplate: FoodEntry?): String {
+        val trimmed = rawName.trim()
+        if (mergesWithSavedFood(rawName, relogTemplate)) {
+            return trimmed.ifEmpty { rawName }
+        }
+        return disambiguateFoodName(rawName, container.foodRepository.existingFoodIdentityKeys())
+    }
+
+    /**
+     * Barcode a scan / AI-analysis save can reuse a saved identity by
+     * (Codeberg #98): the OFF product metadata when present, else the
+     * grounding source id — but only for barcode-grounded analyses, where the
+     * source id *is* the barcode (grounded / USDA ids must not masquerade as
+     * one). Text analyses return null and reuse by name only.
+     */
+    private fun analysisBarcode(analysis: FoodAnalysis, source: FoodSource?): String? =
+        analysis.productMetadata?.barcode
+            ?: analysis.grounding?.sourceId?.takeIf { source == FoodSource.BARCODE }
+
+    private suspend fun savePendingInputDraft(
+        imageBytesList: List<ByteArray>,
+        note: String,
+        source: FoodSource = FoodSource.SNAP_FOOD,
+        confirmedPortionGrams: Double? = null,
+        queueEntryId: UUID? = null,
+    ) {
+        // Multi-photo since Codeberg #53: every staged photo survives a failed
+        // AI call, so the failure dialog's Retry covers all photo cases.
+        val previousFilenames = _ui.value.pendingInputDraftImageFilenames
+            .ifEmpty { container.prefs.pendingFoodInputDraft.first()?.resolvedImageFilenames.orEmpty() }
+        val filenames = imageBytesList.mapNotNull { persistImage(it, UUID.randomUUID()) }
+        if (filenames.isEmpty()) return
+        for (previous in previousFilenames) {
+            if (previous !in filenames) container.imageStore.delete(previous)
+        }
+        val grams = confirmedPortionGrams?.takeIf { it > 0 }
+        container.prefs.setPendingFoodInputDraft(
+            PendingFoodInputDraft(
+                imageFilenames = filenames,
+                note = note,
+                confirmedPortionGrams = grams,
+                source = source,
+                // Same day-restore intent as [PendingFoodAnalysisDraft.targetDate].
+                targetDate = _selectedDate.value,
+                queueEntryId = queueEntryId,
+            )
+        )
+        _ui.update { it.copy(
+            pendingInputImageBytes = imageBytesList.firstOrNull(),
+            pendingInputNote = note,
+            pendingInputConfirmedPortionGrams = grams,
+            pendingInputDraftImageFilenames = filenames
+        ) }
+    }
+
+    private suspend fun restorePendingInputDraft(draft: PendingFoodInputDraft) {
+        // Re-target the diary day the input sheet was opened for (same rationale
+        // as [restorePendingDraft]): the resumed Log must land on that day.
+        _selectedDate.value = draft.targetDate
+        val bytes = withContext(Dispatchers.IO) {
+            draft.resolvedImageFilenames.mapNotNull { filename ->
+                runCatching { container.imageStore.file(filename).readBytes() }.getOrNull()
+            }
+        }
+        if (bytes.isEmpty()) {
+            clearPendingInputDraft()
+            _ui.update { it.copy(
+                error = container.appContext.getString(R.string.error_failed_input_missing),
+                errorNotFoundBarcode = null,
+                errorDetail = null,
+            ) }
+            return
+        }
+        _ui.update { it.copy(
+            pendingInputImageBytes = bytes.firstOrNull(),
+            pendingInputNote = draft.note,
+            pendingInputConfirmedPortionGrams = draft.confirmedPortionGrams?.takeIf { it > 0 },
+            pendingInputDraftImageFilenames = draft.resolvedImageFilenames,
+            pendingQueueEntryId = draft.queueEntryId,
+            error = null,
+            errorNotFoundBarcode = null,
+            errorDetail = null,
+        ) }
+    }
+
+    private suspend fun clearPendingInputDraft() {
+        // Note: deliberately keeps [HomeUiState.pendingQueueEntryId] — the
+        // success path clears the input draft before savePendingDraft resolves
+        // the linked queue entry. Dismiss clears the link explicitly.
+        val filenames = _ui.value.pendingInputDraftImageFilenames
+            .ifEmpty { container.prefs.pendingFoodInputDraft.first()?.resolvedImageFilenames.orEmpty() }
+        container.prefs.setPendingFoodInputDraft(null)
+        filenames.forEach { container.imageStore.delete(it) }
+        _ui.update { it.copy(
+            pendingInputImageBytes = null,
+            pendingInputNote = null,
+            pendingInputConfirmedPortionGrams = null,
+            pendingInputDraftImageFilenames = emptyList()
+        ) }
+    }
+
+    /**
+     * Marks the persisted draft of a dismissed completed review as awaiting
+     * review (the Home recovered-analysis chip). [snapshot] was captured
+     * before the dismiss cleared the pending fields.
+     */
+    private suspend fun parkRecoveredDraft(snapshot: HomeUiState): PendingFoodAnalysisDraft? {
+        val analysis = snapshot.pendingAnalysis ?: return null
+        val existing = container.prefs.pendingFoodAnalysisDraft.first()
+        val imageFilename = snapshot.pendingDraftImageFilename
+            ?: existing?.imageFilename
+            ?: snapshot.pendingImageBytes?.let { persistImage(it, UUID.randomUUID()) }
+        val draft = PendingFoodAnalysisDraft(
+            analysis = analysis,
+            imageFilename = imageFilename,
+            source = snapshot.pendingFoodSource,
+            targetDate = _selectedDate.value,
+            awaitingReview = true,
+        )
+        container.prefs.setPendingFoodAnalysisDraft(draft)
+        return draft
+    }
+
+    /** Chip tap: reopen the dismissed review sheet (no new AI call). */
+    fun restoreRecoveredReview() {
+        val draft = _ui.value.recoveredReview ?: return
+        _ui.update { it.copy(recoveredReview = null) }
+        viewModelScope.launch {
+            // Un-mark first so a process death while the restored sheet is
+            // open keeps the pre-recovery auto-restore behavior.
+            container.prefs.pendingFoodAnalysisDraft.first()
+                ?.takeIf { it.awaitingReview }
+                ?.let { container.prefs.setPendingFoodAnalysisDraft(it.copy(awaitingReview = false)) }
+        }
+        restorePendingDraft(draft)
+    }
+
+    /** Chip close: drop the recovered review and its photo for good. */
+    fun discardRecoveredReview() {
+        val draft = _ui.value.recoveredReview ?: return
+        _ui.update { it.copy(recoveredReview = null) }
+        viewModelScope.launch {
+            discardPendingDraft(draft.imageFilename)
+        }
+    }
+
+    private suspend fun discardPendingDraft(imageFilename: String? = _ui.value.pendingDraftImageFilename) {
+        val filename = imageFilename ?: container.prefs.pendingFoodAnalysisDraft.first()?.imageFilename
+        container.prefs.setPendingFoodAnalysisDraft(null)
+        filename?.let { container.imageStore.delete(it) }
+    }
+
+    private suspend fun persistImage(bytes: ByteArray, entryId: UUID): String? =
+        withContext(Dispatchers.IO) {
+            PerfLog.measure("save", "imageWrite", "bytes=${bytes.size}") {
+                container.imageStore.storeBytes(bytes, entryId)
+            }
+        }
+
+    /**
+     * Keep the search index in step with a same-day write, the same way
+     * the hub chips used to be kept in step. A plain food write does not
+     * bump [quickRelogEpoch] (rescanning a year of diary per save would be
+     * absurd), so without this a food logged a moment ago would not be findable
+     * until the next date or favorites change.
+     */
+    private fun promoteSavedIndex(template: FoodEntry) {
+        val cache = savedIndexCache ?: return
+        val key = template.favoriteKey
+        if (key.isEmpty()) return
+        val existing = cache.firstOrNull { it.template.favoriteKey == key }
+        val updated = SavedFoodIndexEntry(
+            template = template,
+            kind = existing?.kind ?: SuggestionKind.RECENT,
+            logCount = (existing?.logCount ?: 0) + 1,
+            lastLogged = template.timestamp,
+            normalizedName = existing?.normalizedName
+                ?: QueryNormalizer.normalizeQuery(template.name),
+            nameTokens = existing?.nameTokens
+                ?: QueryNormalizer.normalizeTokens(template.name).toSet(),
+        )
+        savedIndexCache = listOf(updated) + cache.filter { it.template.favoriteKey != key }
+    }
+
+    /** Hero ⓘ → recalc details: open the persisted goal-change sheet. */
+    fun openRecalcDetails() {
+        _ui.update { it.copy(recalcSheet = it.lastRecalcSheet) }
+    }
+
+    fun dismissRecalcSheet() {
+        _ui.update { it.copy(recalcSheet = null) }
+    }
+
+    private fun observePerfBench() {
+        if (!PerfLog.enabled) return
+        container.perfBenchInbox
+            .onEach { req ->
+                if (req == null) return@onEach
+                container.perfBenchInbox.value = null
+                runCatching { handlePerfBench(req) }
+                    .onFailure {
+                        android.util.Log.w(PerfLog.TAG, "op=perfBench phase=fail err=${it.message}")
+                    }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private suspend fun handlePerfBench(req: app.chompass.services.PerfBenchRequest) {
+        when (req) {
+            is app.chompass.services.PerfBenchRequest.Relog -> benchRelog(req.count)
+            is app.chompass.services.PerfBenchRequest.LocalEntry -> benchLocalEntry(req.count)
+            is app.chompass.services.PerfBenchRequest.WaterSip -> benchWaterSip(req.count)
+            is app.chompass.services.PerfBenchRequest.DaySwitch -> benchDaySwitch(req.count)
+            is app.chompass.services.PerfBenchRequest.HubOpen -> benchHubOpen(req.count)
+            is app.chompass.services.PerfBenchRequest.Flip -> {
+                android.util.Log.i(PerfLog.TAG, "op=flipBench phase=start relog=${req.relog} local=${req.local} sips=${req.sips}")
+                benchHubOpen(1)
+                benchRelog(req.relog)
+                benchLocalEntry(req.local)
+                benchWaterSip(req.sips)
+                benchDaySwitch(1)
+                android.util.Log.i(PerfLog.TAG, "op=flipBench phase=done")
+            }
+        }
+    }
+
+    private suspend fun benchHubOpen(count: Int) {
+        repeat(count) { i ->
+            // Follows what the sheet actually loads on open: the saved-food
+            // index replaced the hub chip rows it used to measure.
+            savedIndexCache = null
+            quickRelogEpoch++
+            val rows = PerfLog.measure("hubOpen", "benchLoad", "i=$i") {
+                savedFoodIndexCached()
+            }
+            android.util.Log.i(
+                PerfLog.TAG,
+                "op=hubOpen phase=benchRows i=$i foods=${rows.size}",
+            )
+        }
+    }
+
+    private suspend fun benchRelog(count: Int) {
+        android.util.Log.i(PerfLog.TAG, "op=relogBench phase=start count=$count")
+        val template = savedFoodIndexCached()
+            .maxByOrNull { it.lastLogged }
+            ?.template
+        if (template == null) {
+            android.util.Log.w(PerfLog.TAG, "op=relogBench phase=done count=0 ok=0 fail=0 err=no-hub-rows")
+            return
+        }
+        var ok = 0
+        repeat(count) { i ->
+            val ms = awaitUiAck {
+                relogMeal(template)
+            }
+            android.util.Log.i(
+                PerfLog.TAG,
+                "op=relogBench phase=uiAck i=$i ms=$ms name=${template.name}",
+            )
+            ok++
+        }
+        android.util.Log.i(PerfLog.TAG, "op=relogBench phase=done count=$count ok=$ok fail=0")
+    }
+
+    private suspend fun benchLocalEntry(count: Int) {
+        android.util.Log.i(PerfLog.TAG, "op=entryLocal phase=start count=$count")
+        var ok = 0
+        repeat(count) { i ->
+            val canned = FoodEntry(
+                name = "Bench Oats $i",
+                calories = 350,
+                protein = 12.0,
+                carbs = 55.0,
+                fat = 8.0,
+                source = FoodSource.MANUAL,
+                mealType = MealType.BREAKFAST.id,
+            )
+            val ms = awaitUiAck {
+                if (PerfLog.enabled) {
+                    relogAckAtNs = System.nanoTime()
+                    relogAckPriorCount = _ui.value.todayEntries.size
+                }
+                promoteSavedIndex(canned)
+                viewModelScope.launch {
+                    PerfLog.measure("entryLocal", "addEntry", "i=$i") {
+                        container.foodRepository.addEntry(
+                            canned.duplicatedForLogging(timestampForFoodLog(), loggingMealId(canned.mealType)),
+                        )
+                    }
+                }
+            }
+            android.util.Log.i(PerfLog.TAG, "op=entryLocal phase=uiAck i=$i ms=$ms")
+            ok++
+        }
+        android.util.Log.i(PerfLog.TAG, "op=entryLocal phase=done count=$count ok=$ok fail=0")
+    }
+
+    private suspend fun benchWaterSip(count: Int) {
+        android.util.Log.i(PerfLog.TAG, "op=waterSip phase=start count=$count")
+        var ok = 0
+        repeat(count) { i ->
+            val deferred = CompletableDeferred<Long>()
+            waterAckWaiter = deferred
+            waterAckAtNs = System.nanoTime()
+            waterAckPriorMl = _ui.value.waterTodayMl
+            addWater(250)
+            val ms = kotlinx.coroutines.withTimeoutOrNull(20_000) { deferred.await() } ?: -1L
+            android.util.Log.i(PerfLog.TAG, "op=waterSip phase=uiAck i=$i ms=$ms")
+            ok++
+        }
+        android.util.Log.i(PerfLog.TAG, "op=waterSip phase=done count=$count ok=$ok fail=0")
+    }
+
+    private suspend fun benchDaySwitch(count: Int) {
+        repeat(count) { i ->
+            val today = _selectedDate.value
+            setSelectedDate(today.minusDays(1))
+            kotlinx.coroutines.delay(50)
+            val start = System.nanoTime()
+            setSelectedDate(today)
+            var spins = 0
+            while (daySwitchStartedAtNs != 0L && spins < 200) {
+                kotlinx.coroutines.delay(10)
+                spins++
+            }
+            val ms = (System.nanoTime() - start) / 1_000_000
+            android.util.Log.i(PerfLog.TAG, "op=daySwitch phase=bench i=$i ms=$ms")
+        }
+    }
+
+    private suspend fun awaitUiAck(block: () -> Unit): Long {
+        val deferred = CompletableDeferred<Long>()
+        uiAckWaiter = deferred
+        block()
+        return kotlinx.coroutines.withTimeoutOrNull(20_000) { deferred.await() } ?: -1L
+    }
+
+    class Factory(private val container: AppContainer) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            HomeViewModel(container) as T
+    }
+
+    suspend fun reprocessFoodEntry(
+        entry: FoodEntry,
+        updatedNote: String,
+        onProgress: (FoodAnalysisProgress) -> Unit = {},
+    ): FoodAnalysis {
+        val imageBytes = entry.imageFilename?.let {
+            withContext(Dispatchers.IO) {
+                runCatching { container.imageStore.file(it).readBytes() }.getOrNull()
+            }
+        }
+        // Compose name + serving + note so a photo-less (text / voice / emoji) entry
+        // keeps its food context instead of re-analyzing the bare note; a photo entry
+        // gets the name/note as extra grounding on top of the image.
+        val description = reprocessDescription(entry, updatedNote)
+        val result = if (imageBytes != null) {
+            container.foodAnalysis.analyzeFood(
+                imageBytes,
+                description.takeIf { it.isNotBlank() },
+                onProgress = onProgress,
+            )
+        } else {
+            container.foodAnalysis.analyzeText(description, onProgress = onProgress)
+        }
+        return result.copy(customNote = updatedNote.takeIf { it.isNotBlank() })
+    }
+
+    /**
+     * Recalculate: AI re-estimate of the entry's totals over the EDITED mix
+     * the edit sheet passes (its Save-path snapshot). No photo, no note
+     * steering — the mix is the whole input. The sheet applies the reply as
+     * a totals-only overwrite.
+     */
+    suspend fun reestimateFoodEntry(
+        edited: FoodEntry,
+        onProgress: (FoodAnalysisProgress) -> Unit = {},
+    ): FoodAnalysis = container.foodAnalysis.reestimateEntry(edited, onProgress)
+
+    /**
+     * Fill-missing analysis for an already-logged entry: text-only metadata
+     * refresh, no photo reload, no note. The caller merges the result into
+     * the entry via [app.chompass.models.fillMissingFrom] (only-missing).
+     */
+    suspend fun fillFoodEntry(
+        entry: FoodEntry,
+        onProgress: (FoodAnalysisProgress) -> Unit = {},
+    ): FoodAnalysis = container.foodAnalysis.fillEntry(entry, onProgress)
+
+    private fun reprocessDescription(entry: FoodEntry, note: String): String {
+        val parts = mutableListOf<String>()
+        entry.name.trim().takeIf { it.isNotEmpty() }?.let { parts += it }
+        val qty = entry.selectedServingQuantity
+        val unit = entry.selectedServingUnit?.trim()
+        if (qty != null && qty > 0 && !unit.isNullOrEmpty()) {
+            val q = if (qty % 1.0 == 0.0) qty.toInt().toString() else qty.toString()
+            parts += "$q $unit"
+        } else {
+            entry.servingSizeGrams?.takeIf { it > 0 }?.let { parts += "${it.toInt()} g" }
+        }
+        val base = parts.joinToString(", ")
+        val trimmed = note.trim()
+        return when {
+            base.isEmpty() -> trimmed
+            trimmed.isEmpty() -> base
+            else -> "$base. $trimmed"
+        }
+    }
+}
+
+/**
+ * Map a logged FoodEntry back into a FoodAnalysis so the FoodResultSheet
+ * (which only knows how to render a FoodAnalysis) can review a saved meal
+ * before re-logging. The serving size defaults to 100g if the original entry
+ * didn't record one — same fallback as EditFoodEntrySheet.
+ */
+private fun FoodEntry.toAnalysis(): FoodAnalysis = MicronutrientValues.from(this).applyTo(
+    FoodAnalysis(
+        name = name,
+        calories = calories,
+        protein = protein,
+        carbs = carbs,
+        fat = fat,
+        // Null when the entry never recorded a serving: the review sheet then
+        // treats macros as absolute portion totals (no scaling on weight edits,
+        // Codeberg #10 follow-up) instead of inventing a 100 g base.
+        servingSizeGrams = servingSizeGrams,
+        emoji = emoji,
+        servingUnitOptions = servingUnitOptions,
+        selectedServingUnit = selectedServingUnit,
+        selectedServingQuantity = selectedServingQuantity,
+        customNote = customNote,
+        grounding = grounding,
+        constituents = constituents,
+        productMetadata = productMetadata,
+    )
+)
+
+/** Dynamic-water inputs bundled for the nested combine in [HomeViewModel]. */
+private data class WaterDynamicPrefs(
+    val manualGoalMl: Int,
+    val dynamicEnabled: Boolean,
+    val baseSource: String,
+    val tempC: Int,
+    val useProfileActivity: Boolean,
+)
+
+/** Drinking-window prefs bundled for the water-plan trigger combine. */
+private data class WaterWindowPrefs(
+    val startHour: Int,
+    val startMinute: Int,
+    val endHour: Int,
+    val endMinute: Int,
+)

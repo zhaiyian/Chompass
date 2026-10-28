@@ -1,0 +1,330 @@
+#!/usr/bin/env bash
+# Publish a tagged release to Codeberg with APK assets.
+#
+# One-time setup — create a token at:
+#   https://codeberg.org/user/settings/applications
+# (scopes: read:user + write:repository), then either:
+#
+#   export CODEBERG_TOKEN='your-token'
+#   ./scripts/publish_release.sh 1.0.0
+#   ./scripts/publish_release.sh 1.0.0 --with-screenshots
+#   ./scripts/publish_release.sh 1.0.0 --assets-only   # resume partial upload
+#   ./scripts/publish_release.sh 1.0.0 --skip-pages    # skip Codeberg Pages redeploy
+#
+# or persist a login:
+#   nix shell nixpkgs#tea -c tea logins add -n codeberg-release -u https://codeberg.org -t "$CODEBERG_TOKEN"
+#
+# Token split: use the release login `codeberg-release` (from .env.local
+# CODEBERG_TOKEN, scopes read:user + write:repository) via
+# CODEBERG_LOGIN=codeberg-release. The default tea login `codeberg` is
+# issue-triage only (no write:repository) — never publish with it.
+#
+# After a successful asset upload, rebuilds and force-pushes the Hugo site to the
+# orphan `pages` branch (same as ./scripts/deploy_pages.sh) so fitguy.codeberg.page
+# picks up the new version. Requires hugo (devenv) or nixpkgs#hugo, plus SSH as fitguy.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CODEBERG_REPO="${CODEBERG_REPO:-fitguy/chompass}"
+LOGIN="${CODEBERG_LOGIN:-codeberg}"
+WITH_SCREENSHOTS=0
+ASSETS_ONLY=0
+SKIP_PAGES=0
+PRERELEASE=0
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --with-screenshots)
+      WITH_SCREENSHOTS=1
+      ;;
+    --assets-only)
+      ASSETS_ONLY=1
+      ;;
+    --prerelease)
+      PRERELEASE=1
+      SKIP_PAGES=1
+      ;;
+    --skip-pages)
+      SKIP_PAGES=1
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: publish_release.sh <version> [options]
+
+Options:
+  --with-screenshots   Also attach release-screenshots/*.png (needs extra quota)
+  --assets-only        Skip release creation; upload missing assets to an existing tag
+  --prerelease         Publish as a beta: prerelease flag, Chompass-beta-<version>.apk,
+                      no Pages deploy, no F-Droid metadata touch
+  --skip-pages         Do not rebuild/redeploy the Codeberg Pages site
+
+After uploading assets, redeploys the Hugo site (scripts/deploy_pages.sh) unless
+--skip-pages is set. Keep website/hugo.toml params.version in sync with the release.
+
+Uploads the universal APK + SHA256SUMS. Resume with --assets-only after freeing
+space:
+  ./scripts/manage_release_assets.sh list
+  ./scripts/manage_release_assets.sh keep-n 5 -y
+EOF
+      exit 0
+      ;;
+    *)
+      POSITIONAL+=("$arg")
+      ;;
+  esac
+done
+
+VERSION="${POSITIONAL[0]:-1.0.0}"
+TAG="v${VERSION}"
+CHECKSUMS="$ROOT/releases/SHA256SUMS"
+SCREENSHOT_DIR="$ROOT/release-screenshots"
+TOKEN="${CODEBERG_TOKEN:-${GITEA_SERVER_TOKEN:-}}"
+
+# Quota policy: universal APK only (no per-ABI splits). Betas ship the same
+# universal APK under the Chompass-beta- prefix so F-Droid's stable download
+# URL pattern (Chompass-fdroid-<version>.apk) never matches a prerelease.
+if [[ "$PRERELEASE" -eq 1 ]]; then
+  BASE_VERSION="${VERSION%%-*}"
+  BETA_APK="$ROOT/releases/Chompass-beta-${VERSION}.apk"
+  if [[ ! -f "$BETA_APK" && -f "$ROOT/releases/Chompass-fdroid-${VERSION}.apk" ]]; then
+    cp "$ROOT/releases/Chompass-fdroid-${VERSION}.apk" "$BETA_APK"
+  elif [[ ! -f "$BETA_APK" && -f "$ROOT/releases/Chompass-fdroid-${BASE_VERSION}.apk" ]]; then
+    cp "$ROOT/releases/Chompass-fdroid-${BASE_VERSION}.apk" "$BETA_APK"
+  fi
+  if [[ ! -f "$BETA_APK" ]]; then
+    echo "Missing $BETA_APK (and no Chompass-fdroid-${BASE_VERSION}.apk to copy)." >&2
+    exit 1
+  fi
+  CHECKSUMS="$ROOT/releases/SHA256SUMS-beta"
+  (cd "$ROOT/releases" && sha256sum "Chompass-beta-${VERSION}.apk" > SHA256SUMS-beta)
+  FDROID_ASSETS=("$BETA_APK")
+else
+  FDROID_ASSETS=(
+    "$ROOT/releases/Chompass-fdroid-${VERSION}.apk"
+  )
+fi
+CHECKSUM_ASSETS=("$CHECKSUMS")
+SCREENSHOT_ASSETS=()
+
+if [[ "$WITH_SCREENSHOTS" -eq 1 ]]; then
+  shopt -s nullglob
+  SCREENSHOT_ASSETS=("$SCREENSHOT_DIR"/*.png)
+  shopt -u nullglob
+  if [[ ${#SCREENSHOT_ASSETS[@]} -eq 0 ]]; then
+    echo "No PNGs in $SCREENSHOT_DIR — run devenv tasks run release:screenshots first." >&2
+    exit 1
+  fi
+fi
+
+run_tea() {
+  # When TEA_HOME is set, tea is pointed at the private ephemeral config
+  # (XDG_CONFIG_HOME) so the token never lands in process argv or in the
+  # maintainer's persistent tea config.
+  local -a prefix=()
+  if [[ -n "${TEA_HOME:-}" ]]; then
+    prefix=(env XDG_CONFIG_HOME="$TEA_HOME")
+  fi
+  if command -v tea >/dev/null 2>&1; then
+    "${prefix[@]}" tea "$@"
+  else
+    "${prefix[@]}" nix shell nixpkgs#tea -c tea "$@"
+  fi
+}
+
+deploy_pages() {
+  if [[ "$SKIP_PAGES" -eq 1 ]]; then
+    echo "==> Skipping Codeberg Pages deploy (--skip-pages)"
+    return 0
+  fi
+
+  echo "==> Redeploying Codeberg Pages site"
+  if command -v hugo >/dev/null 2>&1; then
+    "$ROOT/scripts/deploy_pages.sh"
+  else
+    nix shell nixpkgs#hugo -c bash "$ROOT/scripts/deploy_pages.sh"
+  fi
+}
+
+quota_help() {
+  cat >&2 <<'EOF'
+
+Codeberg release attachment quota exceeded.
+
+1. Inspect current attachments:
+     ./scripts/manage_release_assets.sh list
+
+2. Free space (keep the last 3 to 5 releases, or prune ABI/play leftovers):
+     ./scripts/manage_release_assets.sh keep-n 5 -y
+     ./scripts/manage_release_assets.sh prune-abi-splits --before vX.Y.Z -y
+
+3. Resume this publish (uploads only missing assets):
+     ./scripts/publish_release.sh VERSION --assets-only
+
+Request a quota increase (free for libre projects):
+  https://codeberg.org/Codeberg-e.V./requests
+EOF
+}
+
+release_exists() {
+  run_tea releases list \
+    --login "$LOGIN" \
+    --repo "$CODEBERG_REPO" \
+    -o simple 2>/dev/null \
+    | rg -q "^[[:space:]]*${TAG}[[:space:]]"
+}
+
+list_uploaded_names() {
+  run_tea releases assets list \
+    --login "$LOGIN" \
+    --repo "$CODEBERG_REPO" \
+    "$TAG" \
+    -o simple 2>/dev/null \
+    | awk '{print $1}'
+}
+
+upload_assets() {
+  local label="$1"
+  shift
+  local -a files=("$@")
+  local -a missing=()
+  local uploaded
+  uploaded="$(list_uploaded_names || true)"
+
+  for file in "${files[@]}"; do
+    local base
+    base="$(basename "$file")"
+    if ! echo "$uploaded" | rg -qx "$base"; then
+      missing+=("$file")
+    fi
+  done
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    echo "==> $label (already complete)"
+    return 0
+  fi
+
+  echo "==> Uploading $label (${#missing[@]} file(s))"
+  local err
+  if ! err="$(run_tea releases assets create \
+    --login "$LOGIN" \
+    --repo "$CODEBERG_REPO" \
+    "$TAG" \
+    "${missing[@]}" 2>&1)"; then
+    if echo "$err" | rg -qi 'quota exceeded'; then
+      quota_help
+    else
+      echo "$err" >&2
+    fi
+    return 1
+  fi
+
+  for file in "${missing[@]}"; do
+    echo "  uploaded $(basename "$file")"
+  done
+}
+
+MISSING=0
+for ASSET in "${FDROID_ASSETS[@]}" "${CHECKSUM_ASSETS[@]}" "${SCREENSHOT_ASSETS[@]}"; do
+  if [[ ! -f "$ASSET" ]]; then
+    echo "Missing $ASSET — build/package release artifacts first." >&2
+    MISSING=1
+  fi
+done
+if [[ "$MISSING" -ne 0 ]]; then
+  exit 1
+fi
+
+if [[ -n "$TOKEN" ]]; then
+  # No `tea logins add -t "$TOKEN"`: argv is visible in ps. tea 0.15 has no
+  # --config flag but persists logins under $XDG_CONFIG_HOME/tea, so write
+  # the login into a private ephemeral config dir instead.
+  TEA_HOME="$(mktemp -d)"
+  trap 'rm -rf "$TEA_HOME"' EXIT
+  mkdir -p "$TEA_HOME/tea"
+  {
+    printf 'logins:\n'
+    printf -- '- name: %s\n' "$LOGIN"
+    printf '  url: https://codeberg.org\n'
+    printf '  token: %s\n' "$TOKEN"
+    printf '  active: true\n'
+  } >"$TEA_HOME/tea/config.yml"
+  chmod 600 "$TEA_HOME/tea/config.yml"
+fi
+
+if ! run_tea logins list 2>/dev/null | rg -q "$LOGIN"; then
+  cat >&2 <<EOF
+No Codeberg login configured.
+
+1. Create a token: https://codeberg.org/user/settings/applications
+   Scopes: read:user (required by tea) + write:repository (releases/assets)
+
+2. Export it and re-run:
+   export CODEBERG_TOKEN='paste-token-here'
+   ./scripts/publish_release.sh 1.0.0
+
+Or persist the login once:
+   nix shell nixpkgs#tea -c tea logins add -n codeberg -u https://codeberg.org -t "\$CODEBERG_TOKEN"
+EOF
+  exit 1
+fi
+
+NOTES_VERSION="${VERSION%%-*}"
+NOTES="$(awk '/^## \['"${NOTES_VERSION}"'\]/{flag=1; next} /^## \[/{flag=0} flag' "$ROOT/docs/CHANGELOG.md")"
+if [[ -z "$NOTES" ]]; then
+  echo "No CHANGELOG section for ${NOTES_VERSION}." >&2
+  exit 1
+fi
+TITLE="Chompass ${VERSION}"
+RELEASE_FLAGS=()
+if [[ "$PRERELEASE" -eq 1 ]]; then
+  TITLE="Chompass ${VERSION} (beta)"
+  RELEASE_FLAGS=(--prerelease)
+  NOTES="Beta build. Same app, same data: installing it replaces the installed Chompass. The notes below are the changes since the last stable release.
+
+${NOTES}"
+fi
+
+if [[ "$ASSETS_ONLY" -eq 0 ]]; then
+  if release_exists; then
+    echo "Release $TAG already exists — uploading any missing assets."
+  else
+    echo "==> Creating release $TAG"
+    err=""
+    if ! err="$(run_tea releases create \
+      --login "$LOGIN" \
+      --repo "$CODEBERG_REPO" \
+      "${RELEASE_FLAGS[@]}" \
+      --tag "$TAG" \
+      --title "$TITLE" \
+      --note "$NOTES" 2>&1)"; then
+      if echo "$err" | rg -qi 'already a release'; then
+        echo "Release $TAG already exists — uploading any missing assets."
+      elif echo "$err" | rg -qi 'quota exceeded'; then
+        quota_help
+        exit 1
+      else
+        echo "$err" >&2
+        echo >&2
+        echo "If you see 'target couldn't be found', enable Releases in the repo:" >&2
+        echo "  https://codeberg.org/fitguy/chompass/settings  → Features → Releases" >&2
+        exit 1
+      fi
+    fi
+  fi
+else
+  if ! release_exists; then
+    echo "Release $TAG does not exist. Run without --assets-only first." >&2
+    exit 1
+  fi
+  echo "==> Resuming asset upload for $TAG"
+fi
+
+upload_assets "release APKs" "${FDROID_ASSETS[@]}"
+upload_assets "SHA256SUMS" "${CHECKSUM_ASSETS[@]}"
+if [[ ${#SCREENSHOT_ASSETS[@]} -gt 0 ]]; then
+  upload_assets "screenshots" "${SCREENSHOT_ASSETS[@]}"
+fi
+
+deploy_pages
+
+echo "Published: https://codeberg.org/fitguy/chompass/releases/tag/${TAG}"

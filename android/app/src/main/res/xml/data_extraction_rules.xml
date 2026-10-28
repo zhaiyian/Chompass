@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cloud backup / device transfer (API 31+). Exclude encrypted API-key prefs.
+  https://developer.android.com/about/versions/12/backup-restore
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="fudai_keychain.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="fudai_keychain.xml" />
+    </device-transfer>
+</data-extraction-rules>

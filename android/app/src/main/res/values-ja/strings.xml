@@ -1,0 +1,2767 @@
+<resources>
+
+    <!-- Widgets -->
+    <string name="widget_calorie_label">Chompass カロリー</string>
+    <string name="widget_calorie_description">今日のカロリーとマクロをひと目で確認。</string>
+    <string name="widget_protein_label">Chompass タンパク質</string>
+    <string name="widget_protein_description">今日のタンパク質の進捗をひと目で確認。</string>
+    <string name="widget_today">今日</string>
+    <string name="widget_protein">タンパク質</string>
+    <string name="widget_calories">カロリー</string>
+    <string name="widget_carbs">炭水化物</string>
+    <string name="widget_fat">脂質</string>
+    <string name="widget_kcal_left_format">残り %1$d %2$s</string>
+    <string name="widget_g_left_format">残り %1$dg</string>
+    <string name="widget_protein_g">タンパク質 g</string>
+
+    <!-- Common buttons / actions -->
+    <string name="action_save">保存</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_done">完了</string>
+    <string name="action_clear">消去</string>
+    <string name="action_delete">削除</string>
+    <string name="action_continue">続ける</string>
+    <string name="action_get_started">始める</string>
+    <string name="action_log">記録</string>
+    <string name="action_analyze">分析</string>
+    <string name="action_discard">破棄</string>
+    <string name="action_reset">リセット</string>
+    <string name="action_keep_going">そのまま続ける</string>
+    <string name="action_send">送信</string>
+    <string name="action_pin">固定</string>
+
+    <!-- Generic units / labels -->
+    <string name="kg_per_week_format">%1$.2f kg/週</string>
+    <string name="lbs_per_week_format">%1$.2f lbs/週</string>
+
+    <!-- Macros / Goal labels -->
+    <string name="macro_protein">タンパク質</string>
+    <string name="macro_carbs">炭水化物</string>
+    <string name="macro_fat">脂質</string>
+    <string name="macro_calories">カロリー</string>
+
+    <!-- Gender -->
+    <string name="gender_male">男性</string>
+    <string name="gender_female">女性</string>
+    <string name="gender_other">その他</string>
+
+    <!-- Activity Level -->
+    <string name="activity_sedentary">座りがち</string>
+    <string name="activity_light">軽い</string>
+    <string name="activity_moderate">中程度</string>
+    <string name="activity_active">活発</string>
+    <string name="activity_very_active">とても活発</string>
+    <string name="activity_extra_active">非常に活発</string>
+    <string name="activity_sedentary_subtitle">運動はほとんど、またはまったくしない。\n目安の歩数：1日5,000歩未満</string>
+    <string name="activity_light_subtitle">週1〜3回の運動。\n目安の歩数：1日5,000〜7,499歩</string>
+    <string name="activity_moderate_subtitle">週4〜5回の運動。\n目安の歩数：1日7,500〜9,999歩</string>
+    <string name="activity_active_subtitle">毎日の運動、または週3〜4回の激しい運動。\n目安の歩数：1日10,000〜12,499歩</string>
+    <string name="activity_very_active_subtitle">週6〜7回の激しい運動。\n目安の歩数：1日12,500〜14,999歩</string>
+    <string name="activity_extra_active_subtitle">毎日の非常に激しい運動、または肉体労働。\n目安の歩数：1日15,000歩以上</string>
+
+    <!-- Weight Goal -->
+    <string name="goal_lose">減量 / Cutting</string>
+    <string name="goal_maintain">維持 / Recomp</string>
+    <string name="goal_gain">増量 / Bulking</string>
+
+    <!-- Meal Type -->
+    <string name="meal_breakfast">朝食</string>
+    <string name="meal_lunch">昼食</string>
+    <string name="meal_dinner">夕食</string>
+    <string name="meal_snack">間食</string>
+    <string name="meal_other">その他</string>
+
+    <!-- AutoBalance Macro -->
+    <string name="autobalance_protein">タンパク質</string>
+    <string name="autobalance_carbs">炭水化物</string>
+    <string name="autobalance_fat">脂質</string>
+
+    <!-- AI Provider names -->
+    <string name="ai_provider_ollama">Ollama (ローカル)</string>
+    <string name="ai_provider_custom">カスタム (OpenAI互換)</string>
+
+    <!-- AI Provider API key placeholders -->
+    <string name="api_key_placeholder">APIキーを貼り付け</string>
+    <string name="ai_key_placeholder_ollama">キーは不要</string>
+    <string name="ai_key_placeholder_custom">APIキー（エンドポイントが不要なら任意の文字列）</string>
+
+    <!-- Speech Provider -->
+    <string name="speech_provider_native">ネイティブ（オンデバイス）</string>
+
+    <string name="speech_key_placeholder_native">不要</string>
+    <string name="speech_key_placeholder_assemblyai">あなたのAssemblyAIキー</string>
+
+    <string name="speech_description_native">このプロファイルで利用できる場合、端末の Android 音声認識サービスを使います。無料で、リアルタイムの部分結果があります。システムの音声認識エンジンが必要です（Assist専用アプリは対象外）。</string>
+    <string name="speech_description_openai">OpenAI Whisper API。高精度で99以上の言語に対応、分単位の有料サービス。</string>
+    <string name="speech_description_groq">Groqがホストする Whisper Large v3。非常に高速な推論、無料プランあり。</string>
+    <string name="speech_description_deepgram">Deepgram Nova。リアルタイムとバッチの両方に対応、高速かつ高精度。</string>
+    <string name="speech_description_assemblyai">AssemblyAI Universal モデル。高い精度、無料プランあり。</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_home">ホーム</string>
+    <string name="nav_progress">進捗</string>
+    <string name="nav_coach">コーチ</string>
+    <string name="nav_settings">設定</string>
+    <string name="nav_about">情報</string>
+
+    <!-- Day-of-week narrow letters (for week strip) -->
+    <string name="dow_narrow_monday">月</string>
+    <string name="dow_narrow_tuesday">火</string>
+    <string name="dow_narrow_wednesday">水</string>
+    <string name="dow_narrow_thursday">木</string>
+    <string name="dow_narrow_friday">金</string>
+    <string name="dow_narrow_saturday">土</string>
+    <string name="dow_narrow_sunday">日</string>
+
+    <!-- Months (full) -->
+    <string name="month_january">1月</string>
+    <string name="month_february">2月</string>
+    <string name="month_march">3月</string>
+    <string name="month_april">4月</string>
+    <string name="month_may">5月</string>
+    <string name="month_june">6月</string>
+    <string name="month_july">7月</string>
+    <string name="month_august">8月</string>
+    <string name="month_september">9月</string>
+    <string name="month_october">10月</string>
+    <string name="month_november">11月</string>
+    <string name="month_december">12月</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_back">戻る</string>
+    <string name="onboarding_logo_description">Chompass ロゴ</string>
+    <string name="onboarding_welcome_line1">食事を記録して、</string>
+    <string name="onboarding_welcome_line2">バランスを保とう</string>
+    <string name="onboarding_welcome_subtitle">写真・音声・テキストで食事を記録。\n栄養がひと目でわかる。</string>
+
+    <string name="onboarding_gender_title">性別を教えてください</string>
+    <string name="onboarding_gender_subtitle">代謝の計算に役立ちます</string>
+
+    <string name="onboarding_birthday_title">誕生日はいつですか？</string>
+    <string name="onboarding_birthday_subtitle">1日の必要量を計算するために使用します</string>
+
+    <string name="onboarding_height_weight_title">身長と体重</string>
+    <string name="onboarding_height_weight_subtitle">プライベートに保ちます</string>
+    <string name="onboarding_imperial">ヤード・ポンド法</string>
+    <string name="onboarding_metric">メートル法</string>
+    <string name="onboarding_height">身長</string>
+    <string name="onboarding_weight">体重</string>
+    <string name="onboarding_feet">フィート</string>
+    <string name="onboarding_inches">インチ</string>
+
+    <string name="onboarding_activity_title">どのくらい活動的ですか？</string>
+    <string name="onboarding_activity_subtitle">あなたの普段の1週間</string>
+
+    <string name="onboarding_goal_title">あなたの目標は？</string>
+    <string name="onboarding_goal_subtitle">いつでも変更できます</string>
+
+    <string name="onboarding_desired_weight_title">目標体重は\n何kgですか？</string>
+
+    <string name="onboarding_body_fat_title">体脂肪率を\nご存知ですか？</string>
+    <string name="onboarding_body_fat_subtitle">代謝をより正確に計算するのに役立ちます</string>
+    <string name="onboarding_yes">はい</string>
+    <string name="onboarding_no">いいえ</string>
+    <string name="onboarding_body_fat_ranges">一般的な範囲：男性10-25%、女性18-35%</string>
+    <string name="onboarding_body_fat_no_worries">大丈夫です。身長、体重、年齢から\n標準的な計算式を使用します。</string>
+
+    <string name="onboarding_pace_title_maintain">あなたのペース</string>
+    <string name="onboarding_pace_subtitle_maintain">バランスの取れたプランを設定します</string>
+    <string name="onboarding_pace_title_change">どのくらいの速さで\n目標に到達したいですか？</string>
+    <string name="onboarding_pace_subtitle_lose">1週間あたりの減量ペース</string>
+    <string name="onboarding_pace_subtitle_gain">1週間あたりの増量ペース</string>
+    <string name="onboarding_pace_balanced_set">バランスの取れたペースを設定</string>
+    <string name="onboarding_pace_balanced_subtitle">現在の体重を維持するために\nカロリーを安定させます。</string>
+    <string name="onboarding_pace_per_week">1週間あたり</string>
+    <string name="onboarding_pace_slow">ゆっくり</string>
+    <string name="onboarding_pace_recommended">おすすめ</string>
+    <string name="onboarding_pace_fast">速い</string>
+    <string name="onboarding_pace_reach_prefix">目標達成までの期間：</string>
+    <string name="onboarding_pace_days_format">%1$d日</string>
+    <string name="onboarding_pace_caption_slow">穏やかで持続可能。長期的な習慣に最適。</string>
+    <string name="onboarding_pace_caption_fast">積極的だが実行可能。強い自制心が必要です。</string>
+    <string name="onboarding_pace_caption_recommended">最もバランスの取れたペースで、モチベーションを保ち持続可能。</string>
+    <string name="onboarding_pace_capped">このペースは、推定安静時代謝を下回らずにあなたの体格では不可能です。目標は%1$d kcalになります。 %2$s</string>
+
+    <string name="onboarding_notifications_title">食事の記録を\nリマインド</string>
+    <string name="onboarding_notifications_subtitle">食事の時間に優しくリマインドして\n記録を忘れないようサポートします。</string>
+    <string name="onboarding_notifications_enabled">リマインダーを有効化</string>
+    <string name="onboarding_notifications_allow">通知を許可</string>
+    <string name="onboarding_notifications_change_anytime">設定からいつでも変更できます。</string>
+
+    <string name="onboarding_health_title">Health Connectに\n接続</string>
+    <string name="onboarding_health_subtitle">栄養と身体測定値を\n自動で同期します。</string>
+    <string name="onboarding_health_feature_nutrition">栄養データ</string>
+    <string name="onboarding_health_feature_weight">体重の同期</string>
+    <string name="onboarding_health_feature_body">身体測定値</string>
+    <string name="onboarding_health_unavailable">Health Connectは利用できません</string>
+    <string name="onboarding_health_connected">接続済み</string>
+    <string name="onboarding_health_connect">接続</string>
+
+    <string name="onboarding_provider_title">自分のAIを使う</string>
+    <string name="onboarding_provider_subtitle">食事写真とコーチ用の任意のAPIキー。\nGoogle AI Studioは無料でおすすめです。</string>
+    <string name="onboarding_provider_recommended_title">おすすめ：Google AI Studio</string>
+    <string name="onboarding_provider_recommended_subtitle">無料で高品質。食事写真に最適。</string>
+    <string name="onboarding_provider_howto_title">無料の Google AI Studio キーの取得方法</string>
+    <string name="onboarding_provider_step_1">aistudio.google.com/apikey を開く（タップで開く）</string>
+    <string name="onboarding_provider_step_2">GoogleでログインしてAPIキーを作成</string>
+    <string name="onboarding_provider_step_3">下に貼り付けて「キーをテスト」をタップ</string>
+    <string name="onboarding_provider_footer">すべてのプロバイダに対応。キーはこの端末に\n暗号化して保存されます。設定で後から変更できます。</string>
+    <string name="onboarding_skip_ai">今はスキップ</string>
+    <string name="onboarding_skip_ai_title">クラウドキーなしで続行しますか？</string>
+    <string name="onboarding_skip_ai_body">オンデバイスAIは端末上でプライベートに動作しますが、Google AI Studioや他のクラウドモデルより精度がかなり低いです。カロリーの誤り、見落とし、弱い写真認識が起きやすいです。無料のAI Studioキーは設定からいつでも追加できます。</string>
+    <string name="onboarding_skip_ai_later_body">食事写真AIとコーチにはAPIキーまたはオンデバイスモデルが必要です。どちらも設定からいつでも設定できます。</string>
+    <string name="onboarding_skip_ai_confirm">それでも続行</string>
+
+    <string name="onboarding_building_calories">カロリー</string>
+    <string name="onboarding_building_carbs">炭水化物</string>
+    <string name="onboarding_building_protein">タンパク質</string>
+    <string name="onboarding_building_fats">脂質</string>
+    <string name="onboarding_building_health_score">健康スコア</string>
+    <string name="onboarding_building_setting_up">あなたのために\nすべて準備しています</string>
+    <string name="onboarding_building_finalizing">結果を確定中...</string>
+    <string name="onboarding_building_recommendation">1日の推奨量</string>
+
+    <string name="onboarding_plan_title">あなたのプラン</string>
+    <string name="onboarding_plan_subtitle">値をタップして編集</string>
+    <string name="onboarding_plan_daily_calories">1日のカロリー</string>
+    <string name="onboarding_plan_doctor_title">医師にご相談ください</string>
+    <string name="onboarding_plan_doctor_message">推奨される最低量は1日%1$sです。</string>
+    <string name="onboarding_minor_title">大人向けの計算式のみ</string>
+    <string name="onboarding_minor_message">このアプリは大人向けのカロリー計算式を使用します。18歳未満の場合は、これらの目標を使う前に医療専門家に相談してください。</string>
+    <string name="onboarding_minor_continue">理解しました</string>
+
+    <string name="onboarding_plan_field_calories">1日のカロリー</string>
+    <string name="onboarding_plan_field_protein">タンパク質</string>
+    <string name="onboarding_plan_field_carbs">炭水化物</string>
+    <string name="onboarding_plan_field_fat">脂質</string>
+
+
+    <!-- Home -->
+    <string name="home_loading_sample_data">サンプルデータを読み込み中…</string>
+    <string name="home_add_food">食事を追加</string>
+    <string name="home_menu_camera">カメラ</string>
+    <string name="home_menu_camera_note">カメラ + メモ</string>
+    <string name="home_menu_nutrition_label">栄養成分表示</string>
+    <string name="home_menu_from_photos">写真から</string>
+    <string name="home_menu_text_input">テキスト入力</string>
+    <string name="home_menu_voice">音声</string>
+    <string name="home_menu_manual_entry">手動入力</string>
+    <string name="home_menu_saved_meals">保存した食事</string>
+    <string name="home_menu_barcode">バーコード</string>
+    <string name="shortcut_camera_short">カメラ</string>
+    <string name="shortcut_camera_long">カメラで食事を記録</string>
+    <string name="shortcut_voice_short">音声</string>
+    <string name="shortcut_voice_long">音声で食事を記録</string>
+    <string name="shortcut_barcode_short">バーコード</string>
+    <string name="shortcut_barcode_long">バーコードをスキャン</string>
+    <string name="add_food_sheet_title">食事を追加</string>
+    <string name="add_food_hero_photo">写真</string>
+    <string name="add_food_hero_photo_sub">カメラまたはギャラリー</string>
+    <string name="add_food_hero_note">メモ</string>
+    <string name="add_food_hero_note_sub">食べたものを説明</string>
+    <string name="add_food_hero_saved">保存済み</string>
+    <string name="add_food_hero_saved_sub">最近とお気に入り</string>
+    <string name="add_food_photo_source_title">写真を追加</string>
+    <string name="add_food_photo_camera">写真を撮る</string>
+    <string name="add_food_photo_gallery">ギャラリーから選択</string>
+    <string name="add_food_add_label_photo">ラベル写真を追加</string>
+    <string name="add_food_add_photo">写真を追加</string>
+    <string name="progressive_meal_add_next">次の食材を追加</string>
+    <string name="text_input_title">食べたものを説明</string>
+    <string name="home_kcal_of_format">/ %1$s %2$s</string>
+    <string name="home_kcal_left_format">残り %1$s</string>
+    <string name="home_view_more">もっと見る</string>
+    <string name="home_todays_food">今日の食事</string>
+    <string name="home_no_foods_logged">記録された食事はありません</string>
+    <string name="home_swipe_delete">削除</string>
+    <string name="home_swipe_favorite">お気に入り</string>
+    <string name="home_swipe_unfavorite">お気に入り解除</string>
+    <string name="home_favorited">お気に入り済み</string>
+    <string name="home_analyzing_food">食事を分析中...</string>
+    <string name="home_looking_up_nutrition">栄養情報を検索中...</string>
+    <string name="home_fiber_format">食物繊維: %1$.1fg</string>
+    <string name="home_sugar_format">糖質: %1$.1fg</string>
+    <string name="home_sat_fat_format">飽和脂肪酸: %1$.1fg</string>
+    <string name="home_sodium_format">ナトリウム: %1$.1fmg</string>
+    <string name="home_potassium_format">カリウム: %1$.1fmg</string>
+    <string name="home_cholesterol_format">コレステロール: %1$.1fmg</string>
+    <string name="home_serving_format">1食分: 約%1$dg</string>
+    <string name="home_protein_value">タンパク質: %1$dg</string>
+    <string name="home_carbs_value">炭水化物: %1$dg</string>
+    <string name="home_fat_value">脂質: %1$dg</string>
+
+    <string name="text_input_placeholder_1">卵2個、バタートースト、コーヒー</string>
+    <string name="text_input_placeholder_2">チキンとライスのチポトレブリトーボウル</string>
+    <string name="text_input_placeholder_3">ドミノのペパロニピザ 2切れ</string>
+    <string name="text_input_placeholder_4">グラノーラとブルーベリー入りギリシャヨーグルト</string>
+
+    <string name="manual_title">手動入力</string>
+    <string name="manual_name">名前</string>
+    <string name="manual_name_placeholder">例：手作りサラダ</string>
+    <string name="manual_calories">カロリー</string>
+    <string name="manual_protein">タンパク質 (g)</string>
+    <string name="manual_carbs">炭水化物 (g)</string>
+    <string name="manual_fat">脂質 (g)</string>
+    <string name="manual_fiber">食物繊維 (g)</string>
+    <string name="manual_meal_type">食事タイプ</string>
+
+    <string name="error_title">問題が発生しました</string>
+
+    <!-- Food sheets shared primitives -->
+    <string name="sheet_food_details">食事の詳細</string>
+    <string name="sheet_serving">分量</string>
+    <string name="sheet_nutrition">栄養</string>
+    <string name="sheet_meal">食事</string>
+    <string name="sheet_more_nutrition">その他の栄養</string>
+    <string name="sheet_name">名前</string>
+    <string name="sheet_quantity">数量</string>
+    <string name="sheet_unit">単位</string>
+    <string name="sheet_meal_type">食事タイプ</string>
+    <string name="sheet_review_food">食事を確認</string>
+    <string name="sheet_edit_food">食事を編集</string>
+    <string name="favorite_edit_title">保存した食事を編集</string>
+    <string name="favorite_edit_name_taken">この名前はすでに他の食事で使われています</string>
+
+    <string name="sheet_micro_sugar">糖質</string>
+    <string name="sheet_micro_added_sugar">添加糖</string>
+    <string name="sheet_micro_fiber">食物繊維</string>
+    <string name="sheet_micro_saturated_fat">飽和脂肪酸</string>
+    <string name="sheet_micro_mono_fat">一価不飽和脂肪酸</string>
+    <string name="sheet_micro_poly_fat">多価不飽和脂肪酸</string>
+    <string name="sheet_micro_cholesterol">コレステロール</string>
+    <string name="sheet_micro_sodium">ナトリウム</string>
+    <string name="sheet_micro_potassium">カリウム</string>
+
+    <!-- Context note sheet -->
+        <string name="context_note_title">写真を確認</string>
+    <string name="context_note_section">メモを追加（任意）</string>
+    <string name="context_note_placeholder">例: バターで炒めた卵2個、Chipotleのボウル（油多め）、ソースなしのグリルチキン</string>
+
+    <!-- Voice input sheet -->
+    <string name="voice_listening">聞き取り中...</string>
+    <string name="voice_tap_to_start">マイクをタップして開始</string>
+    <string name="voice_transcribing_format">%1$s で文字起こし中...</string>
+    <string name="voice_mic_permission_denied">マイクの権限が拒否されました。</string>
+    <string name="voice_mic_start_failed">マイクを開始できませんでした。権限を確認してください。</string>
+    <string name="voice_transcription_failed">文字起こしに失敗しました</string>
+    <string name="voice_stop">停止</string>
+    <string name="voice_record">録音</string>
+
+    <!-- Saved Meals sheet -->
+    <string name="saved_meals_title">保存した食事</string>
+    <string name="saved_meals_tab_recents">最近</string>
+    <string name="saved_meals_tab_frequent">よく使う</string>
+    <string name="saved_meals_tab_favorites">お気に入り</string>
+    <string name="saved_meals_no_logs">まだ食事が記録されていません</string>
+    <string name="saved_meals_no_favorites">お気に入りはまだありません\n食事を左にスワイプして追加してください</string>
+    <string name="saved_meals_count_format">%1$d回 記録</string>
+    <string name="saved_meals_log_action">記録</string>
+    <string name="saved_meals_remove_favorite">お気に入りを削除</string>
+    <string name="saved_meals_move_up">上へ移動</string>
+    <string name="saved_meals_move_down">下へ移動</string>
+
+    <!-- Nutrition detail sheet -->
+    <string name="nutrition_details_title">栄養詳細</string>
+    <string name="nutrition_section_macros">マクロ</string>
+    <string name="nutrition_section_detailed">詳細な栄養情報</string>
+    <string name="nutrition_label_calories">カロリー</string>
+    <string name="nutrition_label_protein">タンパク質</string>
+    <string name="nutrition_label_carbs">炭水化物</string>
+    <string name="nutrition_label_fat">脂質</string>
+    <string name="nutrition_label_sugar">糖質</string>
+    <string name="nutrition_label_added_sugar">添加糖</string>
+    <string name="nutrition_label_fiber">食物繊維</string>
+    <string name="nutrition_label_saturated_fat">飽和脂肪酸</string>
+    <string name="nutrition_label_mono_fat">一価不飽和脂肪酸</string>
+    <string name="nutrition_label_poly_fat">多価不飽和脂肪酸</string>
+    <string name="nutrition_label_cholesterol">コレステロール</string>
+    <string name="nutrition_label_sodium">ナトリウム</string>
+    <string name="nutrition_label_potassium">カリウム</string>
+
+    <!-- Coach -->
+    <string name="coach_title">コーチ</string>
+    <string name="coach_reset_chat_a11y">チャットをリセット</string>
+    <string name="coach_send_a11y">送信</string>
+    <string name="coach_input_voice_a11y">音声入力</string>
+    <string name="coach_input_placeholder">コーチに質問...</string>
+    <string name="coach_empty_title">コーチに聞いてみよう</string>
+    <string name="coach_empty_subtitle">コーチはあなたの体重履歴、カロリー記録、目標を確認できます。予想体重、食事内容、目標達成の方法を聞いてみましょう。</string>
+    <string name="coach_reset_dialog_title">チャットをリセット</string>
+    <string name="coach_reset_dialog_message">すべてのメッセージを消去して最初からやり直しますか？この操作は取り消せません。</string>
+    <string name="coach_reset_confirm">リセット</string>
+    <string name="coach_no_profile_error">プロフィールがまだありません。先にオンボーディングを完了してください。</string>
+    <string name="coach_chat_failed">チャットに失敗しました</string>
+
+    <string name="coach_chip_predict_30_days">30日後の予想体重は？</string>
+    <string name="coach_chip_lose_faster">安全に早く痩せるには？</string>
+    <string name="coach_chip_eating_too_much">食べ過ぎ？</string>
+    <string name="coach_chip_what_dinner">夕食に何を食べる？</string>
+    <string name="coach_chip_gain_healthy">健康的に太るには？</string>
+    <string name="coach_chip_eating_enough">十分食べてる？</string>
+    <string name="coach_chip_high_protein">追加できる高タンパク食品は？</string>
+    <string name="coach_chip_holding_weight">体重を維持できてる？</string>
+    <string name="coach_chip_average_intake">平均摂取量は？</string>
+    <string name="coach_chip_macro_suggestions">マクロの提案は？</string>
+    <string name="coach_chip_trend">私の傾向は？</string>
+    <string name="coach_chip_doing_this_week">今週の調子は？</string>
+    <string name="coach_chip_log_advice">記録に基づいたアドバイスは？</string>
+
+    <!-- Progress -->
+    <string name="progress_range_week">1週</string>
+    <string name="progress_range_month">1ヶ月</string>
+    <string name="progress_range_3m">3ヶ月</string>
+    <string name="progress_range_6m">6ヶ月</string>
+    <string name="progress_range_year">1年</string>
+    <string name="progress_range_all">すべて</string>
+
+    <string name="progress_weight_section">体重</string>
+    <string name="progress_log_weight">体重を記録</string>
+    <string name="progress_log_measurement_format">%1$sを記録</string>
+    <string name="progress_stat_current">現在</string>
+    <string name="progress_stat_goal">目標</string>
+    <string name="progress_log_first_weight">最初の体重を記録して傾向を確認</string>
+
+    <string name="progress_weight_history">体重履歴</string>
+    <string name="progress_body_fat_history">体脂肪履歴</string>
+    <string name="progress_history_count_format">%1$d件 · タップして表示・削除</string>
+
+    <string name="progress_calories_section">カロリー</string>
+    <string name="progress_avg_format">平均: %1$d %2$s</string>
+    <string name="progress_no_food">まだ食事が記録されていません</string>
+    <string name="progress_untracked_legend">追跡なしの日</string>
+    <plurals name="untracked_days_excluded">
+        <item quantity="one">追跡なしの日を%1$d日分除外</item>
+        <item quantity="other">追跡なしの日を%1$d日分除外</item>
+    </plurals>
+
+    <string name="progress_macro_averages">マクロ平均</string>
+    <string name="progress_nutrient_averages">栄養素の平均</string>
+
+    <string name="progress_log_weight_title">体重を記録</string>
+
+    <string name="progress_goal_reached_title">目標達成 🎉</string>
+    <string name="progress_goal_reached_message">目標体重に到達しました。設定で目標を切り替えて「目標を再計算」をタップし、ターゲットを更新してください。</string>
+
+    <!-- Settings -->
+    <string name="settings_section_personal">個人情報</string>
+    <string name="settings_section_goals">目標と栄養</string>
+    <string name="settings_section_nutrition_targets">カロリーとマクロ</string>
+    <string name="settings_section_nutrition_targets_summary">カロリー、マクロ、エネルギー消費目標</string>
+    <string name="settings_section_ai">AIプロバイダ</string>
+    <string name="settings_section_ai_summary">プロバイダ、モデル、キー、フォールバック</string>
+    <string name="settings_section_speech">音声入力</string>
+    <string name="settings_section_speech_summary">プロバイダ、言語、キー</string>
+    <string name="settings_section_health">ヘルスデータ</string>
+    <string name="settings_section_health_summary">Health Connect、バックグラウンド同期</string>
+    <string name="settings_group_app_display">アプリと表示</string>
+    <string name="settings_group_ai">AIプロバイダ</string>
+    <string name="settings_group_coach">コーチ</string>
+    <string name="settings_group_coach_summary">コーチタブ、カスタムAIインストラクション</string>
+    <string name="settings_group_data">データとバックアップ</string>
+    <string name="settings_group_personal_summary">性別、身長、体重、計測</string>
+    <string name="settings_group_goals_summary">食事、活動、目標体重</string>
+    <string name="settings_group_app_summary">外観、ホーム、通知</string>
+    <string name="settings_group_ai_summary">プロバイダ、モデル、キー、フォールバック</string>
+    <string name="settings_group_data_summary">エクスポート、インポート、同期、危険ゾーン</string>
+    <string name="settings_group_support">サポートとフィードバック</string>
+    <string name="settings_group_support_summary">問題を報告、機能をリクエスト、寄付</string>
+    <string name="settings_group_legal">プライバシーと法的情報</string>
+    <string name="settings_group_legal_summary">プライバシーポリシー、オープンソースとアセット</string>
+    <string name="settings_about_summary">バージョン、更新、共有</string>
+
+    <string name="settings_gender">性別</string>
+    <string name="settings_birthday">誕生日</string>
+    <string name="settings_height">身長</string>
+    <string name="settings_weight">体重</string>
+    <string name="settings_body_fat">体脂肪率</string>
+    <string name="settings_not_set">未設定</string>
+    <string name="settings_birthday_age_format">%1$s（%2$d歳）</string>
+
+    <string name="settings_weight_goal">体重目標</string>
+    <string name="settings_activity_level">活動レベル</string>
+    <string name="settings_weekly_change">週ごとの変化</string>
+    <string name="settings_weekly_default">0.50 kg/週</string>
+    <string name="settings_goal_weight">目標体重</string>
+    <string name="settings_calories">カロリー</string>
+    <string name="settings_recalculate_goals">目標を再計算</string>
+    <string name="settings_macro_auto_format">%1$dg · 自動</string>
+    <string name="settings_macro_pinned_a11y">固定</string>
+    <string name="settings_macro_auto_a11y">自動</string>
+
+    <string name="settings_appearance">外観</string>
+    <string name="settings_appearance_system">システム</string>
+    <string name="settings_appearance_light">ライト</string>
+    <string name="settings_appearance_dark">ダーク</string>
+    <string name="settings_appearance_oled">OLED</string>
+    <string name="settings_metric_units">メートル法</string>
+    <string name="settings_height_unit">身長の単位</string>
+    <string name="settings_weight_unit">体重の単位</string>
+    <string name="settings_week_starts">週の始まり</string>
+    <string name="settings_week_monday">月曜日</string>
+    <string name="settings_week_sunday">日曜日</string>
+    <string name="settings_week_saturday">土曜日</string>
+    <string name="settings_notifications">通知</string>
+    <string name="settings_battery_opt">バッテリー最適化</string>
+    <string name="settings_battery_opt_value">Chompass を最適化の対象から除外</string>
+
+    <string name="settings_ai_provider">プロバイダ</string>
+    <string name="settings_ai_model">モデル</string>
+    <string name="settings_ai_model_unset">（下で設定）</string>
+    <string name="settings_api_key">APIキー</string>
+    <string name="settings_base_url">ベースURL</string>
+    <string name="settings_server_url">サーバーURL</string>
+    <string name="settings_tap_to_edit">タップして編集</string>
+    <string name="settings_custom_url_title">カスタム ベースURL</string>
+    <string name="settings_ai_allow_insecure_http">安全でない HTTP を許可</string>
+    <string name="settings_ai_allow_insecure_http_footer">カスタムおよび Ollama のエンドポイントで http:// URL を使えます。自宅ネットワークなど。クラウド提供元は https を使います。サーバーに TLS があるときはオフのままにしてください。</string>
+    <string name="settings_clear_key">キーを消去</string>
+
+    <string name="settings_clear_food_log">食事ログを消去</string>
+    <string name="settings_delete_all_data">すべてのデータを削除</string>
+
+    <!-- Settings dialogs -->
+    <string name="settings_clear_food_title">食事ログを消去しますか？</string>
+    <string name="settings_clear_food_message">すべての食事記録と写真を削除します。プロフィール、体重、設定は保持されます。</string>
+    <string name="settings_delete_all_title">ローカルデータをすべて削除しますか？</string>
+    <string name="settings_delete_all_message">プロフィール、食事ログ、体重履歴、チャット、APIキーを削除し、オンボーディングに戻ります。Health Connect のデータはそのまま残ります。</string>
+    <string name="settings_max_pinned_title">最大2つ固定</string>
+    <string name="settings_max_pinned_message">一度に固定できるマクロは最大2つです。まず別のマクロの固定を解除してください（ロックアイコンをタップ）。</string>
+    <string name="settings_recalc_title">目標を再計算しますか？</string>
+    <string name="settings_recalc_message">身長/体重/活動レベル/目標から、カロリーとマクロを計算式のデフォルトにリセットします。固定中のマクロはすべて解除されます。</string>
+    <string name="settings_goal_chip_locked_cd">ロック中 — タップで自動に</string>
+    <string name="settings_goal_chip_auto_cd">自動 — タップでロック</string>
+    <string name="notif_channel_model_download">オンデバイスモデル</string>
+    <string name="notif_channel_model_download_desc">オンデバイスモデルのダウンロード進捗。</string>
+    <string name="notif_model_download_title">オンデバイスモデルをダウンロード中</string>
+    <string name="settings_recalc_confirm">再計算</string>
+    <string name="settings_recalc_details">再計算の詳細</string>
+    <string name="settings_recalc_failed_title">再計算できませんでした</string>
+    <string name="settings_recalc_failed_message">AIが再計算を完了できなかったため、目標は変更されていません。しばらくしてからもう一度お試しください。</string>
+    <string name="settings_invalid_goal_title">目標体重が目標と一致しません</string>
+    <string name="settings_invalid_goal_lose">減量の目標には現在の体重より低い目標値が必要です。</string>
+    <string name="settings_invalid_goal_gain">増量の目標には現在の体重より高い目標値が必要です。</string>
+    <string name="settings_permission_title">権限が必要です</string>
+
+    <string name="settings_notifications_denied">通知の権限が拒否されています。システム設定 → アプリ → Chompass → 通知 で有効にしてリマインダーを受け取ってください。</string>
+
+    <!-- Notification copy -->
+    <string name="notif_weight_log_title">計量の時間です</string>
+    <string name="notif_weight_log_text">進捗グラフを正確に保つために、今日の体重を記録しましょう。</string>
+    <string name="settings_health_unavailable">この端末では Health Connect を利用できません。Android 14 以降はシステムに同梱されています。ROM が提供しない場合はファイルのエクスポート/インポートを使ってください。Android 14 以降、Chompass は Play ストア版 Health Connect アプリを必要としません。</string>
+
+    <!-- Settings sheets / pickers -->
+    <string name="sheet_ai_provider">AIプロバイダ</string>
+    <string name="sheet_model">モデル</string>
+    <string name="sheet_model_footer">または下にカスタムモデルIDを入力してください。</string>
+    <string name="sheet_any_model_id">任意のモデルID</string>
+    <string name="sheet_api_key_format">APIキー: %1$s</string>
+    <string name="sheet_model_search_hint">モデルを検索</string>
+    <string name="sheet_no_match">一致するモデルがありません</string>
+    <string name="sheet_speech_api_key_format">音声APIキー: %1$s</string>
+    <string name="sheet_speech_engine">音声エンジン</string>
+    <string name="sheet_gender">性別</string>
+    <string name="sheet_activity_level">活動レベル</string>
+    <string name="sheet_goal">目標</string>
+    <string name="sheet_target_weight">目標体重</string>
+    <string name="sheet_weight">体重</string>
+    <string name="sheet_birthday">誕生日</string>
+    <string name="sheet_appearance">外観</string>
+    <string name="sheet_week_starts">週の始まり</string>
+    <string name="sheet_height">身長</string>
+    <string name="sheet_body_fat_percent">体脂肪率 %</string>
+    <string name="sheet_weekly_change">週ごとの変化</string>
+    <string name="sheet_weekly_change_format">%1$.1f %2$s/週 %3$s</string>
+    <string name="sheet_weekly_change_loss">減量</string>
+    <string name="sheet_weekly_change_gain">増量</string>
+    <string name="sheet_pace_slow">ゆっくり</string>
+    <string name="sheet_pace_recommended">おすすめ</string>
+    <string name="sheet_pace_fast">速い</string>
+    <string name="sheet_selected_a11y">選択中</string>
+    <string name="sheet_reset_to_auto">自動バランスにリセット</string>
+
+    <string name="sheet_macros">マクロ</string>
+    <string name="sheet_macros_subtitle">最大2つのマクロを正確なグラム数に固定できます。固定されていないものは残りのカロリーから自動でバランス調整されます。</string>
+    <string name="sheet_macro_pinned">固定</string>
+    <string name="sheet_macro_auto">自動</string>
+
+    <!-- About -->
+    <string name="about_rate">アプリを評価</string>
+    <string name="about_share">アプリを共有</string>
+    <string name="about_open_source">オープンソース (MIT)</string>
+    <string name="about_report_issue">問題を報告</string>
+    <string name="about_request_feature">機能をリクエスト</string>
+    <string name="about_privacy">プライバシーポリシー</string>
+    <string name="about_with_care">Apoorv Darshan 作の Fud AI をベースに</string>
+    <string name="about_share_message">食事の記録は Chompass で。Fud AI の広告なしフォークです。写真を撮るか話すか入力するだけで、AI がカロリーを記録します。オープンソースで、データは端末内に残ります。\n\n出典: https://codeberg.org/fitguy/chompass</string>
+    <string name="about_share_chooser">Chompass を共有</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_streak">連続記録リマインダー</string>
+    <string name="notif_channel_streak_desc">食事を記録して連続記録を続けるための毎日のリマインダー。</string>
+    <string name="notif_channel_daily">1日のサマリー</string>
+    <string name="notif_channel_daily_desc">1日の終わりにカロリーとマクロのサマリーをお届け。</string>
+    <string name="notif_channel_weight_goal">体重目標</string>
+    <string name="notif_channel_weight_goal_desc">目標体重に到達したときのお祝い。</string>
+    <string name="notif_streak_title">食事の記録を忘れずに</string>
+    <string name="notif_streak_text">連続記録を続けましょう。今日のものを記録してください。</string>
+    <string name="notif_summary_title">今日のサマリーが準備できました</string>
+    <string name="notif_summary_text">タップして今日のマクロの状況を確認。</string>
+    <string name="notif_summary_deficit">%1$s kcalの不足 %2$s</string>
+    <string name="notif_summary_surplus">%1$s kcalの過剰 %2$s</string>
+    <string name="notif_summary_on_target">バランス</string>
+    <string name="notif_summary_eaten_burned">摂取 %1$s · 消費 %2$s</string>
+    <string name="notif_summary_macros">P %1$d · C %2$d · F %3$d</string>
+    <string name="notif_summary_macros_net">P %1$d · C %2$d ネット · F %3$d</string>
+    <string name="notif_summary_of_goal">目標 %2$s のうち %1$s</string>
+
+    <string name="onboarding_goal_optional">目標(任意)</string>
+    <string name="onboarding_goal_set_later">後で設定から変更できます。</string>
+    <string name="settings_goal_body_fat">目標体脂肪</string>
+    <string name="settings_use_body_fat_bmr">BMR計算に体脂肪を使用</string>
+    <string name="settings_use_body_fat_bmr_subtitle">オン=Katch-McArdle(除脂肪体重を使ったより正確なBMR)。オフ=Mifflin-St Jeor(身長/体重/年齢のみ)。体脂肪の測定値が古い場合はオフにしてください。</string>
+    <string name="sheet_goal_body_fat">体脂肪目標</string>
+    <string name="sheet_goal_body_fat_currently">現在%1$s%%</string>
+    <string name="action_remove_goal">目標を削除</string>
+    <string name="progress_metric_weight">体重</string>
+    <string name="progress_metric_body_fat">体脂肪</string>
+    <string name="progress_log_body_fat">体脂肪を記録</string>
+    <string name="progress_log_first_body_fat">傾向を見るには、最初の体脂肪率を記録してください</string>
+    <string name="progress_log_body_fat_title">体脂肪を記録</string>
+    <string name="notif_body_fat_log_title">体脂肪チェックイン</string>
+    <string name="notif_body_fat_log_text">体組成の変化を追跡するために、今日の体脂肪率を記録しましょう。</string>
+    <string name="saved_meals_search_placeholder">保存した食事を検索</string>
+    <string name="saved_meals_no_match">一致する食事がありません</string>
+    <string name="settings_section_custom_instructions">カスタムAIインストラクション</string>
+    <string name="settings_custom_instructions_placeholder">例: ドイツ在住で、ヨーロッパの分量を想定し、ALDI/REWEのブランドを優先します。ボディビルの減量期です。</string>
+    <string name="settings_custom_instructions_footer">すべてのAIリクエストと一緒に送信される任意のコンテキスト：地域、食事制限、トレーニング目標など、毎回繰り返したくない情報。無効にするには空のままにしてください。</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_saved">保存しました</string>
+    <string name="settings_section_fallback">フォールバックプロバイダー</string>
+    <string name="settings_enable_fallback">フォールバックを有効にする</string>
+    <string name="settings_fallback_footer">プライマリプロバイダーが失敗した場合（過負荷、レート制限、ネットワークエラー）、アプリはこのフォールバックで自動的に再試行します。プライマリと同じプロバイダーも使用できます。別のモデルを選んでください。</string>
+    <string name="settings_fallback_on_device_switch_notice">オンデバイスモデルの切り替えは時間がかかります：フォールバックモデルは最初から読み込むため、最大1分以上かかることがあります。1つのモデルのままにしておくほうが通常は速いです。</string>
+
+    <!-- 名前付きAIプロファイル -->
+    <string name="settings_ai_profile">AIプロファイル</string>
+    <string name="settings_profile_add">プロファイルを追加</string>
+    <string name="settings_profile_rename">プロファイル名を変更</string>
+    <string name="settings_profile_delete">プロファイルを削除</string>
+    <string name="settings_profile_delete_confirm">このプロファイルを削除しますか？APIキーも削除されます。</string>
+    <string name="settings_profile_fallback">フォールバックプロファイル</string>
+    <string name="settings_profile_fallback_none">なし</string>
+    <string name="sheet_profile_name">プロファイル名</string>
+    <string name="queue_run_with">実行に使用…</string>
+    <string name="queue_last_attempt">最終試行: %1$s · %2$s</string>
+    <string name="queue_run_with_direct_note">「%1$s」を直接使用しました。フォールバックプロファイルはスキップされました。</string>
+    <string name="queue_run_refused_busy">別の解析がすでに実行中です。終了するまで待ってから、エントリをもう一度実行してください。</string>
+    <string name="widget_all_metrics_label">Chompass 今日</string>
+    <string name="widget_all_metrics_description">今日のカロリー・タンパク質・炭水化物・脂質を1つのウィジェットで確認。</string>
+    <string name="settings_needs_health_connect">Health Connectが必要</string>
+    <string name="settings_energy_goals_info">オンにすると、ChompassはHealth Connectから取得した実測の消費カロリー（アクティブ＋基礎代謝の14日間平均）を、数式による推定の代わりに維持カロリー（TDEE）の基準として目標計算に使います。消費カロリーの読み取りにAIは使いません。Health Connectが必要です。「再計算」ボタンおよび適応型目標と連動します。</string>
+    <string name="settings_adaptive_goals_info">週に1回ほど、アプリを開いたときに、Chompassがプロフィール・最近の食事記録・体重トレンドをもとに、「再計算」ボタンと同じ目標計算全体を自動で再実行します。エネルギー消費がオンの場合は、実測の消費カロリーを維持カロリーの基準として使います。AIが利用できないときは何もせずスキップします。オフにすると、この機能が最初に変更する前の目標に戻ります。これは医療アドバイスではありません。</string>
+    <string name="onboarding_plan_adaptive_note">プランは記録に合わせて週1回自動調整されます。固定したい場合は設定で適応型目標をオフにしてください。</string>
+    <string name="onboarding_feature_snap">写真を撮るだけ。AIが記録。</string>
+    <string name="onboarding_feature_coach">あなたのデータを知るコーチ</string>
+    <string name="onboarding_feature_library">体重計・ウェアラブル向け Health Connect</string>
+    <string name="onboarding_feature_widgets">ホーム画面ウィジェット</string>
+    <string name="whats_new_v30_workouts">ワークアウトタブは削除されました。</string>
+    <string name="whats_new_v30_home">ホームを刷新：スピードメーター型カロリーゲージ、縦型マクロバー、4枚の栄養素カード、フローティング追加ボタン。</string>
+    <string name="whats_new_v30_coach_voice">新しいインラインレコーダーで、コーチに音声で質問できます。</string>
+    <string name="whats_new_v30_share">食事をリンクとして共有。iPhoneでもAndroidでもChompassが直接開きます。</string>
+    <string name="whats_new_v30_export">設定から食事日記をJSON・Markdown・CSVでエクスポート。</string>
+    <string name="whats_new_v30_reprocess">記録済みの食事をAIで再解析。名前・分量・メモを調整して再分析できます。</string>
+    <string name="whats_new_v30_camera">カメラ＋カメラは2枚の写真を並べて保存します。</string>
+    <string name="whats_new_v30_colors">テーマカラーを10色追加。設定内でそのまま選べます。</string>
+    <string name="whats_new_v30_bodyfat">体脂肪履歴：体重と同じように、個別の記録を確認・削除できます。</string>
+    <string name="whats_new_v30_units">身長と体重の単位を別々に設定できるようになりました。</string>
+    <string name="whats_new_v30_adaptive">アダプティブ目標とエネルギー消費が実験的機能を卒業し、新規インストールではデフォルトでオンに。</string>
+    <string name="whats_new_v30_restore">再インストールや機種変更をしても、食事記録・体重・体脂肪がHealth Connectから自動的に復元されるようになりました。</string>
+
+    <string name="add_food_quick_relog">再ログ</string>
+    <string name="saved_meals_sort_recent">新しい順</string>
+    <string name="saved_meals_sort_name">A–Z</string>
+    <string name="saved_meals_sort_size">サイズ</string>
+    <string name="cd_open_logged_foods">記録したすべての食品</string>
+    <string name="add_food_quick_relog_empty">食事をお気に入りに追加するか、一度記録してください。ワンタップで再ログできます。</string>
+    <string name="ai_provider_on_device_subtitle">非公開・オフライン。クラウドAIより精度は低い。約2〜4 GBのダウンロード</string>
+    <string name="ai_provider_subtitle_gemini">無料のAPIキー · すぐ使える</string>
+    <string name="ai_provider_subtitle_openai">GPTモデル</string>
+    <string name="ai_provider_subtitle_anthropic">Claudeモデル</string>
+    <string name="ai_provider_subtitle_xai">Grokモデル</string>
+    <string name="ai_provider_subtitle_openrouter">1つのキーで数百のモデル</string>
+    <string name="ai_provider_subtitle_together">ホスト型オープンモデル</string>
+    <string name="ai_provider_subtitle_groq">高速推論、無料枠あり</string>
+    <string name="ai_provider_subtitle_huggingface">ホスト型オープンモデル</string>
+    <string name="ai_provider_subtitle_fireworks">ホスト型オープンモデル</string>
+    <string name="ai_provider_subtitle_deepinfra">ホスト型オープンモデル</string>
+    <string name="ai_provider_subtitle_mistral">Mistralモデル</string>
+    <string name="ai_provider_subtitle_ollama">自分のPCで、クラウド不要</string>
+    <string name="ai_provider_subtitle_custom">LM Studio、vLLM、llama.cpp など</string>
+    <string name="ai_provider_group_recommended">おすすめ</string>
+    <string name="ai_provider_group_cloud">クラウドプロバイダ</string>
+    <string name="ai_provider_group_local">ローカル・セルフホスト</string>
+    <string name="ai_provider_group_device">端末上</string>
+    <string name="settings_section_ai_profile">プロファイル</string>
+    <string name="settings_section_ai_connection">接続</string>
+    <string name="settings_section_ai_advanced">詳細設定</string>
+    <string name="settings_ai_key_test">テスト</string>
+    <string name="settings_ai_key_test_failed">キーが拒否されました: %1$s</string>
+    <string name="settings_ai_key_remove_title">APIキーを削除しますか？</string>
+    <string name="settings_ai_key_remove_body">空のキーを保存すると、このプロファイルの保存済みキーが削除されます。</string>
+    <string name="settings_ai_get_key">APIキーを取得</string>
+    <string name="settings_ai_value_default">%1$,d（デフォルト）</string>
+    <string name="settings_ai_timeout_default">%1$,ds（デフォルト）</string>
+    <string name="camera_scale_tip_message">ヒント: フォーク、手、またはコインを食べ物の横に入れてください。分量の推定に役立ちます。</string>
+    <string name="cd_relog_meal">%1$sを再ログ</string>
+    <string name="context_note_hint">具体的に: 量、ブランド、油やドレッシング、調理方法。</string>
+    <string name="edit_reprocess_diff_unchanged">変更された項目はありません。メモを修正して再試行してください。</string>
+    <string name="edit_reprocess_hint">修正内容を記述。例: 大盛り、バターで調理、牛乳の代わりにオートミルク</string>
+    <string name="entry_analysis_add_photo">写真を追加</string>
+    <string name="entry_analysis_busy_analyzing">分析中…</string>
+    <string name="entry_analysis_busy_filling">栄養情報を入力中…</string>
+    <string name="entry_analysis_busy_units">分量単位を計算中…</string>
+    <string name="entry_analysis_ready">確認の準備完了</string>
+    <string name="entry_analysis_status_helper">写真内のバーコードを確認し、AIプロバイダーに栄養情報を問い合わせます。</string>
+    <string name="entry_analysis_streaming_hint">AIの応答に合わせて値が表示されます。記録前に確認できます。</string>
+    <string name="entry_analysis_tip_apply">ヒント付きで再分析</string>
+    <string name="entry_analysis_tip_cta">AI用ヒントを追加（任意）</string>
+    <string name="home_calorie_mode_add_active">アクティブ消費を予算に追加</string>
+    <string name="home_calorie_mode_add_active_desc">Health Connect（または活動レベルの推定値）からのアクティブカロリーが今日のカロリー予算に加算されます。消費分を食べ返せます。運動の二重カウントを避けるため、活動レベルは日常の基準に設定してください。実測値を使うには、設定 → ヘルスで Health Connect を接続してください。</string>
+    <string name="home_calorie_mode_add_active_hc_hint">ヒント: Health Connect を有効にすると、活動レベルの推定値の代わりにウォッチ/スマホのアクティブカロリーを使えます。</string>
+    <string name="home_calorie_full_credit">ワークアウト消費を全額足す</string>
+    <string name="home_calorie_full_credit_desc">今日の実測消費カロリーを満額のカロリー目標に上乗せします。オフのときはゲージが典型的な 1 日の消費分を差し引いておくため、高い値を二重に食べ戻しません。</string>
+    <string name="home_calorie_mode_static_desc">カロリー目標は固定のまま。手動で記録した消費カロリーはその日の予算に加算されます。</string>
+    <string name="home_menu_manual_active">アクティブ消費</string>
+    <string name="manual_active_kcal_hint">消費カロリー</string>
+    <string name="manual_active_name_hint">活動名（任意）</string>
+    <string name="manual_active_save">予算に追加</string>
+    <string name="manual_active_edit_title">アクティブ消費を編集</string>
+    <string name="manual_active_history_total">%1$s · %2$d %3$s</string>
+    <string name="cd_delete_manual_active">アクティブ消費を削除</string>
+    <string name="manual_active_subtitle">散歩、サイクリング、ワークアウトなどで消費したカロリーを追加。「アクティブ消費を予算に追加」がオンのとき、今日の予算が延長されます。</string>
+    <string name="manual_active_title">アクティブ消費を記録</string>
+    <string name="meal_photos_add_label">ラベルを追加</string>
+    <string name="meal_photos_confirm_back">編集を続ける</string>
+    <string name="meal_photos_confirm_continue">このまま分析</string>
+    <string name="meal_photos_confirm_no_note">メモがありません。量や説明がないとAI推定の精度が下がります。このまま続けますか？</string>
+    <string name="meal_photos_confirm_one_photo">写真が1枚のみ。別角度や栄養成分表示の2枚目があると精度が上がることが多いです。1枚のまま続けますか？</string>
+    <string name="meal_photos_confirm_sparse">メモもなく写真も1枚のみ。精度を上げるにはヒントやラベル写真を追加するか、このまま続けてください。</string>
+    <string name="meal_photos_confirm_title">今すぐ分析しますか？</string>
+    <string name="meal_photos_dont_ask_note">メモの確認を今後表示しない</string>
+    <string name="meal_photos_note_section">これは何ですか？</string>
+    <string name="meal_photos_skip_note">メモをスキップして分析</string>
+    <string name="meal_photos_subtitle">短いメモと、必要なら2枚目の写真（栄養成分表示など）を追加し、分析をタップ。確認後にAIが開始します。</string>
+    <string name="meal_photos_subtitle_note_optional">必要なら別の写真やヒントを追加し、分析をタップ。確認後にAIが開始します。</string>
+    <string name="meal_photos_title">分析前</string>
+    <string name="on_device_model_accuracy_notice">これらのモデルはクラウドAIほど正確ではありません。カロリーの誤差、見落とし、写真の読み取り不良が起こり得ます。特に小型の E2B モデルで顕著です。信頼性の高い記録にはクラウドプロバイダーが推奨です。</string>
+    <string name="on_device_model_device_notice">Pixel 9a（GrapheneOS）でテスト済み。他の端末、特に低スペックや非 Tensor ハードウェアは未検証で、遅いか非対応の可能性があります。クラウドプロバイダーの方が安全です。</string>
+    <string name="on_device_model_loaded">モデルを読み込みました。使用できます。</string>
+    <string name="on_device_model_not_loaded">未読み込み。アプリ起動後の初回リクエストは最大1分かかる場合があります。</string>
+    <string name="on_device_model_privacy_notice">この端末上で完全に動作します。入力や撮影した内容はサーバーに送信されません。ダウンロード時、モデルファイルは Hugging Face（%1$s）から直接取得されます。このアプリでは通常使わない第三者ホストです。</string>
+    <string name="onboarding_api_key_non_gemini_ok">準備完了。クイックテストは Gemini のみ</string>
+    <string name="photo_accuracy_guide_body">写真だけでは情報が足りません。可能なら短いメモを追加してください:\n\n• 具体的に: 量、ブランド、皿の中身\n• 油、ドレッシング、油性ソース（見えにくいことが多い）\n• 調理法が重要な場合: 揚げ物、グリル、蒸し、手作り\n• 正確なグラム数や栄養成分表示の写真が最も効果的</string>
+    <string name="photo_accuracy_guide_cd">写真の精度を上げる方法</string>
+    <string name="photo_accuracy_guide_dismiss">了解</string>
+    <string name="photo_accuracy_guide_title">より良い推定のヒント</string>
+    <string name="photo_import_failed">写真をインポートできませんでした</string>
+    <string name="progress_weight_raw_legend">体重</string>
+    <string name="progress_weight_trend_legend">7日間トレンド</string>
+    <string name="progress_weight_trend_need_more">7日間トレンドには少なくとも2日分の計量が必要です</string>
+    <string name="protein_target_g_per_kg_format">%1$.1f g/kg · %2$d g/日</string>
+    <string name="protein_target_lbm_missing_hint">体脂肪率%が未設定。BF%が記録されるまで総体重を使用します。</string>
+    <string name="protein_target_mode_g_per_kg_lbm">g/kg 除脂肪体重</string>
+    <string name="protein_target_mode_g_per_kg_total">g/kg 体重</string>
+    <string name="protein_target_mode_grams">1日あたりのグラム数</string>
+    <string name="protein_target_mode_label">タンパク質目標</string>
+    <string name="settings_gemini_google_search_footer">有効にすると、Gemini はプロンプトへの回答に役立つ場合、ウェブ検索を行うことがあります。検索クエリは Google に送信されます。Google は Gemini API プロジェクトに課金します。Gemini 3 モデルでは実行された各検索クエリが使用量にカウントされます。Gemini 2.5 以前は検索を使ったプロンプトごとに課金されます。</string>
+    <string name="settings_health_unavailable_platform">この端末ではアプリから Health Connect を利用できません。Android 14 以降はシステムモジュールです。設定に Health Connect が表示されるのに Chompass が接続できない場合、ROM が Health Connect サービスを公開していない可能性があります（de-Googled ビルドでよくあります）。Chompass は Play ストアやサンドボックス化 Play を必要としません。代わりに食事日記と体組成のエクスポート/インポート、または任意の WebDAV を使ってください。</string>
+    <string name="settings_meal_constituents_footer_on_device">オンデバイスの Gemma では利用不可: 食材の内訳にはより強力なモデルが必要です。クラウドプロバイダーに切り替えて有効にしてください。</string>
+    <string name="settings_photo_note_prompt">写真メモを求める</string>
+    <string name="settings_photo_note_prompt_footer">オンにすると、分析前に写真入力でメモ欄が強調表示されます。メモなしでも確認して続行できます。</string>
+    <string name="settings_progress_default_range">進捗のデフォルト期間</string>
+    <string name="about_app_version">アプリのバージョン</string>
+    <string name="about_asset_credits">オープンソースとアセット</string>
+    <string name="about_check_updates">更新を確認</string>
+    <string name="about_donate">ヨーグルトをごちそうして</string>
+    <string name="about_update_action">更新</string>
+    <string name="about_update_available">更新があります</string>
+    <string name="about_update_checking">更新を確認中…</string>
+    <string name="about_update_details_format">現在 %1$s → 最新 %2$s</string>
+    <string name="about_update_fdroid_note">更新は F-Droid から配信されます</string>
+    <string name="about_upstream">Fud AI ベース（元プロジェクト）</string>
+    <string name="about_version_format">バージョン %1$s</string>
+    <string name="action_advanced">詳細</string>
+    <string name="action_close">閉じる</string>
+    <string name="action_hide">隠す</string>
+    <string name="action_info">情報</string>
+    <string name="action_logging">記録中…</string>
+    <string name="action_ok">OK</string>
+    <string name="action_remove">削除</string>
+
+    <string name="meal_photos_queue_later">後で実行するためにキューに入れる</string>
+    <string name="analysis_queue_title">分析キュー</string>
+    <string name="analysis_queue_tile_label">分析キュー</string>
+    <string name="analysis_queue_tile_label_count">分析キュー · %1$d</string>
+    <string name="analysis_queue_tab_queue">キュー</string>
+    <string name="analysis_queue_tab_history">履歴</string>
+    <string name="analysis_queue_empty_queue">待機中の項目はありません。写真シートから食事をキューに入れると、後で分析できます。</string>
+    <string name="analysis_queue_empty_history">過去の分析はまだありません。失敗した分析はここに自動的に保存されます。</string>
+    <string name="analysis_queue_run_all">すべて実行</string>
+    <string name="analysis_queue_run_now">今すぐ実行</string>
+    <string name="analysis_queue_re_run">再実行</string>
+    <string name="analysis_queue_edit">編集</string>
+    <string name="analysis_queue_edit_title">キュー内の分析を編集</string>
+    <string name="analysis_queue_clear_history">履歴を消去</string>
+    <string name="analysis_queue_clear_history_confirm">履歴から完了した分析をすべて削除しますか？写真も削除されます。</string>
+    <string name="analysis_queue_delete_confirm">この分析と写真を削除しますか？</string>
+    <string name="analysis_queue_photo_only">写真の分析</string>
+    <string name="analysis_queue_saved_note">分析キューに保存しました。後で実行できます。</string>
+    <string name="analysis_queue_open">キューを開く</string>
+    <string name="analysis_queue_target_day">記録する日</string>
+    <string name="analysis_queue_day_back">前の日</string>
+    <string name="analysis_queue_day_forward">次の日</string>
+    <string name="analysis_queue_failed">失敗</string>
+    <string name="analysis_queue_result">%1$s · %2$d %3$s</string>
+    <string name="analysis_queue_just_now">たった今</string>
+    <string name="analysis_queue_minutes_ago">%1$d 分前</string>
+    <string name="analysis_queue_hours_ago">%1$d 時間前</string>
+    <string name="analysis_queue_days_ago">%1$d 日前</string>
+    <string name="analysis_queue_on_day">対象日</string>
+    <string name="action_retry">再試行</string>
+    <string name="action_show">表示</string>
+    <string name="action_undo">戻す</string>
+    <string name="action_save_to_favorites">お気に入りに保存</string>
+    <string name="saved_to_favorites">お気に入りに保存しました</string>
+    <string name="action_what_if">どうなる？</string>
+    <string name="add_food_relog_kcal">%1$d %2$s</string>
+    <string name="ai_error_coach_on_device">コーチはまだオンデバイスプロバイダーに対応していません。設定 → AI プロバイダーでクラウドプロバイダーに切り替えてください。</string>
+    <string name="ai_error_coach_round_limit">コーチは回答できませんでした。質問の言い方を変えてみてください。</string>
+    <string name="ai_error_disabled">AI 機能は設定 → AI と音声でオフになっています。</string>
+    <string name="ai_error_grounded_on_device">Grounded モードはオンデバイスモデルでは利用できません。</string>
+    <string name="ai_error_grounded_requires_provider">Grounded モードには有効な AI プロバイダーが必要です。</string>
+    <string name="ai_error_image_conversion_failed">画像を処理できませんでした。</string>
+    <string name="ai_error_invalid_response">AI の応答を理解できませんでした。もう一度お試しください。</string>
+    <string name="ai_error_invalid_url">API URL が無効です。プロバイダー設定を確認してください。</string>
+    <string name="ai_error_insecure_http_blocked">安全でない HTTP はブロックされています。設定 → AI と音声で「安全でない HTTP を許可」をオンにするか、https:// URL を使ってください。</string>
+    <string name="ai_error_key_rejected">API キーが拒否されました。設定 → AI プロバイダーを開き、有効なキーを貼り直してください。</string>
+    <string name="ai_error_location_unsupported">Gemini はこのネットワーク環境（国/IP）では利用できません。VPN を使用している場合はオフにするか、住宅用出口に切り替えてください。データセンター/非住宅用 VPN IP はよくブロックされます。Google AI Studio プロジェクトで課金を有効にするか、別のネットワークを試すか、設定 → AI プロバイダーでプロバイダーを変更してください。</string>
+    <string name="ai_error_model_unavailable">プロバイダーがこのモデルを見つけられませんでした。無料プランでは有料のみ、地域で制限されている、またはエンドポイントが間違っている可能性があります。設定 → AI プロバイダーでデフォルトの Flash モデルに切り替えるか、AI Studio プロジェクトで課金を有効にしてください。</string>
+    <string name="ai_error_network_format">ネットワークエラー：%1$s</string>
+    <string name="ai_error_no_api_key">API キーが設定されていません。設定 → AI プロバイダーでキーを追加してください。</string>
+    <string name="ai_error_on_device_low_memory">現在、オンデバイスでのAIに十分な空きメモリがありません。小さい E2B モデルを試すか、他のアプリを閉じるか、設定 → AI プロバイダーでプロバイダーを変更してください。</string>
+    <string name="ai_error_on_device_engine_init">このデバイスでモデルエンジンを起動できませんでした。もう一度お試しください。設定 → AIプロバイダー → モデルでモデルをアンロードするか、クラウドプロバイダーに切り替えてください。</string>
+    <string name="ai_error_on_device_model_not_downloaded">オンデバイスモデルがまだダウンロードされていません。設定 → AI プロバイダー → モデルを開いてダウンロードしてください。</string>
+    <string name="ai_error_on_device_unsupported_device">このデバイスはオンデバイス AI の要件を満たしていません。設定 → AI プロバイダーでクラウドプロバイダーを選択してください。</string>
+    <string name="ai_error_provider_error">AI プロバイダーがエラーを返しました。</string>
+    <string name="ai_error_provider_overloaded">AI プロバイダーが現在過負荷です。数回再試行しました。1分後に再度お試しいただくか、設定 → AI プロバイダーでプロバイダー/モデルを変更してください。</string>
+    <string name="ai_error_rate_limit">API キーのリクエスト上限に達しました。1分待つか、設定 → AI プロバイダーで別のプロバイダーに切り替えてください。無料プランでは Flash-Lite モデルの割り当てが最も多いです。</string>
+    <string name="ai_error_timeout">AI プロバイダーの応答が遅すぎました。再試行するか、設定 → AI と音声でタイムアウトを延ばしてください。</string>
+    <string name="ai_error_truncated">AI の応答が応答長の上限で途切れました。設定 → AI と音声で最大応答長を増やすか、もっと短い質問を試してください。</string>
+    <string name="ai_error_truncated_twice">AI の応答が応答長の上限で2回途切れました。設定 → AI と音声で最大応答長を増やすか、もっと短い質問を試してください。</string>
+    <string name="ai_error_truncated_twice_description">モデルは回答を終える前に応答長の上限に達しました。思考もこの上限に含まれます。設定 → AI と音声で最大応答長を増やすか、モデルの思考を制限して、もう一度試してください。</string>
+    <string name="ai_model_tier_paid">有料のみのモデル（無料プランには Pro は含まれなくなりました）</string>
+    <string name="ai_model_tier_varies">無料プランでの利用可否はアカウントと地域によって異なります</string>
+    <string name="ai_provider_on_device">オンデバイス（プライベート）</string>
+    <string name="ai_reasoning_effort_auto">自動</string>
+    <string name="ai_reasoning_effort_high">高</string>
+    <string name="ai_reasoning_effort_disabled">オフ（思考なし）</string>
+    <string name="ai_reasoning_effort_low">低</string>
+    <string name="ai_reasoning_effort_medium">中</string>
+    <string name="barcode_hint">カメラをバーコードに向けてください</string>
+    <string name="barcode_off_note">パッケージ食品は利用可能な場合 Open Food Facts を使用します。</string>
+    <string name="body_measurements_title">身体測定</string>
+    <string name="camera_error_capture">写真を撮影できませんでした</string>
+    <string name="camera_error_open">カメラを開けませんでした</string>
+    <string name="camera_error_save">写真を保存できませんでした</string>
+    <string name="camera_flash_auto">フラッシュ自動</string>
+    <string name="camera_flash_off">フラッシュオフ</string>
+    <string name="camera_flash_on">フラッシュオン</string>
+    <string name="camera_scale_tip_dismiss">了解</string>
+
+    <!-- Auto-backup restore notice (Codeberg #60) -->
+    <string name="restore_notice_title">バックアップを復元しました</string>
+    <string name="restore_notice_message">Androidがアプリの以前のインストールからデータを復元しました。復元より前にこのインストールで記録した内容は失われている場合があり、設定も元に戻っている場合があります。最近の記録と目標をご確認ください。</string>
+    <string name="cd_add_food">食品を追加</string>
+    <string name="cd_add_image">画像を追加</string>
+    <string name="cd_apply_serving_edit">分量の編集を適用</string>
+    <string name="cd_remove_serving_unit">この単位を削除</string>
+    <string name="cd_cancel_recording">録音をキャンセル</string>
+    <string name="cd_clear_quantity">数量をクリア</string>
+    <string name="cd_close">閉じる</string>
+    <string name="cd_close_camera">カメラを閉じる</string>
+    <string name="cd_copy_entries">記録をコピー</string>
+    <string name="cd_dismiss_paste">貼り付けを閉じる</string>
+    <string name="cd_edit_recipe">レシピを編集</string>
+    <string name="cd_edit_serving">分量を編集</string>
+    <string name="cd_favorited">お気に入り</string>
+    <string name="cd_hold_to_record">長押しで録音、タップで固定</string>
+    <string name="cd_log">記録</string>
+    <string name="cd_log_water">水を記録</string>
+    <string name="cd_move_down">下へ移動</string>
+    <string name="cd_move_up">上へ移動</string>
+    <string name="cd_new_recipe">新しいレシピ</string>
+    <string name="cd_open_camera">カメラを開く</string>
+    <string name="cd_open_gallery">ギャラリーを開く</string>
+    <string name="cd_quantity_operator">%1$s を数量に挿入</string>
+    <string name="cd_remove_image">画像を削除</string>
+    <string name="cd_selected">選択中</string>
+    <string name="cd_share_meal">食事を共有</string>
+    <string name="cd_unfavorite">お気に入りから削除</string>
+    <string name="cd_edit_favorite">保存した食事を編集</string>
+    <string name="cd_edit_meal_name">食事名を編集</string>
+    <string name="cd_set_meal_start">開始時刻を設定</string>
+
+    <string name="coach_confirm_log_food_summary">%1$s：%2$s（タンパク質 %3$s、炭水化物 %4$s、脂質 %5$s）</string>
+    <string name="coach_logged_food">記録しました: %1$s（%2$s %3$s）。</string>
+    <string name="coach_logged_weight">体重を記録しました: %1$s kg。</string>
+    <string name="coach_logged_water">水分を記録しました: %1$d ml。</string>
+    <string name="coach_logged_discard">わかりました。記録しません。</string>
+    <string name="coach_confirm_log_food_title">この食品を記録しますか？</string>
+    <string name="coach_confirm_log_water_title">この水を記録しますか？</string>
+    <string name="coach_confirm_log_weight_title">この体重を記録しますか？</string>
+    <string name="context_note_weight_hint">分量を計量した場合は、ここにグラム数を入力してください。正確な重量は、タイトルや材料リストよりも精度を向上させます。</string>
+    <string name="context_note_weight_placeholder">例：280</string>
+    <string name="context_note_weight_section">総重量（任意）</string>
+    <string name="context_note_weight_unit">g</string>
+    <string name="copy_all">すべてコピー</string>
+    <string name="copy_from">コピー元</string>
+    <string name="copy_from_loading">食事記録を読み込み中…</string>
+    <string name="copy_hint">食品は %1$s にコピーされます。元の記録は変更されません。</string>
+    <string name="copy_meal_format">%1$s をコピー</string>
+    <string name="copy_no_foods_on_day">この日の食品は記録されていません</string>
+    <string name="copy_to">コピー先</string>
+    <string name="derived_body_fat">体脂肪率</string>
+    <string name="derived_navy_body_fat">米海軍体脂肪</string>
+    <string name="derived_rfm_body_fat">RFM 体脂肪</string>
+    <string name="derived_tape_estimate_caption">メジャーによる推定。スキャンからだいたい 3〜4 ポイント以内になることが多いです。</string>
+    <string name="action_use_as_body_fat">体脂肪として使う</string>
+    <string name="confirm_log_tape_body_fat">メジャーから体脂肪 %1$s%% を記録しますか？カロリー計算に体脂肪を使っている場合、それが更新されます。</string>
+    <string name="derived_frame">骨格</string>
+    <string name="derived_waist_to_height">ウエスト身長比</string>
+    <string name="derived_waist_to_hip">ウエストヒップ比</string>
+    <string name="diet_mode_beta_note">ベータモード：調整中です。</string>
+    <string name="diet_mode_keto_beta">ケト（ベータ）</string>
+    <string name="diet_mode_standard">標準</string>
+    <string name="edit_icon_photo_failed">その写真を読み込めませんでした</string>
+    <string name="edit_icon_picker_title">アイコンを選択</string>
+    <string name="edit_icon_remove_photo">写真を削除</string>
+    <string name="edit_icon_set_photo">写真を設定</string>
+    <string name="edit_note_placeholder">メモ（任意）</string>
+    <string name="edit_note_section">メモ</string>
+    <string name="edit_reprocess">AI で修正</string>
+    <string name="edit_reprocess_diff_row">%1$s：%2$s → %3$s</string>
+    <string name="edit_reprocess_diff_title">変更点</string>
+    <string name="edit_reprocess_explain">AI がメモから名前、分量、カロリー、マクロを再計算します。変更を確認して保存をタップしてください。</string>
+    <string name="edit_reprocess_review_hint">上の更新値を確認し、保存をタップして適用してください。</string>
+    <!-- Edit sheet: AI fill-missing modes -->
+    <string name="edit_ai_mode_fill">不足を埋める</string>
+    <string name="edit_ai_mode_reanalyze">再分析</string>
+    <string name="edit_ai_mode_recalculate">再計算</string>
+    <string name="edit_ai_missing_line">未入力: %1$s</string>
+    <plurals name="edit_ai_missing_values">
+        <item quantity="one">%1$d個の値が未入力です</item>
+        <item quantity="other">%1$d個の値が未入力です</item>
+    </plurals>
+    <string name="edit_ai_missing_action">埋める</string>
+    <string name="edit_reprocess_section">AI に修正を依頼</string>
+    <string name="edit_reprocessing">修正中…</string>
+    <string name="edit_reprocessing_failed">修正に失敗しました</string>
+    <string name="entry_analysis_field_pending">分量を決定中…</string>
+    <string name="entry_analysis_inferring_units">分量単位を計算中…</string>
+    <string name="entry_analysis_micros_found">さらに %d 種類の栄養素を発見</string>
+    <string name="entry_analysis_phase_calling_ai">AI を呼び出し中…</string>
+    <string name="entry_analysis_phase_filling_fields">栄養情報を入力中…</string>
+    <string name="entry_analysis_phase_looking_up_barcode">バーコードを確認中…</string>
+    <string name="entry_analysis_phase_parsing">結果を読み取り中…</string>
+    <string name="entry_analysis_phase_preparing">リクエストを準備中…</string>
+    <string name="entry_analysis_phase_recognizing">食品を認識中…</string>
+    <string name="entry_analysis_phase_resolving">栄養素を特定中…</string>
+    <string name="entry_analysis_phase_searching_history">履歴を確認中…</string>
+    <string name="entry_analysis_phase_searching_usda">USDA の食品を検索中…</string>
+    <string name="entry_analysis_units_found">分量単位が見つかりました</string>
+    <string name="entry_analysis_waiting_response">AI の応答を待機中…</string>
+    <string name="error_ai_suggestion">AI の提案を読み込めませんでした。</string>
+    <string name="error_analysis_failed">分析に失敗しました</string>
+    <string name="error_barcode_lookup_failed">バーコード検索に失敗しました</string>
+    <string name="barcode_add_to_off">Open Food Factsに追加</string>
+    <string name="error_failed_input_missing">保存された入力を復元できませんでした。新しい写真を撮ってください。</string>
+    <string name="error_invalid_json">無効な JSON</string>
+    <string name="error_search_food_failed">この食品を読み込めませんでした。もう一度お試しください。</string>
+    <string name="error_unknown">不明なエラー</string>
+    <string name="error_webdav_sync_failed">WebDAV 同期に失敗しました</string>
+    <string name="export_action">エクスポート</string>
+    <string name="export_body_metrics_empty">エクスポートする体重・体脂肪・測定の記録がありません。</string>
+    <string name="export_body_metrics_format">形式</string>
+    <string name="export_body_metrics_subtitle">体重・体脂肪・身体測定の履歴を共有可能なファイルとしてエクスポートします。</string>
+    <string name="export_body_metrics_title">体重と身体データをエクスポート</string>
+    <string name="export_diary_title">食事日記をエクスポート</string>
+    <string name="export_failed">エクスポートに失敗しました。</string>
+    <string name="export_format">形式</string>
+    <string name="export_from">開始</string>
+    <string name="export_no_meals">選択した期間に記録された食事がありません。</string>
+    <string name="export_range">期間</string>
+    <string name="export_range_all">すべて</string>
+    <string name="export_range_custom">カスタム</string>
+    <string name="export_range_month">今月</string>
+    <string name="export_range_today">今日</string>
+    <string name="export_range_week">今週</string>
+    <string name="export_sync_failed">同期ドキュメントをエクスポートできませんでした：%1$s</string>
+    <string name="export_sync_title">同期 JSON をエクスポート</string>
+    <string name="export_to">終了</string>
+    <string name="finish_onboarding_hint">この食事を1日の目標と比較するには、先にオンボーディングを完了してください。</string>
+    <string name="food_search_placeholder">例：ギリシャヨーグルト、牛乳、カッテージチーズ</string>
+    <string name="food_search_sheet_title">食品データベースを検索</string>
+    <string name="food_search_source_swiss">スイス</string>
+    <string name="frame_large">大</string>
+    <string name="frame_medium">中</string>
+    <string name="frame_small">小</string>
+    <string name="grounded_entry_add_photo">写真を追加</string>
+    <string name="grounded_entry_analyze">栄養素を特定</string>
+    <string name="grounded_entry_placeholder">例：スクランブルエッグ2個とバナナ1本</string>
+    <string name="grounded_entry_subtitle">食事を説明・撮影してください。栄養素は USDA、Open Food Facts、または確認済みの履歴から得られ、自由な推測ではありません。</string>
+    <string name="grounded_entry_title">裏付けのある記録</string>
+    <string name="grounded_on_device_unavailable">裏付けのある記録にはクラウド AI プロバイダーが必要です。オンデバイスモデルは写真/メモを使用します。</string>
+    <string name="grounded_review_continue">レビューへ進む</string>
+    <string name="grounded_review_grams">グラム</string>
+    <string name="grounded_review_per_100g">%1$d %2$s / 100 g</string>
+    <string name="grounded_review_subtitle">記録する前に、各食品の最適なデータベース一致と分量を選んでください。</string>
+    <string name="grounded_review_title">一致を確認</string>
+    <string name="grounded_review_unit">単位</string>
+    <string name="grounding_badge_estimate">推定 · データベース未一致</string>
+    <string name="grounding_badge_history">裏付け · あなたの履歴</string>
+    <string name="grounding_badge_label">裏付け · ラベル</string>
+    <string name="grounding_badge_off">裏付け · Open Food Facts</string>
+    <string name="grounding_badge_swiss">裏付け · スイス食品データベース</string>
+    <string name="grounding_badge_usda">裏付け · USDA</string>
+    <string name="grounding_confidence_summary">信頼度：識別 %1$d%% · 分量 %2$d%% · 出典 %3$d%%</string>
+    <string name="grounding_source_estimate">AI 推定</string>
+    <string name="grounding_source_history">あなたの履歴</string>
+    <string name="grounding_source_label">栄養ラベル</string>
+    <string name="grounding_source_off">Open Food Facts</string>
+    <string name="grounding_source_swiss">スイス</string>
+    <string name="grounding_source_usda">USDA</string>
+    <string name="grounding_validation_notes">メモ：%1$s</string>
+    <string name="home_active_burn_a11y">活動消費 %1$d</string>
+    <string name="home_active_burn_caption">%1$d 活動</string>
+    <string name="home_active_burn_caption_progress">活動 %1$d / %2$d</string>
+    <string name="home_active_burn_caption_progress_day_type">%1$d of %2$d active · %3$s</string>
+    <string name="home_active_burn_over">通常より +%1$d</string>
+    <string name="home_active_burn_over_a11y">活動消費 %1$d、通常の1日より %2$d 多い</string>
+    <string name="home_active_burn_progress_a11y">活動消費 %1$d、通常 %2$d</string>
+    <string name="home_active_burn_progress_day_type_a11y">Active burn %1$d, %2$d typical for %3$s days</string>
+    <string name="home_active_calories_label">活動 %1$s</string>
+    <string name="home_budget_burned_today">今日の消費：%1$d %2$s</string>
+    <string name="home_calorie_active_estimated_a11y">活動カロリーは活動レベルから推定</string>
+    <string name="home_calorie_budget_a11y">予算 %1$d %4$s：目標 %2$d %4$s と活動消費 %3$d %4$s</string>
+    <string name="home_calorie_budget_info">今日の予算の計算方法</string>
+    <string name="home_calorie_budget_sheet_title">今日のカロリー予算</string>
+    <string name="home_calorie_budget_source_manual">手動で記録したカロリー</string>
+    <string name="home_calorie_budget_source_measured">Health Connect の活動カロリー</string>
+    <string name="home_calorie_budget_day_type_typical">Typical active burn for %1$s days is %2$d %4$s (14-day average is %3$d %4$s).</string>
+    <string name="home_calorie_mode_static">固定目標</string>
+    <string name="home_calorie_of_goal">%1$s 中 %2$s</string>
+    <string name="home_calories_active_burn">活動消費 %1$d</string>
+    <string name="home_calories_goal_plus_active">目標 %1$s + 活動 %2$s</string>
+    <string name="home_calories_left">残り %1$s</string>
+    <string name="home_calories_eaten_a11y">摂取 %1$s</string>
+    <string name="home_display_calorie_mode">カロリーゲージ</string>
+    <string name="home_display_group_calorie">カロリーゲージ</string>
+    <string name="home_display_calorie_mode_pointer">カロリーゲージのモード</string>
+    <string name="home_display_group_activity">アクティビティ</string>
+    <string name="home_display_active_calories_add_active_note">アクティブ追加モードでは、消費は自動的にゲージに含まれます。</string>
+    <string name="home_display_group_nutrients">栄養素カード</string>
+    <string name="home_display_group_food_log">食事記録</string>
+    <string name="home_display_calorie_layout">カロリーレイアウト</string>
+    <string name="home_calorie_layout_default">デフォルト</string>
+    <string name="home_calorie_layout_gauge">アークゲージ＋数値</string>
+    <string name="home_calorie_layout_compact_arc">コンパクトアーク</string>
+    <string name="home_calorie_layout_compact_horizontal">プログレスバー</string>
+    <string name="home_calorie_layout_hidden">非表示</string>
+    <string name="home_food_log_layout_default">コンパクト</string>
+    <string name="home_food_log_layout_classic">クラシック</string>
+    <string name="home_nutrient_card_layout_default">コンパクトバー</string>
+    <string name="home_nutrient_card_layout_slim_line">スリムライン</string>
+    <string name="home_nutrient_card_layout_classic">クラシックカード</string>
+    <string name="home_display_food_log_chips">食事記録のマクロ</string>
+    <string name="home_display_nutrient_cards">栄養素カード</string>
+    <string name="home_display_show_active_calories">活動カロリーを表示</string>
+    <string name="home_display_show_active_calories_desc">カロリーゲージに今日の活動消費を表示します。</string>
+    <string name="home_display_show_steps">ホームに歩数計を表示</string>
+    <string name="home_display_slim_full_names">栄養素の完全な名前</string>
+    <string name="home_display_slim_full_names_desc">栄養素カードは短いラベルの代わりに完全な名前を表示します。4枚選択時は長い名前が切り詰められることがあります。</string>
+    <string name="home_display_show_steps_desc">ゲージ下の任意カード。Health Connect が必要です。</string>
+    <string name="home_display_step_goal">1日の歩数目標</string>
+    <string name="home_display_step_goal_hint">500ずつ調整。1,000～50,000。</string>
+    <string name="home_display_title">ホーム表示</string>
+    <string name="home_first_photo_saved">最初の写真を保存しました</string>
+    <string name="home_food_log">食事記録</string>
+    <string name="home_food_removed">食品を削除しました</string>
+    <string name="home_day_type_switched">日タイプを切り替えました</string>
+    <string name="home_menu_copy_from_day">日付からコピー</string>
+    <string name="home_menu_from_photos_note">写真+メモから</string>
+    <string name="home_menu_grounded">裏付け</string>
+    <string name="home_nutrient_cards">ホーム栄養素カード</string>
+    <string name="home_nutrients">ホーム栄養素</string>
+    <string name="home_nutrients_pick_count">ホーム画面に最大 %1$d 種類の栄養素を選択してください。</string>
+    <string name="home_nutrients_pick_max">最大%1$d個の栄養素。</string>
+    <string name="home_nutrients_pick_four">ホームのサマリー行に栄養素をちょうど4種類選択してください。</string>
+    <string name="home_selected_count">%1$d 選択中</string>
+    <string name="home_share_separately">個別に共有</string>
+    <string name="home_share_together">まとめて共有</string>
+    <string name="home_steps_goal_format">目標 %1$s</string>
+    <string name="home_steps_label">歩数</string>
+    <string name="home_take_second_shot">2枚目の写真を撮ってください</string>
+    <string name="home_water_next">次回 %1$s · %2$s</string>
+    <string name="home_water_next_tomorrow">次回 %1$s · 明日 %2$s</string>
+    <string name="home_note_empty">この日のメモを追加</string>
+    <string name="note_edit_title">その日のメモ</string>
+    <string name="note_placeholder">考え、進捗、観察…</string>
+    <string name="note_char_count">%1$d / %2$d</string>
+
+    <string name="import_add_to_log">記録に追加</string>
+    <string name="import_add_to_log_many_format">%1$d 件を記録に追加 · %2$d %3$s</string>
+    <string name="import_body_metrics_empty">このファイルにはインポートできる体重・身体データの記録がありません。</string>
+    <string name="import_body_metrics_malformed">ファイルを読み込めませんでした：%1$s</string>
+    <string name="import_body_metrics_success">体重 %1$d 件、体脂肪 %2$d 件、測定 %3$d 件をインポートしました。</string>
+    <string name="import_body_metrics_title">体重と身体データをインポート</string>
+    <string name="import_body_metrics_unsupported">サポートされていないファイルです。対応：Chompass JSON/CSV、openScale CSV、一般的な体重 CSV。</string>
+    <string name="import_diary_empty">このファイルにはインポートできる日記の記録がありません。</string>
+    <string name="import_diary_failed">インポートに失敗しました：%1$s</string>
+    <string name="import_diary_malformed">無効な JSON：%1$s</string>
+    <string name="import_diary_success_count">食品記録を %1$d 件インポートしました。</string>
+    <string name="import_diary_title">食事日記をインポート（JSON）</string>
+    <string name="import_diary_unsupported">サポートされていない日記ファイル：%1$s。Fud AI、NoFUD、Chompass の JSON バージョン1.0または1.1を使用してください。</string>
+    <string name="import_note">送信者と同じ栄養データで記録に追加されます。写真は含まれません。</string>
+    <string name="import_sync_failed">同期インポートに失敗しました：%1$s</string>
+    <string name="import_sync_success">同期ドキュメントをインポートしました。</string>
+    <string name="import_sync_title">同期 JSON をインポート</string>
+    <string name="keto_carb_manual_hint">手動目標は1日あたり20〜50 g のネット炭水化物に制限されます。</string>
+    <string name="keto_carb_mode_adaptive">適応型炭水化物</string>
+    <string name="keto_carb_mode_adaptive_subtitle">あなたのプロフィールと目標から推奨。</string>
+    <string name="keto_carb_mode_manual">手動炭水化物</string>
+    <string name="keto_carb_mode_manual_subtitle">ネット炭水化物の目標をグラム単位で設定します。</string>
+    <string name="keto_carb_setup_title">ケト炭水化物の設定</string>
+    <string name="label_date">日付</string>
+    <string name="label_derived">派生</string>
+    <string name="label_time">時刻</string>
+    <string name="label_total">合計</string>
+    <string name="macro_carbs_format">炭水化物：%1$s</string>
+    <string name="macro_fat_format">脂質：%1$s</string>
+    <string name="macro_goal_of">%1$d%2$s 中</string>
+    <string name="macro_protein_format">タンパク質：%1$s</string>
+    <string name="macro_status_goal_reached">目標達成</string>
+    <string name="macro_status_left">%1$s%2$s残り</string>
+    <string name="macro_status_no_goal">目標なし</string>
+    <string name="macro_status_over">%1$s%2$s超過</string>
+    <string name="macro_status_floor_met">最低値達成</string>
+    <string name="meal_photo_cd">写真 %1$d</string>
+    <string name="meal_photos_add_from_library">写真を追加</string>
+    <string name="meal_photos_add_photo">写真を追加</string>
+    <string name="meal_photos_count">10枚中 %1$d</string>
+    <string name="measure_calf">ふくらはぎ</string>
+    <string name="measure_chest">胸囲</string>
+    <string name="measure_hips">ヒップ</string>
+    <string name="measure_neck">首囲</string>
+    <string name="measure_thigh">太もも</string>
+    <string name="measure_upper_arm">上腕</string>
+    <string name="measure_waist">ウエスト</string>
+    <string name="measure_wrist">手首</string>
+    <string name="measure_neck_short">首</string>
+    <string name="measure_waist_short">腰</string>
+    <string name="measure_hips_short">ヒップ</string>
+    <string name="measure_chest_short">胸</string>
+    <string name="measure_upper_arm_short">上腕</string>
+    <string name="measure_thigh_short">もも</string>
+    <string name="measure_calf_short">ふくら</string>
+    <string name="measure_wrist_short">手首</string>
+    <string name="measurement_history">測定履歴</string>
+    <string name="notif_channel_body_fat">体脂肪記録リマインダー</string>
+    <string name="notif_channel_body_fat_desc">体脂肪の測定値を記録する1日1回のリマインダー。</string>
+    <string name="notif_channel_updates">アプリ更新</string>
+    <string name="notif_channel_updates_desc">Chompass の新しいバージョンが利用可能です。</string>
+    <string name="notif_channel_water">水分リマインダー</string>
+    <string name="notif_channel_water_desc">水を飲んで記録する1日1回のリマインダー。</string>
+    <string name="notif_channel_weight_log">体重記録リマインダー</string>
+    <string name="notif_channel_weight_log_desc">体重を測って記録する1日1回のリマインダー。</string>
+    <string name="notif_goal_weight_text">目標体重に到達しました。</string>
+    <string name="notif_goal_weight_title">目標達成 🎉</string>
+    <string name="notif_update_text">Chompass の新しいバージョンが準備できました。タップして更新。</string>
+    <string name="notif_update_title">更新があります</string>
+    <string name="notif_water_text">水を飲んで Chompass に記録しましょう。</string>
+    <string name="notif_water_text_next_qty">%1$s を飲む · 次は約%2$d分後</string>
+    <string name="notif_water_text_qty">%1$s を飲んで Chompass に記録しましょう。</string>
+    <string name="notif_water_title">水分補給の時間です</string>
+    <string name="nutrient_cholesterol_format">コレステロール：%1$smg</string>
+    <string name="nutrient_fiber_format">食物繊維：%1$sg</string>
+    <string name="nutrient_potassium_format">カリウム：%1$smg</string>
+    <string name="nutrient_sat_fat_format">飽和脂肪酸：%1$sg</string>
+    <string name="nutrient_short_caffeine">カフェイン</string>
+    <string name="nutrient_short_omega">オメガ-3</string>
+    <string name="nutrient_short_calories">カロ</string>
+    <string name="nutrient_short_added_sugar">添加糖</string>
+    <string name="nutrient_short_cholesterol">コレステ</string>
+    <string name="nutrient_short_sodium">ナ</string>
+    <string name="nutrient_short_potassium">カ</string>
+    <string name="nutrient_short_trans_fat">トランス</string>
+    <string name="nutrient_short_calcium">カル</string>
+    <string name="nutrient_short_iron">鉄</string>
+    <string name="nutrient_short_magnesium">マグ</string>
+    <string name="nutrient_short_zinc">亜鉛</string>
+    <string name="nutrient_short_folate">葉酸</string>
+    <string name="nutrient_short_sat_fat">飽和脂肪</string>
+    <string name="nutrient_short_vit_a">ビタA</string>
+    <string name="nutrient_short_vit_c">ビタC</string>
+    <string name="nutrient_short_vit_d">ビタD</string>
+    <string name="nutrient_short_vit_e">ビタE</string>
+    <string name="nutrient_short_vit_k">ビタK</string>
+    <string name="nutrient_sodium_format">ナトリウム：%1$smg</string>
+    <string name="nutrient_sugar_format">糖質：%1$sg</string>
+    <string name="nutrition_label_calcium">カルシウム</string>
+    <string name="nutrition_label_folate">葉酸</string>
+    <string name="nutrition_label_iron">鉄</string>
+    <string name="nutrition_label_magnesium">マグネシウム</string>
+    <string name="nutrition_label_caffeine">カフェイン</string>
+    <string name="nutrition_label_omega3">オメガ3</string>
+    <string name="nutrition_label_trans_fat">トランス脂肪酸</string>
+    <string name="nutrition_label_vitamin_a">ビタミンA</string>
+    <string name="nutrition_label_vitamin_b12">ビタミンB12</string>
+    <string name="nutrition_label_vitamin_c">ビタミンC</string>
+    <string name="nutrition_label_vitamin_d">ビタミンD</string>
+    <string name="nutrition_label_vitamin_e">ビタミンE</string>
+    <string name="nutrition_label_vitamin_k">ビタミンK</string>
+    <string name="nutrition_label_zinc">亜鉛</string>
+    <string name="nutrition_lock_editing">栄養編集をロック</string>
+    <string name="nutrition_section_home_cards">ホームカード</string>
+    <string name="nutrition_unlock_editing">栄養編集のロックを解除</string>
+    <string name="on_device_download_failed">ダウンロードに失敗しました</string>
+    <string name="on_device_model_delete">ダウンロード済みモデルを削除</string>
+    <string name="on_device_model_clear">この端末から削除</string>
+    <string name="on_device_model_clear_footer">%1$sのモデルファイルと未完了のダウンロードを削除し、メモリからも解放します。</string>
+    <string name="settings_on_device_headroom">オンデバイスAIのメモリ余裕</string>
+    <string name="settings_on_device_headroom_footer">オンデバイスモデルの実行前に確保される追加メモリ:%1$s。空きメモリが十分あるのに解析が拒否される場合にのみ下げてください。低すぎると、解析に失敗したり、システムがアプリを終了させたり、端末全体が遅くなったりすることがあります。</string>
+    <string name="settings_custom_models_loading">サーバーからモデルを読み込んでいます…</string>
+    <string name="settings_custom_models_error">サーバーに接続できませんでした。デフォルトのリストを表示します。</string>
+    <string name="on_device_model_leftover_footer">以前のオンデバイスダウンロードの%1$sがこの端末に残っています。開いて再開または削除できます。</string>
+    <string name="on_device_model_download">ダウンロード</string>
+    <string name="on_device_model_downloading">ダウンロード中… %1$d%%</string>
+    <string name="on_device_model_e4b_notice">E2B より大きく遅いですが、より良い食品説明が得られる可能性があります。安定性のため写真分析は CPU/GPU 分割で動作し、テキストのみより顕著に遅くなる場合があります。より速い応答を希望する場合は設定 → モデルで E2B を選択してください。</string>
+    <string name="on_device_model_ready">ダウンロード済み・利用可能です。</string>
+    <string name="on_device_model_retry">ダウンロードを再試行</string>
+    <string name="on_device_model_sheet_title">オンデバイスモデル</string>
+    <string name="on_device_model_storage_short">空き容量が不足しています。少なくとも %1$s の空きが必要です（現在 %2$s）。</string>
+    <string name="on_device_model_unload">モデルをアンロード（メモリ解放）</string>
+    <string name="on_device_model_verifying">ダウンロードを検証中…</string>
+    <string name="on_device_model_wifi_only">Wi-Fi のみでダウンロード</string>
+    <string name="onboarding_accuracy_body">写真による推定やあいまいな量の表記（ひと握り、カップ、1食分）は不正確なことがよくあります。アプリの提案、特に AI/LLM の出力はあくまで推定であり、医学的事実ではありません。重要な数値はご自身で確認してください。</string>
+    <string name="onboarding_accuracy_title">精度に関する注意</string>
+    <string name="onboarding_ai_free_tier_note">無料プランは Flash モデルをカバーします。Pro モデルは AI Studio プロジェクトでの課金が必要です。</string>
+    <string name="onboarding_api_key_empty">先に API キーを貼り付けてください</string>
+    <string name="onboarding_api_key_network">ネットワークエラー。接続を確認してもう一度お試しください。</string>
+    <string name="onboarding_api_key_rejected">その API キーは拒否されました。AI Studio で新しいキーを作成して貼り直してください。</string>
+    <string name="onboarding_api_key_test">キーをテスト</string>
+    <string name="onboarding_api_key_testing">テスト中…</string>
+    <string name="onboarding_api_key_works">キーは動作します</string>
+    <string name="onboarding_diet_mode_subtitle">デフォルトの推奨スタイルを選択</string>
+    <string name="onboarding_diet_mode_title">食事モードを利用していますか？</string>
+    <string name="onboarding_disclaimers_subtitle">これらの重要な注意事項をお読みください</string>
+    <string name="onboarding_disclaimers_title">始める前に</string>
+    <string name="onboarding_privacy_cloud_coach">コーチとのチャット（プロフィールと最近の記録を含む）</string>
+    <string name="onboarding_privacy_cloud_food">食品の写真と食事メモ（食品分析）</string>
+    <string name="onboarding_privacy_cloud_goals">AI が目標を推定する際のプロフィール（計画、再計算、適応型目標）</string>
+    <string name="onboarding_privacy_cloud_lead">クラウドプロバイダー利用時、以下のデータはデバイスからそのプロバイダーへ送信されます：</string>
+    <string name="onboarding_privacy_cloud_title">クラウドプロバイダー（Gemini、OpenAI、Claude など）</string>
+    <string name="onboarding_privacy_cloud_whatif">「どうなる？」: 今日記録済みの日記合計を含む食事の影響</string>
+    <string name="onboarding_privacy_note">広告・分析・アカウントなし。食事記録と API キーはデバイスに留まります。</string>
+    <string name="onboarding_privacy_note_cloud">クラウドプロバイダー利用時、食品の写真、食事メモ、チャット、プロフィールデータはそのプロバイダーに送信されます。オンデバイスの Gemma 4 モデルのみがすべてを端末に保持します。</string>
+    <string name="onboarding_privacy_note_ollama">Ollama はお使いのコンピューターで動作します。クラウドプロバイダーには何も送信されません。</string>
+    <string name="onboarding_privacy_note_ondevice">Gemma 4 はこのデバイス上で完全に動作します。入力・撮影した内容がサーバーに送信されることはありません。</string>
+    <string name="onboarding_privacy_ondevice_body">食品分析、「どうなる？」、目標推定はこの端末で動作し、外部へ送信されません。コーチはまだオンデバイス非対応です。モデルのダウンロードは Hugging Face から行われます。</string>
+    <string name="onboarding_privacy_ondevice_title">オンデバイス Gemma 4（完全プライベート）</string>
+    <string name="onboarding_privacy_title">プライバシーと AI プロバイダー</string>
+    <string name="onboarding_safety_body">Chompass は記録のサポートツールであり、臨床ツールではありません。摂食障害の既往がある場合、または記録が食事や体型への不安を強める場合は、続行前に一時停止して医師またはセラピストに相談してください。</string>
+    <string name="onboarding_safety_low_bf">低体脂肪率の注意：痩せすぎの状態が長く続くと、女性・男性ともにホルモン、回復、全体的な健康に影響する可能性があります。</string>
+    <string name="onboarding_safety_not_medical">これは医療アドバイスではありません。計算式による推定は外れることがあります。大きな食事変更の前には、管理栄養士、医師、スポーツ医学の専門家に相談してください。特に持病がある場合、妊娠中・授乳中、または18歳未満の場合は必須です。</string>
+    <string name="onboarding_safety_settings_hint">完全な安全・医療ガイドは設定で確認できます。</string>
+    <string name="onboarding_safety_title">安全に関する注意</string>
+    <string name="onboarding_safety_water">水分補給の目標や飲水リマインダーは大まかな推定であり、医療アドバイスではありません。喉の渇きはどのアプリよりも良い指標であり、あなたに合うことを知っているのは医師です。</string>
+    <string name="paste_busy">貼り付け中…</string>
+    <string name="paste_n_entries">%1$d 件の記録を貼り付け</string>
+    <string name="placeholder_hour">時</string>
+    <string name="placeholder_minute">分</string>
+    <string name="progress_activity_exercise_week">運動（7日）</string>
+    <string name="progress_activity_from_health">Health Connect から</string>
+    <string name="progress_activity_minutes_format">%1$d 分</string>
+    <string name="progress_activity_section">活動</string>
+    <string name="progress_activity_steps_avg">平均歩数（7日）</string>
+    <string name="progress_activity_steps_today">今日の歩数</string>
+    <string name="progress_chart_loading">グラフを読み込み中…</string>
+    <string name="progress_macro_progress_format">%1$dg / %2$dg</string>
+    <string name="progress_stat_average">平均</string>
+    <string name="progress_stat_net_change">純変化</string>
+    <string name="progress_wellness_bpm_format">%1$d bpm</string>
+    <string name="progress_wellness_hydration">今日の水分</string>
+    <string name="progress_wellness_hydration_format">%1$s ml</string>
+    <string name="progress_wellness_resting_hr">安静時心拍（7日）</string>
+    <string name="progress_wellness_section">健康</string>
+    <string name="progress_wellness_sleep">睡眠</string>
+    <string name="progress_wellness_sleep_format">%1$d時間 %2$d分</string>
+    <string name="progressive_meal_add_another">もう1つ追加</string>
+    <string name="progressive_meal_add_to_meal">食事に追加</string>
+    <string name="progressive_meal_continue">食事を続ける（%1$d）</string>
+    <string name="progressive_meal_discard">食事を破棄</string>
+    <string name="progressive_meal_empty">材料がまだありません</string>
+    <string name="progressive_meal_ingredient_count">材料 %1$d 点</string>
+    <string name="progressive_meal_log">食事を記録</string>
+    <string name="progressive_meal_name_placeholder">食事名</string>
+    <string name="progressive_meal_name_hint_empty">空欄のままだと材料ごとに記録します。</string>
+    <string name="progressive_meal_name_hint_named">1つの食品として記録します。</string>
+    <string name="progressive_meal_log_items">材料を記録</string>
+    <string name="progressive_meal_remove">材料を削除</string>
+    <string name="progressive_meal_scale_tip">ヒント：分析前に秤の重量（例：180 g）をメモしましょう</string>
+    <string name="progressive_meal_title">食事を作成中</string>
+    <string name="progressive_meal_totals">食事の合計</string>
+    <string name="recipe_builder_add_from_favorites">お気に入りから</string>
+    <string name="recipe_builder_add_ingredient">材料を追加</string>
+    <string name="recipe_builder_add_manual">手動入力</string>
+    <string name="recipe_builder_log_now">今すぐ記録</string>
+    <string name="recipe_builder_name_placeholder">レシピ名</string>
+    <string name="recipe_builder_no_ingredients">材料がまだありません</string>
+    <plurals name="recipe_builder_fill_missing">
+        <item quantity="one">栄養値が欠けている材料が%1$d件あります</item>
+        <item quantity="other">栄養値が欠けている材料が%1$d件あります</item>
+    </plurals>
+    <string name="recipe_builder_filling">%1$d / %2$d件を入力中…</string>
+    <string name="recipe_builder_remove_ingredient">材料を削除</string>
+    <string name="recipe_builder_save">保存</string>
+    <string name="recipe_builder_title_edit">レシピを編集</string>
+    <string name="recipe_builder_title_new">新しいレシピ</string>
+    <string name="recipe_ingredient_count_format">材料 %1$d 点</string>
+    <string name="saved_meals_no_recipes">レシピはまだありません\n+ をタップして複数の材料から作成</string>
+    <string name="saved_meal_review_hint">記録するとこの食事が追加されます。鉛筆は保存した食事を編集します。</string>
+
+    <string name="saved_meals_tab_recipes">レシピ</string>
+    <string name="section_date_time">日付と時刻</string>
+    <string name="section_share">共有</string>
+    <string name="section_source">出典</string>
+    <string name="serving_unit_heuristics_default_value">デフォルト：%1$s g / 単位</string>
+    <string name="serving_unit_heuristics_footer">カテゴリをオフにしてグラムのままにするか、単位あたりのカスタムグラムを設定できます（例：デフォルト330 ml の代わりに0.5 L 缶）。</string>
+    <string name="serving_unit_heuristics_reset">デフォルトに戻す</string>
+    <string name="serving_unit_mode_ai_call">AI 判定</string>
+    <string name="serving_unit_mode_ai_call_subtitle">最も遅く、最も正確。必要なときに AI プロバイダーに単位を尋ねます。</string>
+    <string name="serving_unit_mode_grams_only">グラムのみ</string>
+    <string name="serving_unit_mode_grams_only_subtitle">最速。記録はグラムのまま、追加ステップなし。</string>
+    <string name="serving_unit_mode_heuristic">ヒューリスティック</string>
+    <string name="serving_unit_mode_heuristic_subtitle">即時・概算。ネットワークなしで食品名から一般的な単位（切れ、ml、大さじ…）を推定します。</string>
+    <string name="settings_accuracy_body">写真による食品推定やあいまいな分量表記は誤っていることがよくあります。アプリの提案、特に AI モデルは医学的事実ではありません。</string>
+    <string name="settings_accuracy_title">推定の精度</string>
+    <string name="settings_adaptive_goals">適応型目標</string>
+    <string name="settings_ai_features_master">AI 機能</string>
+    <string name="settings_ai_features_master_footer">AI プロバイダーにデータを送信するすべての機能をオフにします：コーチ、写真/テキスト/音声記録、「どうなる？」、AI 目標提案。バーコード、食品検索、手動入力、保存した食事、水、同期、Health Connect は通常どおり動作します。</string>
+    <string name="settings_ai_privacy_cloud">食品の写真、メモ、チャット、プロフィールデータはこのプロバイダーに送信されます。オンデバイスの Gemma 4 モデルのみがすべてを端末に保持します。</string>
+    <string name="settings_ai_privacy_ollama">Ollama はお使いのコンピューターで動作します。クラウドプロバイダーには何も送信されません。</string>
+    <string name="settings_ai_privacy_ondevice">完全プライベート：食品分析、「どうなる？」、目標推定はこのデバイスで動作し、サーバーには何も送信されません。</string>
+    <string name="settings_ai_read_timeout">AI 読み取りタイムアウト</string>
+    <string name="settings_ai_read_timeout_unit">秒</string>
+    <string name="settings_ai_read_timeout_value">%1$d 秒</string>
+    <string name="settings_goal_tier">目標再計算プロンプト</string>
+    <string name="settings_goal_tier_footer">目標の再計算でモデルに送るデータの量です。安全はコンパクトな要約を送り、小さいモデルやローカルモデルに向いています。スマートは体重と食事の全履歴を送るので、大きなモデルが傾向を自ら判断できます。自動はモデル名で選びます。</string>
+    <string name="goal_tier_auto">自動</string>
+    <string name="goal_tier_safe">安全（コンパクト）</string>
+    <string name="goal_tier_smart">スマート（全履歴）</string>
+    <string name="settings_ai_reasoning_effort">推論の深さ</string>
+    <string name="settings_ai_reasoning_effort_footer">OpenRouter モデル：思考予算を設定します。カスタムサーバーと Ollama：サーバーが対応していれば reasoning_effort を送信します。サーバーがリクエストを拒否する場合は自動を選んでください。</string>
+    <string name="settings_ai_vision_model">ビジョンモデル</string>
+    <string name="settings_ai_vision_model_footer">写真はこのモデル、テキストはメインモデルを使用します。すべてにメインモデルを使うには空のままにします。</string>
+    <string name="settings_ai_vision_model_unset">（モデルと同じ）</string>
+    <string name="settings_breakfast_starts">朝食の開始</string>
+    <string name="settings_calc_adaptive_formula">調整 =（目標週変化 − 観測週変化）× 7700 ÷ 7\n±150 kcal/日に制限</string>
+    <string name="settings_calc_adaptive_name">適応型目標（毎週）</string>
+    <string name="settings_calc_adaptive_used">オンの間、Chompass は観測された体重傾向を選択した週のペースと比較し、カロリーを最大 ±150 kcal/日（最小25 kcal）調整します。安全下限：max(BMR, 1200 kcal)。安全上限：測定または計算式による維持量の125%%。少なくとも4日分の食品記録と3回の体重測定、または Health Connect のエネルギー・データが必要です。</string>
+    <string name="settings_calc_body_formula">ウエストヒップ比 = ウエスト ÷ ヒップ\nウエスト身長比 = ウエスト ÷ 身長\n米海軍 %BF：性別別の対数式（首、ウエスト、ヒップ、身長）</string>
+    <string name="settings_calc_rfm_name">RFM 体脂肪率</string>
+    <string name="settings_calc_rfm_used">ウエストと身長が記録されているときに表示します。体脂肪として使うを確認するまで体脂肪は書き込みません。その他の性別は Navy と同様に男性係数を使います。</string>
+    <string name="settings_calc_rfm_formula" formatted="false">%BF = 64 − 20 × (身長 ÷ ウエスト) + 12 × sex\nsex = 0 男性、1 女性。2–65% の外は却下。</string>
+    <string name="settings_calc_body_name">メジャー計測による派生指標</string>
+    <string name="settings_calc_body_used">任意の周囲長から、ウエストヒップ比、ウエスト身長比、米海軍式体脂肪率、手首の骨格サイズを導出できます。これらはメジャー計測による大まかな推定です。プロフィールで体脂肪率を別途入力しない限り、BMR を上書きしません。</string>
+    <string name="settings_calc_calorie_target">目標のカロリーターゲット</string>
+    <string name="settings_calc_forecast_formula">予測 kg/週 =（1日平均カロリー − TDEE）× 7 ÷ 7700\n観測 kg/週 = Theil–Sen 傾き × 7\nまばらな記録：記録日がウィンドウの 50%% 未満の場合、平均摂取量 ÷ 暦日</string>
+    <string name="settings_calc_forecast_name">エネルギーバランス予測</string>
+    <string name="settings_calc_forecast_used">進捗グラフと ETA 予測は、最近の食事記録と体重測定（最大90日）を使用します。ウィンドウの半分未満の日にしか記録しない場合、摂取量は暦日で平均され、まれな「食べ過ぎ」の日が予測を膨らませません。それ以外は記録のある日のみで平均されます。観測体重傾向は、秤の記録に対するロバストな中央値傾き（Theil–Sen）フィットを使用します。</string>
+    <string name="settings_calc_home_gauge_formula">推定活動 = TDEE − BMR\n座位予算 = カロリー目標 − 推定活動\n活動追加目標 = 座位予算 +（測定または推定活動）\n全額加算（デフォルトはオフ）はこの分割を省き、今日の実測消費を満額のカロリー目標に上乗せします。測定がなければ目標は満額のままです。</string>
+    <string name="settings_calc_home_gauge_name">ホームリングの活動消費</string>
+    <string name="settings_calc_home_gauge_used">ホーム表示では、活動消費を目標に追加したり、ネット摂取を追跡したり、消費ヒントを表示したりできます。活動レベルの推定値は TDEE マイナス BMR です（PAL 乗数の部分）。「活動を追加」と「二重」は Health Connect オフ時にその推定値を使用し、「ネット」は Health Connect の測定消費が必要です。「活動を追加」は保存済み目標を座位ベースと今日の活動レイヤーに分割し、活動が二重計上されないようにします。「活動を追加」では、活動レベルをトレーニングなしの日常に設定してください。測定または推定の活動がワークアウトをカバーし、高い PAL に積み上がりません。</string>
+    <string name="settings_calc_intro">1日のカロリーとマクロの目標は AI が設定します。「目標を再計算」をタップするか、適応型目標オンの場合に週1回程度自動で、Chompass はプロフィール、下記の参照式、最近記録した食事、体重傾向を AI プロバイダーに送信します。査読済みの計算式から始め、データに合わせて調整して維持量と目標を推定します。</string>
+    <string name="settings_calc_katch_formula">BMR = 370 + 21.6 × LBM(kg)\nLBM = 体重 × (1 − %体脂肪)</string>
+    <string name="settings_calc_katch_name">Katch-McArdle 式</string>
+    <string name="settings_calc_katch_used">体脂肪率を入力すると自動で使用されます。総体重ではなく除脂肪体重から BMR を導出するため、痩せ型・アスリートに正確です。 90日より古い測定値はMifflin-St Jeorにフォールバックします。</string>
+    <string name="settings_calc_macro_split">マクロ栄養素の配分</string>
+    <string name="settings_calc_maintenance">維持量と目標調整</string>
+    <string name="settings_calc_methods">計算方法</string>
+    <string name="settings_calc_micro_name">食事ごとの推定</string>
+    <string name="settings_calc_micro_used">食事ごとに返されるカロリー、マクロ、食物繊維、糖質、飽和脂肪酸、コレステロール、ナトリウム、カリウムなどの微量栄養素値は、選択した AI プロバイダーを使用して、食品画像、音声文字起こし、テキスト説明から AI が生成した推定値です。</string>
+    <string name="settings_calc_micro_values">微量栄養素の値</string>
+    <string name="settings_calc_mifflin_formula">男性：10×体重(kg) + 6.25×身長(cm) − 5×年齢 + 5\n女性：10×体重(kg) + 6.25×身長(cm) − 5×年齢 − 161</string>
+    <string name="settings_calc_mifflin_name">Mifflin-St Jeor 式</string>
+    <string name="settings_calc_mifflin_used">安静時代謝のデフォルト式。体脂肪率を入力していない場合に使用されます。</string>
+    <string name="settings_calc_sec_bmr">安静時代謝（BMR）</string>
+    <string name="settings_calc_sec_body">体組成の推定</string>
+    <string name="settings_calc_sec_forecast">体重傾向と適応型目標</string>
+    <string name="settings_calc_sec_home_gauge">ホームのカロリーゲージ</string>
+    <string name="settings_calc_sec_tdee">1日のエネルギー消費（TDEE）</string>
+    <string name="settings_calc_split_formula">タンパク質：活動レベルに応じて kg あたり約0.8〜2.2 g（減量時はやや高め）\n脂質：体重 kg あたり約0.6 g\n炭水化物：残りのカロリー ÷ 4 kcal/g</string>
+    <string name="settings_calc_split_name">タンパク質・炭水化物・脂質の目標</string>
+    <string name="settings_calc_split_used">AI はこれらの参照をガイドに、タンパク質・炭水化物・脂質をカロリーターゲットに合わせます。タンパク質は活動レベルでスケールし（体脂肪 % 設定時は除脂肪体重ベース）、脂質は体重から、炭水化物は残りを埋めます。任意の値を固定したり、設定で自分で編集したりできます。</string>
+    <string name="settings_calc_target_formula">体脂肪1ポンド ≈ 3500 kcal · 1 kg ≈ 7700 kcal\n週のペース ÷ 7 を維持量から引き（減量）または足し（増量）、1日のカロリーターゲットを設定します。</string>
+    <string name="settings_calc_target_name">維持量と目標調整</string>
+    <string name="settings_calc_target_used">維持量は TDEE から始まります。エネルギー消費オンの場合、Health Connect の測定消費（14日間の活動+基礎平均）から始まります。AI は記録された摂取量と体重傾向に対して維持量を精緻化し、目標を適用します：週の体重変化ペースが1日のカロリー不足（減量）または超過（増量）になります。</string>
+    <string name="settings_calc_tdee_formula">座位：1.2 · 軽度：1.375 · 中度：1.465 · 活動的：1.55 · 非常に活動的：1.725 · 超活動的：1.9</string>
+    <string name="settings_calc_tdee_name">活動係数法</string>
+    <string name="settings_calc_tdee_used">TDEE = BMR × 活動係数。係数は選択した活動レベルに対応します。中度は、週に数回運動するデスクワーカー向けに1.465（FAO/WHO の軽度1.375と中度1.55の間）を使用します。これは AI が開始する維持ベースラインです（エネルギー消費が測定値を提供しない場合）。</string>
+    <string name="settings_customize_progress">進捗をカスタマイズ</string>
+    <string name="settings_customize_progress_summary">%1$s · %2$s</string>
+    <string name="settings_danger_zone">危険ゾーン</string>
+    <string name="settings_danger_zone_caption">これらの操作はデータを完全に削除し、元に戻せません。</string>
+    <string name="settings_default_to_grams">デフォルトでグラム</string>
+    <string name="settings_default_to_grams_info">新しい食品レビューシートはグラム選択で開きます。記録前には、分量、切れ、カップなど検出された他の単位にも切り替えられます。</string>
+    <string name="settings_diet_mode">食事モード</string>
+    <string name="settings_dinner_starts">夕食の開始</string>
+    <string name="settings_energy_goals">エネルギー消費目標</string>
+    <string name="settings_fixed_launcher_icon">ランチャーアイコンを固定</string>
+    <string name="settings_fixed_launcher_icon_subtitle">ランチャーアイコンをティールに保ちます。テーマカラーと壁紙に追従しなくなります。</string>
+    <string name="settings_system_date_time_pickers">システムの日付と時刻ピッカー</string>
+    <string name="settings_system_date_time_pickers_subtitle">食事を編集するとき、端末の日付・時刻ダイアログを使う。</string>
+    <string name="add_food_log_time">記録時刻</string>
+    <string name="add_food_log_time_now">現在</string>
+    <string name="cd_clear_log_time">現在時刻を使う</string>
+    <string name="edit_food_apply_time">他の%1$sの項目にも適用</string>
+    <string name="settings_food_intro">記録の動作：単位、食事時間、写真分析、分量サイズの検出。</string>
+    <string name="settings_food_log_sort">食事記録の並び順</string>
+    <string name="settings_food_section_logging">記録</string>
+    <string name="settings_food_section_photo">写真分析</string>
+    <string name="settings_food_section_serving">分量サイズ</string>
+    <string name="settings_gemini_google_search">Google 検索グラウンディング</string>
+    <string name="settings_glass_blur">ガラスブラー</string>
+    <string name="settings_goal_auto">自動</string>
+    <string name="settings_goals_how_adaptive">適応型目標は、カロリーとマクロの目標を週1回程度再計算します。</string>
+    <string name="settings_goals_how_energy">エネルギー消費は、Health Connect の測定消費に目標を固定します。</string>
+    <string name="settings_goals_how_lock">目標を固定すると自分の値が維持されます。再計算や適応型目標は変更しません。</string>
+    <string name="settings_goals_how_title">目標の仕組み</string>
+    <string name="settings_goals_intro">1日のカロリーとマクロの目標、およびそれを左右する要因。</string>
+    <string name="settings_group_food">食品と記録</string>
+    <string name="settings_group_food_summary">記録、分量サイズ、写真分析</string>
+    <string name="settings_health_background_denied">バックグラウンド同期には、Chompass が閉じている間に Health Connect を読み取る権限が必要です。トグルをもう一度タップして許可してください。</string>
+    <string name="settings_health_background_sync">バックグラウンド同期</string>
+    <string name="settings_health_background_sync_desc">Chompass が閉じていても、数時間ごとに Health Connect の新しいデータを確認します。デフォルトではオフ。Health Connect モジュールが対応している場合は、バックグラウンド読み取り権限が必要です。</string>
+    <string name="settings_health_background_sync_unsupported">このデバイスの Health Connect モジュールはバックグラウンド同期に対応していません。Chompass を開いている間のフォアグラウンド同期は機能します。</string>
+    <string name="settings_health_companions">Health Connect に対応するあらゆるものと同期：Gadgetbridge（Huawei、Honor、Amazfit、Mi Band などのウェアラブル）、openScale（Bluetooth 体重計）、Samsung Health、Fitbit など。体重と体脂肪は自動で取り込まれ、記録した食事と水は送信され、他のアプリの食事は取り込まれます。睡眠、安静時心拍、水分補給は進捗タブに表示されます。</string>
+    <string name="settings_health_connect">Health Connect</string>
+    <string name="settings_health_denied">Health Connect には、体重、体脂肪、活動カロリー、総カロリー、および栄養と水の書き込み権限が必要です。トグルをもう一度タップし、同期とエネルギー目標の推定に必要なすべての権限を許可してください。</string>
+    <string name="settings_health_manage_failed">このデバイスで Health Connect 設定を開けませんでした。</string>
+    <string name="settings_health_open_play_store">Play ストアを開く</string>
+    <string name="settings_health_open_settings">Health Connect を開く</string>
+    <string name="settings_health_unavailable_install">Health Connect がインストールされていません。Play ストアからインストールし、トグルをもう一度タップしてください。</string>
+    <string name="settings_health_update_required">Health Connect にはシステム更新が必要です。Google Play システム更新（またはお使いの ROM の同等品）をインストールし、トグルをもう一度タップしてください。Android 14+ では別途 Health Connect アプリをインストールする必要はありません。</string>
+    <string name="settings_health_update_required_apk">Health Connect には更新が必要です。Play ストアから更新し、トグルをもう一度タップしてください。</string>
+    <string name="settings_home_display">ホームをカスタマイズ</string>
+    <string name="settings_home_display_summary">栄養素カード、活動、カロリーゲージ、記録チップ</string>
+    <string name="settings_keto_carb_mode">ケト炭水化物モード</string>
+    <string name="settings_keto_net_carbs">ケトネット炭水化物</string>
+    <string name="settings_language_system">システムデフォルト</string>
+    <string name="settings_language_title">言語</string>
+    <string name="settings_last_sync">最終同期：%1$s</string>
+    <string name="settings_late_snack_starts">夜食の開始</string>
+    <string name="settings_lunch_starts">昼食の開始</string>
+    <string name="settings_macro_auto_label_format">%1$s（自動）</string>
+    <string name="settings_macro_locked">固定中</string>
+    <string name="settings_macro_pin_hint">最大2つのマクロを正確なグラムに固定できます。固定していないものは残りのカロリーから自動調整されます。</string>
+    <string name="settings_macro_pinned_format">%1$dg</string>
+    <string name="settings_macro_pinned_label_format">%1$s（固定）</string>
+    <string name="settings_macro_unlocked">固定解除</string>
+    <string name="settings_manage_health_access">Health Connect アクセスを管理</string>
+    <string name="settings_max_tokens">最大応答長</string>
+    <string name="settings_max_tokens_unit">トークン</string>
+    <string name="settings_meal_constituents">食事の材料内訳</string>
+    <string name="settings_meal_constituents_footer">有効にすると、AI は複合的な食事を、グラムと単位付きの編集可能な材料に分割できます。食材ごとの微量栄養素はより強力なクラウドモデルにのみ要求され、小さなモデルでもマクロ付きの食材リストは返されます。</string>
+    <string name="settings_meal_time_edit_format">%1$s</string>
+    <string name="settings_meal_times">食事時間</string>
+    <string name="settings_meal_times_customize">カスタマイズ</string>
+    <string name="settings_meal_times_description">自動の食事選択が次の食事に切り替わるタイミングを設定します。</string>
+    <string name="settings_meal_times_help">各食事は次の食事の開始まで続きます。夜食は朝食の開始まで夜通し続きます。記録前であれば手動で食事を変更できます。</string>
+    <string name="settings_needs_water_tracking">水分記録が必要</string>
+    <string name="settings_not_medical_advice">医療アドバイスではありません</string>
+    <string name="settings_not_medical_body">Chompass は推定ツールであり、臨床機器ではありません。計算式による推定は外れることがあります（BMR で±10%程度）。大きな食事変更の前には管理栄養士、医師、スポーツ医学の専門家に相談してください。持病、妊娠・授乳中、18歳未満、摂食障害がある場合は特に重要です。</string>
+    <string name="settings_not_medical_title">医療アドバイスではありません</string>
+    <string name="settings_not_synced">未同期</string>
+    <string name="settings_notif_app_updates">アプリ更新</string>
+    <string name="settings_notif_body_fat_reminder">体脂肪リマインダー</string>
+    <string name="settings_notif_daily_summary">1日のサマリー</string>
+    <string name="settings_notif_daily_summary_time">時刻</string>
+    <string name="settings_notif_daily_summary_needs_hc_background">実測の消費カロリーを出すには、%1$sでバックグラウンドのHealth Connectをオンにしてください。</string>
+    <string name="settings_notif_food_reminders">食事記録リマインダー</string>
+    <string name="settings_notif_goal_alerts">目標達成アラート</string>
+    <string name="settings_notif_none_selected">通知タイプが選択されていません。通知を許可したまま、すべてのリマインダーをオフにできます。</string>
+    <string name="settings_notif_water_reminder">水分リマインダー</string>
+    <string name="settings_notif_weight_reminder">体重記録リマインダー</string>
+    <string name="settings_notif_weight_reminder_time">時刻</string>
+    <string name="settings_notification_types">通知タイプ</string>
+    <string name="settings_notifications_intro">Chompass が送信するリマインダーと、表示されるタイミングを選択します。</string>
+    <string name="settings_off">オフ</string>
+    <string name="settings_on">オン</string>
+    <string name="settings_on_device_accuracy_footer">オンデバイスモデルはプライバシーのためローカルで動作します。クラウドモデル（Gemini、GPT、Claude など）よりはるかに小さく、分量・ブランド名・写真を誤読することがよくあります。オンデバイスが失敗したときにクラウドモデルが再試行できるよう、フォールバックプロバイダーを有効にしてください。</string>
+    <string name="settings_on_device_model">モデルファイル</string>
+    <string name="settings_on_device_model_not_downloaded">未ダウンロード</string>
+    <string name="settings_on_device_model_ready">ダウンロード済み</string>
+    <string name="settings_other_nutrient_goals">その他の栄養素目標</string>
+    <string name="settings_optional_nutrient_estimate_ai">AIで推定</string>
+    <string name="settings_optional_nutrient_estimate_ai_hint">プロフィールとカロリー目標からこれらの目標を設定します。手動で設定した値を置き換えます。</string>
+    <string name="settings_optional_nutrient_estimate_failed_title">目標を推定できませんでした</string>
+    <string name="settings_other_nutrients">その他の栄養素</string>
+    <string name="settings_pace_gain_format">+%1$s/週</string>
+    <string name="settings_pace_loss_format">−%1$s/週</string>
+    <string name="settings_permissions">権限</string>
+    <string name="settings_personal_intro">Chompass がエネルギー必要量と目標の推定に使う基本データ。</string>
+    <string name="settings_picker_custom_placeholder">%1$s 単位の値</string>
+    <string name="settings_picker_enter_custom">カスタム値を入力…</string>
+    <string name="settings_picker_confirm_above_title">通常より多い量</string>
+    <string name="settings_picker_confirm_above_message">この目標にはかなり大きな量です。保存しますか？</string>
+    <string name="settings_calorie_below_floor_title">安全な下限を下回っています</string>
+    <string name="settings_calorie_below_floor_message">これは推定安静時代謝または%1$sを下回っています。医療専門家が処方した場合のみ続けてください。</string>
+    <string name="settings_calorie_below_floor_continue">それでも続ける</string>
+    <string name="settings_picker_use_wheel">ホイールを使用</string>
+    <string name="settings_picker_vitd_iu_hint">%1$d mcg ≈ %2$d IU</string>
+    <string name="settings_progress_plots">身体測定グラフ</string>
+    <string name="settings_progress_plots_count">%1$d グラフ</string>
+    <string name="settings_progress_plots_latest">最新：%1$s %2$s</string>
+    <string name="settings_progress_plots_no_data">測定はまだありません</string>
+    <string name="settings_progress_plots_off">グラフオフ</string>
+    <string name="settings_progress_plots_subtitle">進捗タブに部位ごとの周囲長トレンドを表示します。データは個人情報 → 身体測定から取得されます。</string>
+    <string name="settings_rebalance_blocked_message">カロリーが固定され、他の2つのマクロも固定されているため、この変更を吸収する余裕がありません。カロリーか別のマクロの固定を解除して再試行してください。</string>
+    <string name="settings_rebalance_blocked_title">再調整できません</string>
+    <string name="settings_refresh_energy_goals">エネルギー消費目標を更新</string>
+    <string name="settings_related">関連</string>
+    <string name="settings_reset_autobalance">自動調整にリセット</string>
+    <string name="settings_reset_defaults">デフォルトにリセット</string>
+    <string name="settings_restore_default_times">デフォルト時間に戻す</string>
+    <string name="settings_safety_body">Chompass は食品と体重の記録を支援しますが、医療機器ではなく、医師・セラピスト・栄養士によるケアの代替ではありません。</string>
+    <string name="settings_safety_consult">大幅な食事・体組成の変更を計画している場合は、計画が健康歴に合うよう、先に資格のある医師に相談してください。</string>
+    <string name="settings_safety_ed">摂食障害が現在または過去にある場合、または記録によって食事や体型への不安が高まり始めた場合は、利用を一時停止し、ケアチームに相談してください。</string>
+    <string name="settings_safety_escalate">疲労、めまい、睡眠障害、気分の変動、月経の変化、性欲減退に気づいたら、速やかに医師の助言を求めてください。</string>
+    <string name="settings_safety_hide">隠す</string>
+    <string name="settings_safety_low_bf">低体脂肪率の注意：非常に痩せた状態が長期間続くとリスクがあります。女性は体脂肪率が非常に低いとホルモン・月経の健康に影響することがあります。男性はホルモン・気分・回復・パフォーマンスに影響することがあります。</string>
+    <string name="settings_safety_medical">安全と医療</string>
+    <string name="settings_safety_open">表示</string>
+    <string name="settings_safety_summary">大幅な食事変更の前にお読みください</string>
+    <string name="settings_safety_title">安全</string>
+    <string name="settings_safety_water">水分補給の目標と飲水リマインダーは推定であり、医療アドバイスではありません。喉の渇きや医師の指導に代わるものではありません。アプリが通知しなくても、十分に飲んでください。</string>
+    <string name="settings_section_home_display">ホーム表示</string>
+    <string name="settings_serving_unit_heuristics">分量サイズのルール</string>
+    <string name="settings_serving_unit_mode">分量サイズの検出</string>
+    <string name="settings_show_coach_tab">コーチタブを表示</string>
+    <string name="settings_show_coach_tab_footer">下のバーからコーチタブを非表示にします。コーチ機能自体は有効のままです。上の AI 機能スイッチがすべてをオフにします。</string>
+    <string name="settings_speech_language">言語</string>
+    <string name="settings_suggestion_action_connect">接続</string>
+    <string name="settings_suggestion_action_setup">設定</string>
+    <string name="settings_suggestion_action_turn_on">オンにする</string>
+    <string name="settings_suggestion_adaptive_goals">適応型目標でカロリーとマクロの目標を毎週最新に保つ</string>
+    <string name="settings_suggestion_backup">WebDAV 同期で日記をバックアップ</string>
+    <string name="settings_suggestion_health_connect">Health Connect で体重と体脂肪を自動同期</string>
+    <string name="settings_suggestion_notifications">連続記録と目標のリマインダーをオンにする</string>
+    <string name="settings_suggestion_water_reminders">ペースを保つための飲水ウィンドウ・リマインダー計画を設定</string>
+    <string name="settings_suggestion_water_tracking">水分補給目標達成のため水を記録</string>
+    <string name="settings_suggestions">提案</string>
+    <string name="settings_suggestions_dismiss">却下</string>
+    <string name="settings_sync_blurb">任意の自己ホスト同期。Android と PWA を同じ WebDAV ファイル（例：Nextcloud）に向けるか、同期 JSON を共有します。Chompass は同期サーバーを運営しません。API キーと食品の写真は含まれません。</string>
+    <string name="settings_sync_now">今すぐ同期</string>
+    <string name="settings_sync_section">同期</string>
+    <string name="settings_tap_to_update">タップして更新</string>
+    <string name="settings_theme_color">テーマカラー</string>
+    <string name="settings_waist_cm_format">ウエスト %1$.0f cm</string>
+    <string name="settings_waist_in_format">ウエスト %1$.0f in</string>
+    <string name="settings_water_add_preset">プリセットを追加</string>
+    <string name="settings_water_auto_badge">自動</string>
+    <string name="settings_water_cup_size">コップのサイズ</string>
+    <string name="settings_water_cup_size_summary">%1$d ml</string>
+    <string name="settings_water_drinking_ends">飲水終了</string>
+    <string name="settings_water_drinking_starts">飲水開始</string>
+    <string name="settings_water_drinking_window">飲水ウィンドウ</string>
+    <string name="settings_water_drinking_window_summary">%1$s 〜 %2$s</string>
+    <string name="settings_water_dynamic_base">ベース目標</string>
+    <string name="settings_water_dynamic_base_manual">固定量</string>
+    <string name="settings_water_dynamic_base_weight">体重（35 ml/kg）</string>
+    <string name="settings_water_dynamic_goal">動的目標</string>
+    <string name="settings_water_dynamic_goal_help">体重、気温、活動量、食品由来の水分に応じて調整されます。位置情報の権限は不要です。予想最高気温を手動で入力してください。</string>
+    <string name="settings_water_dynamic_preview">今日の目標</string>
+    <string name="settings_water_dynamic_preview_breakdown">%1$d ml ベース × %2$s 気温 × %3$s 活動 − %4$d ml 食品</string>
+    <string name="settings_water_dynamic_warning_body">この目標は一般的な水分補給ガイドラインからの推定であり、処方ではありません。人によって異なり、実際の必要量は腎臓、薬、健康状態、発汗、湿度などに依存するため、この数値があなたに合わない可能性があります。健康上の問題がある場合や服薬中は、飲水量を変える前に医師に相談してください。喉の渇きが最良の指標です。必要なら「時間」でなくても飲み、暑い日や運動中はアプリが通知するかどうかに関わらず十分に飲んでください。</string>
+    <string name="settings_water_dynamic_warning_title">ベータ · 提案であり医療アドバイスではありません</string>
+    <string name="settings_water_food_water">食品の水分を差し引く</string>
+    <string name="settings_water_food_water_help">大まかな推定：今日記録した食品重量の60%、上限1 L。</string>
+    <string name="settings_water_goal">1日の水分目標</string>
+    <string name="settings_water_goal_summary">%1$d ml</string>
+    <string name="settings_water_goal_wheel_help">50 ml 刻みでスクロールし、50〜10,000 ml の1日目標を選択します。</string>
+    <string name="settings_water_intro">飲水量を記録し、1日の目標を設定して、体重・天気・活動に合わせて調整できます。</string>
+    <string name="settings_water_manual_temp">今日の予想最高気温</string>
+    <string name="settings_water_manual_temp_help" formatted="false">1日の目標は25 °Cを超えると上昇します（1度につき+4%、上限+60%）。位置情報の権限は不要です。手動で設定してください。</string>
+    <string name="settings_water_manual_temp_summary">%1$d °C</string>
+    <string name="settings_water_preset_label">プリセット %1$d</string>
+    <string name="settings_water_quick_presets">クイック記録プリセット</string>
+    <string name="settings_water_quick_presets_help">食品追加時の水分スライダーのスナップ位置。ミリリットルで保存され、ヤード・ポンド法では液量オンスで表示されます。</string>
+    <string name="settings_water_reminder_interval_help">間隔 = 飲水ウィンドウ ÷ 目標に必要なコップ数。記録のたびに再計算されます。</string>
+    <string name="settings_water_reminder_interval_preview">≈ 毎 %1$d 分 · %2$d コップ · 各 %3$d ml</string>
+    <string name="settings_water_reminder_note">リマインダーは穏やかな提案です。喉が渇いたら、リマインダーの合間でも飲んでください。</string>
+    <string name="settings_water_reminder_plan">リマインダー計画</string>
+    <string name="settings_water_reminder_window_too_short">飲水ウィンドウは最低15分必要です。</string>
+    <string name="settings_water_reminders">飲水リマインダー</string>
+    <string name="settings_water_remove_preset">最後のプリセットを削除</string>
+    <string name="settings_water_restore_default_plan">デフォルトに戻す（08:00-21:00、300 ml）</string>
+    <string name="settings_water_section_dynamic">動的目標</string>
+    <string name="settings_water_section_goal">目標</string>
+    <string name="settings_water_section_reminders">リマインダー</string>
+    <string name="settings_water_title">水</string>
+    <string name="settings_water_tracking">水分記録</string>
+    <string name="settings_water_use_profile_activity">プロフィールの活動レベルを使用</string>
+    <string name="settings_weather_attribution">天気データ © Open-Meteo（CC BY 4.0）</string>
+    <string name="settings_weather_city">都市</string>
+    <string name="settings_weather_city_help">都市を検索すると、Chompass が今日の予報を取得します。Open-Meteo には都市名と座標のみ送信されます。アカウント・キー・位置情報の権限は不要です。</string>
+    <string name="settings_weather_city_none">都市を選択</string>
+    <string name="settings_weather_city_search">検索</string>
+    <string name="settings_weather_city_search_hint">都市名…</string>
+    <string name="settings_weather_city_search_none">都市が見つかりません。名前か接続を確認してください。</string>
+    <string name="settings_weather_city_selected">選択済み</string>
+    <string name="settings_weather_city_title">Open-Meteo の都市</string>
+    <string name="settings_weather_source">天気ソース</string>
+    <string name="settings_weather_source_help" formatted="false">予想最高気温が動的目標を駆動します（25 °C超で1度あたり+4%、上限+60%）。ソースに新しいデータがない場合は、手動の値が使われます。</string>
+    <string name="settings_weather_source_manual">手動</string>
+    <string name="settings_weather_source_manual_sub">予想最高気温を自分で入力します。ネットワーク不要。</string>
+    <string name="settings_weather_source_meteo">Open-Meteo（オンライン）</string>
+    <string name="settings_weather_source_meteo_sub">選択した都市の予報を取得します。アカウント・キー・位置情報の権限は不要です。</string>
+    <string name="settings_weather_status_fallback">予報がまだありません。%1$d °C を使用（タップで更新）</string>
+    <string name="settings_weather_status_label">今日の最高</string>
+    <string name="settings_weather_status_value">%1$d °C · %2$s</string>
+    <string name="settings_weather_updated_date">%1$s %2$s</string>
+    <string name="settings_weather_updated_today">%1$s 更新</string>
+    <string name="settings_weather_updated_yesterday">昨日 %1$s</string>
+    <string name="settings_webdav_auto_sync">起動時に同期</string>
+    <string name="settings_webdav_auto_sync_desc">WebDAV が設定されている場合、アプリを開いたときに1日1回。デフォルトではオフ。手動同期はいつでも機能します。</string>
+    <string name="settings_webdav_password">パスワード</string>
+    <string name="settings_webdav_save">WebDAV 設定を保存</string>
+    <string name="settings_webdav_saved">WebDAV 設定を保存しました。</string>
+    <string name="settings_webdav_url">WebDAV ファイル URL</string>
+    <string name="settings_webdav_url_hint">https://uXXXXX.your-storagebox.de/sync.json</string>
+    <string name="settings_webdav_username">ユーザー名</string>
+    <string name="share_meal">食事を共有</string>
+    <string name="sheet_constituents">材料</string>
+    <string name="sheet_constituents_add">材料を追加</string>
+    <string name="sheet_constituents_count">材料（%1$d）</string>
+    <string name="sheet_constituents_remove">材料を削除</string>
+    <string name="sheet_diet_mode">食事モード</string>
+    <string name="sheet_keto_carb_mode">ケト炭水化物モード</string>
+    <string name="sheet_language">言語</string>
+    <string name="sheet_macro_label_format">%1$s（%2$s）</string>
+    <string name="sheet_serving_custom_grams">単位あたりのグラム</string>
+    <string name="sheet_serving_custom_name">単位名</string>
+    <string name="sheet_serving_unit_heuristics">ヒューリスティックをカスタマイズ</string>
+    <string name="sheet_serving_unit_mode">分量単位の推定</string>
+    <string name="sheet_speech_language">音声言語</string>
+    <string name="sheet_theme_color">テーマカラー</string>
+    <string name="sheet_theme_color_footer">ボタン、グラフ、進捗インジケーターのメインアクセントを変更します。</string>
+    <string name="sort_latest_first">新しい食事を先頭</string>
+    <string name="sort_standard">朝食 → 昼食 → 夕食（新しいものは最後）</string>
+    <string name="speech_description_gemini">Gemini API による音声文字起こし。Google Cloud のリアルタイム Speech-to-Text API ではなく、バッチ音声理解を使用します。</string>
+    <string name="speech_error_audio_capture_failed">音声キャプチャに失敗しました</string>
+    <string name="speech_error_language_not_supported">このデバイスは音声言語に対応していません</string>
+    <string name="speech_error_language_unavailable">このデバイスでは音声言語を利用できません</string>
+    <string name="speech_error_missing_permission">マイク権限がありません</string>
+    <string name="speech_error_network">ネットワークエラー</string>
+    <string name="speech_error_network_timeout">ネットワークタイムアウト</string>
+    <string name="speech_error_no_input">音声入力がありません</string>
+    <string name="speech_error_no_match">音声が認識されませんでした</string>
+    <string name="speech_error_recognizer_busy">認識機能がビジーです</string>
+    <string name="speech_error_server">サーバーエラー</string>
+    <string name="speech_error_server_disconnected">音声サービスが切断されました</string>
+    <string name="speech_error_start_failed">音声認識を開始できませんでした</string>
+    <string name="speech_error_unknown_format">音声エラー（%1$d）</string>
+    <string name="speech_language_chinese">中国語</string>
+    <string name="speech_language_device">デバイスの言語を使用</string>
+    <string name="speech_language_device_subtitle">この端末の現在の言語を使用します。</string>
+    <string name="speech_language_dutch">オランダ語</string>
+    <string name="speech_language_english">英語</string>
+    <string name="speech_language_french">フランス語</string>
+    <string name="speech_language_german">ドイツ語</string>
+    <string name="speech_language_hindi">ヒンディー語</string>
+    <string name="speech_language_italian">イタリア語</string>
+    <string name="speech_language_japanese">日本語</string>
+    <string name="speech_language_korean">韓国語</string>
+    <string name="speech_language_portuguese">ポルトガル語</string>
+    <string name="speech_language_provider_auto">プロバイダー自動</string>
+    <string name="speech_language_provider_auto_subtitle">プロバイダーに言語を検出させます。</string>
+    <string name="speech_language_spanish">スペイン語</string>
+    <string name="sync_error_build_local_doc">ローカル同期ドキュメントを構築できませんでした</string>
+    <string name="sync_error_configure_webdav">先に WebDAV の URL、ユーザー名、パスワードを設定してください</string>
+    <string name="sync_error_conflict_persisted">WebDAV の競合が続いています。再試行してください</string>
+    <string name="sync_error_local_rebuild_failed">競合後のローカル同期の再構築に失敗しました</string>
+    <string name="sync_error_merged_invalid">マージされた同期ドキュメントが無効です</string>
+    <string name="sync_error_remote_invalid">リモートの同期ドキュメントが無効です</string>
+    <string name="sync_error_remote_invalid_conflict">競合後のリモート同期ドキュメントが無効です</string>
+    <string name="sync_error_unsupported_file">サポートされていない同期ファイルです</string>
+    <string name="sync_success_applied">同期ドキュメントを適用しました</string>
+    <string name="sync_success_synced">WebDAV と同期しました</string>
+    <string name="theme_color_blue">青</string>
+    <string name="theme_color_green">緑</string>
+    <string name="theme_color_indigo">インディゴ</string>
+    <string name="theme_color_neutral">ニュートラル</string>
+    <string name="theme_color_orange">オレンジ</string>
+    <string name="theme_color_pink">ピンク</string>
+    <string name="theme_color_purple">紫</string>
+    <string name="theme_color_system">システム</string>
+    <string name="theme_color_teal">ティール</string>
+    <string name="unit_serving">食</string>
+    <string name="unit_serving_plural">食</string>
+    <string name="unit_package">パッケージ</string>
+    <string name="unit_package_plural">パッケージ</string>
+    <string name="product_information">商品情報</string>
+    <string name="product_barcode">バーコード</string>
+    <string name="product_package">パッケージ</string>
+    <string name="product_nutri_score">Nutri-Score</string>
+    <string name="product_nova_group">NOVAグループ</string>
+    <string name="product_eco_score">Eco-Score</string>
+    <string name="product_allergens">アレルゲン</string>
+    <string name="product_may_contain">含有の可能性</string>
+    <string name="product_labels">ラベル</string>
+    <string name="product_categories">カテゴリ</string>
+    <string name="product_ingredient_label">原材料</string>
+    <string name="off_attribution">写真とデータ： Open Food Facts の貢献者 (CC BY-SA 3.0)</string>
+    <string name="unit_cup">カップ</string>
+    <string name="unit_cup_plural">カップ</string>
+    <string name="unit_tbsp">大さじ</string>
+    <string name="unit_tsp">小さじ</string>
+    <string name="vm_adaptive_on_message">適応型目標がオンです。十分な食事と体重データが揃うと、Chompass は週1回確認します。</string>
+    <string name="vm_adaptive_updated">最新のデータに基づき %1$d %2$s に更新しました。</string>
+    <string name="vm_goals_recalculated">目標を再計算しました</string>
+        <string name="recalc_sheet_new_targets">新しい目標</string>
+        <string name="recalc_sheet_macros_format">P %1$d · C %2$d · F %3$d</string>
+        <string name="recalc_sheet_who_decided">決定者</string>
+        <string name="recalc_sheet_fallback_note">%1$s が失敗 — %2$s が代わりに回答しました</string>
+        <string name="recalc_sheet_how_decided">決定方法</string>
+        <string name="recalc_sheet_tier_smart">スマート — %2$d 日間の %1$d 回の計測を使用</string>
+        <string name="recalc_sheet_tier_safe">セーフ — %2$d 日間で %1$d 回のみの計測のため、計算式を使用</string>
+        <string name="recalc_sheet_tier_measured">Health Connect の実測消費量に基づく</string>
+        <string name="recalc_sheet_tier_formula">内蔵の計算式</string>
+        <string name="recalc_sheet_formula_baseline">計算式の基準</string>
+        <string name="recalc_sheet_bmr_row">BMR（安静時消費）: %1$s %2$s</string>
+        <string name="recalc_sheet_tdee_row">維持 × 活動 %1$s: %2$s %3$s</string>
+        <string name="recalc_sheet_pace_row">目標ペース: %1$s %2$s/日</string>
+        <string name="recalc_sheet_formula_target_row">計算式の目標: %1$s %2$s</string>
+        <string name="recalc_sheet_measured_row">Health Connect の実測消費量: %1$s %2$s</string>
+    <string name="recalc_sheet_day_type_active">%1$s: typically %2$d %4$s active (%3$d of last 28 days)</string>
+        <string name="recalc_sheet_data_used">使用したデータ</string>
+        <string name="recalc_sheet_data_weighins">%2$d 日間で %1$d 回の計測</string>
+        <string name="recalc_sheet_data_no_weighins">まだ計測の記録なし</string>
+        <string name="recalc_sheet_data_intake">記録済みの平均摂取: %2$d 日間で %1$s %3$s</string>
+        <string name="recalc_sheet_data_no_intake">まだ食事の記録なし</string>
+        <string name="recalc_sheet_data_implied">推定維持カロリー: ~%1$s %2$s</string>
+        <string name="recalc_sheet_data_implied_thin">推定維持カロリー: 未計算 — データが少なすぎる</string>
+        <string name="recalc_sheet_data_implied_below_floor">推定維持カロリー: 安全下限未満のため無視</string>
+        <string name="recalc_sheet_data_implied_disagree">推定維持カロリー: 保留 — 記録と体重トレンドが一致しない</string>
+        <string name="recalc_sheet_change">変化</string>
+        <string name="recalc_sheet_previous">変更前: %1$s %2$s</string>
+        <string name="recalc_sheet_new_with_delta">変更後: %1$s %3$s (%2$s)</string>
+        <string name="recalc_sheet_reason">理由</string>
+    <string name="vm_goals_updated">%1$d %2$s に更新しました。</string>
+    <string name="vm_health_connect_needed">Health Connect が必要です</string>
+    <string name="vm_health_connect_needed_msg">Chompass が Health Connect の活動・総カロリーを読み取れるようにしてから、エネルギー消費を再度オンにしてください。</string>
+    <string name="vm_not_enough_energy">エネルギー・データが不足しています</string>
+    <string name="vm_not_enough_energy_msg">Chompass が測定消費を使用するには、Health Connect のエネルギー・データが直近3日分以上必要です。</string>
+    <string name="voice_native_unavailable">このプロフィールには利用可能な音声認識サービスがありません。設定でクラウド音声エンジン（Whisper、Groq、Gemini など）を選ぶか、Android RecognitionService を提供する音声入力アプリをインストールしてください。</string>
+    <string name="voice_release_to_cancel">離すとキャンセル</string>
+    <string name="voice_slide_to_cancel">‹ スライドでキャンセル</string>
+    <string name="water">水</string>
+    <string name="water_add">水を追加</string>
+    <string name="water_history_title">水の履歴</string>
+    <string name="water_history_total">%1$s · %2$s</string>
+    <string name="water_no_entries">この日の水はまだ記録されていません。</string>
+    <string name="water_edit_title">水を編集</string>
+    <string name="cd_delete_water">水の記録を削除</string>
+
+    <string name="water_amount_fl_oz">%1$d fl oz</string>
+    <string name="water_amount_ml">%1$d ml</string>
+    <string name="water_custom_amount">カスタム量</string>
+    <string name="water_custom_short">カスタム</string>
+    <string name="water_how_much">どのくらいの水？</string>
+    <string name="water_log_title">水を記録</string>
+    <string name="water_one_glass_amount">1コップ（約250 ml）</string>
+    <string name="water_progress">%1$d / %2$d ml</string>
+    <string name="water_progress_fl_oz">%1$d / %2$d fl oz</string>
+    <string name="water_three_glasses_amount">3コップ（約750 ml）</string>
+    <string name="water_two_glasses_amount">2コップ（約500 ml）</string>
+    <string name="what_if_ai_suggestion">AI の提案</string>
+    <string name="what_if_loading">影響を確認中…</string>
+    <string name="what_if_no_suggestion">提案はありません。</string>
+    <string name="what_if_subtitle">記録する前に、この食事が今日をどう変えるかプレビューします。</string>
+    <string name="what_if_title">どうなる？</string>
+    <string name="widget_center_large_g_format">%1$dg</string>
+    <string name="widget_center_small_format">/ %1$d</string>
+    <string name="widget_center_small_g_format">/ %1$dg</string>
+    <string name="widget_fl_oz_left_format">残り %1$d fl oz</string>
+    <string name="widget_kcal">kcal</string>
+    <string name="widget_ml_left_format">残り %1$d ml</string>
+    <string name="widget_unit_left_format">残り %1$s%2$s</string>
+    <string name="widget_water_description">今日の水分進捗をひと目で確認。</string>
+    <string name="widget_water_disabled">Chompass で水分記録を有効にしてください</string>
+    <string name="widget_water_enable_short">Chompass で有効化</string>
+    <string name="widget_water_label">Chompass 水</string>
+    <string name="widget_water_tracking">水分記録</string>
+    <string name="ai_provider_anthropic">Anthropic Claude</string>
+    <string name="ai_provider_deepinfra">DeepInfra</string>
+    <string name="ai_provider_fireworks">Fireworks AI</string>
+    <string name="ai_provider_gemini">Google Gemini</string>
+    <string name="ai_provider_groq">Groq</string>
+    <string name="ai_provider_huggingface">Hugging Face</string>
+    <string name="ai_provider_mistral">Mistral</string>
+    <string name="ai_provider_openai">OpenAI</string>
+    <string name="ai_provider_openrouter">OpenRouter</string>
+    <string name="ai_provider_together">Together AI</string>
+    <string name="ai_provider_xai">xAI Grok</string>
+    <string name="app_name">Chompass</string>
+    <string name="bullet">·</string>
+    <string name="entry_analysis_placeholder_name">····</string>
+    <string name="feet_inches_format">%1$d\' %2$d\"</string>
+    <string name="food_search_source_off">Open Food Facts</string>
+    <string name="add_food_off_unreachable">Open Food Factsに今は接続できません。保存済みとオフラインの結果は引き続き表示されます。</string>
+    <string name="food_search_source_usda">USDA</string>
+    <string name="ft_label_format">%1$d ft</string>
+    <string name="grams_value_decimal_format">%1$sg</string>
+    <string name="grams_value_format">%1$sg</string>
+    <string name="height_cm_format">%1$d cm</string>
+    <string name="home_macro_chip_format">%1$s %2$dg</string>
+    <string name="in_label_format">%1$d in</string>
+    <string name="energy_value_format">%1$s %2$s</string>
+    <string name="keto_carb_grams_format">%1$d g/day</string>
+    <string name="kg_value_format">%1$.1f kg</string>
+    <string name="lbs_value_format">%1$.1f lbs</string>
+    <string name="manual_zero_placeholder">0</string>
+    <string name="nutrient_short_b12">B12</string>
+    <string name="nutrition_em_dash">-</string>
+    <string name="onboarding_building_bullet">•</string>
+    <string name="onboarding_building_percent_format">%1$d%%</string>
+    <string name="recipe_builder_scale_format">%1$.2fx</string>
+    <string name="recipe_servings_format">%1$s人前</string>
+    <string name="speech_provider_assemblyai">AssemblyAI</string>
+    <string name="speech_provider_deepgram">Deepgram</string>
+    <string name="speech_provider_gemini">Gemini Audio</string>
+    <string name="speech_provider_groq">Groq (Whisper)</string>
+    <string name="speech_provider_openai">OpenAI Whisper</string>
+    <string name="unit_celsius">°C</string>
+    <string name="unit_cm">cm</string>
+    <string name="unit_fl_oz">fl oz</string>
+    <string name="unit_ft">ft</string>
+    <string name="unit_ft_in">ft / in</string>
+    <string name="unit_g">g</string>
+    <string name="unit_in">in</string>
+    <string name="unit_kcal">kcal</string>
+    <string name="unit_kj">kJ</string>
+    <string name="unit_kg">kg</string>
+    <string name="unit_lbs">lbs</string>
+    <string name="unit_mcg">mcg</string>
+    <string name="unit_mg">mg</string>
+    <string name="unit_ml">ml</string>
+    <string name="unit_percent">%</string>
+    <string name="value_unit_format">%1$d %2$s</string>
+    <string name="widget_value_unit_format">%1$d%2$s / %3$d%4$s</string>
+    <plurals name="copy_foods_to">
+        <item quantity="one">%1$d 品の食品を %2$s にコピー</item>
+        <item quantity="other">%1$d 品の食品を %2$s にコピー</item>
+    </plurals>
+    <plurals name="import_add_meals_title">
+        <item quantity="one">共有食事を追加</item>
+        <item quantity="other">%1$d 件の共有食事を追加</item>
+    </plurals>
+    <string name="about_made_by">Chompass、著者 fitguy</string>
+    <string name="settings_custom_url_placeholder">https://anata-no-endpoint.com/v1</string>
+    <string name="speech_key_placeholder_deepgram">トークン あなたの-deepgram-キー</string>
+    <string name="fasting">ファスティング</string>
+    <string name="fasting_idle">進行中のファスティングはありません</string>
+    <string name="fasting_goal_reached">目標達成</string>
+    <string name="fasting_goal_progress">%1$s · 目標 %2$d 時間</string>
+    <string name="fasting_duration_h_m">%1$d 時間 %2$d 分</string>
+    <string name="fasting_duration_h">%1$d 時間</string>
+    <string name="fasting_duration_m">%1$d 分</string>
+    <string name="fasting_start">ファスティング開始</string>
+    <string name="fasting_stop">ファスティング終了</string>
+    <string name="fasting_cancel">キャンセル</string>
+    <string name="settings_fasting_title">ファスティング</string>
+    <string name="settings_fasting_intro">ローカルのタイマーで間欠的ファスティングの時間帯を記録できます。いつでも開始・停止・キャンセルでき、目標時間も任意で設定可能。タイマーはこの端末にのみ保存され、同期や書き出しは一切行われません。</string>
+    <string name="settings_fasting_section_tracking">記録</string>
+    <string name="settings_fasting_tracking">ファスティングタイマー</string>
+    <string name="settings_fasting_goal">目標時間</string>
+    <string name="settings_fasting_goal_summary_none">目標なし</string>
+    <string name="settings_fasting_goal_summary">%1$d 時間ファスティング</string>
+    <string name="settings_fasting_goal_wheel_help">一般的なプロトコルを選ぶか、自分でファスティングと食事の時間を設定できます。0 = 目標なし。</string>
+    <string name="settings_fasting_section_notification">通知</string>
+    <string name="settings_fasting_notification">目標達成</string>
+    <string name="fasting_local_only_note">ファスティングタイマーはこの端末にのみ保存されます。同期・書き出し・共有メニューへの組み込みは一切行われません。Chompassが送信するのは目標達成通知のみです。</string>
+    <string name="shortcut_fasting_short">ファスティング</string>
+    <string name="shortcut_fasting_long">ファスティングを開始または終了</string>
+    <string name="fasting_goal_unit_h">時間</string>
+    <string name="notif_channel_fasting">ファスティング</string>
+    <string name="notif_channel_fasting_desc">ファスティング目標達成時の1回限りの通知。</string>
+    <string name="notif_fasting_goal_title">ファスティング目標達成</string>
+    <string name="notif_fasting_goal_text">ファスティングが完了しました。もう食べられます。</string>
+    <string name="fasting_preset_detail">ファスティング %1$d 時間 · 食事時間 %2$d 時間</string>
+    <string name="fasting_window_opens_in">食事時間まで %1$s</string>
+    <string name="settings_fasting_section_reminders">リマインダー</string>
+    <string name="settings_fasting_start_reminder">開始リマインダー</string>
+    <string name="notif_fasting_start_title">ファスティングを開始</string>
+    <string name="notif_fasting_start_text">今すぐファスティングを開始しましょう。</string>
+    <string name="fasting_fast_starts_in">ファスティングまで %1$s</string>
+    <string name="fasting_eating_progress">食事 %2$d 時間のうち %1$s</string>
+    <string name="settings_fasting_eat_window">食事時間</string>
+    <string name="settings_fasting_goal_summary_both">%1$d 時間ファスティング · %2$d 時間食事</string>
+    <string name="settings_fasting_end_reminder">終了リマインダー</string>
+    <string name="settings_fasting_reminder_lead_end">ファスティング終了前</string>
+    <string name="settings_fasting_reminder_lead_start">ファスティング開始前</string>
+    <string name="settings_fasting_reminder_lead_unit">分</string>
+    <string name="settings_fasting_reminder_lead_summary">%1$d 分前</string>
+    <string name="settings_fasting_reminder_lead_now">ちょうど境界で</string>
+    <string name="settings_fasting_reminder_help">リード時間はサイクルごとです。開始通知は食事時間の終了前に、終了通知は目標達成の前に送られます。0 = ちょうど境界で。</string>
+    <string name="notif_fasting_end_soon_title">ファスティングまもなく終了</string>
+    <string name="notif_fasting_end_soon_text">%1$d 分後にファスティングが終了します。食事時間が始まります。</string>
+    <string name="notif_fasting_start_soon_title">ファスティングまもなく開始</string>
+    <string name="notif_fasting_start_soon_text">%1$d 分後に食事時間が終了します。ファスティングを始めましょう。</string>
+    <string name="fasting_auto_tag">自動</string>
+    <string name="settings_fasting_auto_windows">ファスティング時間を自動化</string>
+    <string name="settings_fasting_auto_windows_help">ファスティングは開始時刻になると自動的に始まり、目標に達すると終了します。ホームにボタンは表示されず、サイクルは自動で進みます。手動で開始または停止するには、アプリアイコンを長押しします。</string>
+    <string name="fasting_fast_starts_at">ファスティング %1$s 開始 · 残り %2$s</string>
+    <string name="fasting_next_fast_at">次回のファスティングは %1$s</string>
+    <string name="settings_fasting_start_time">ファスティング開始時刻</string>
+    <string name="settings_fasting_start_time_help">自動ファスティングは毎日この時刻に開始します。開始リマインダーはその前に設定した時間だけ早く送信されます。</string>
+    <string name="notif_fasting_start_soon_auto_title">ファスティングまもなく開始</string>
+    <string name="notif_fasting_start_soon_auto">%1$d 分後にファスティングが始まります。操作は不要です。</string>
+    <string name="settings_group_trackers">トラッカーとリマインダー</string>
+    <string name="settings_group_trackers_summary">水分、ニコチン、カフェイン、断食、リマインダー</string>
+    <string name="settings_units">単位</string>
+    <string name="settings_energy_unit">エネルギー</string>
+    <string name="settings_search_hint">設定を検索</string>
+    <string name="settings_search_empty">一致する設定がありません。「kg」「kcal」「ml」をお試しください。</string>
+    <string name="prompt_history_button">プロンプト履歴</string>
+    <string name="prompt_history_title">プロンプト履歴</string>
+    <string name="prompt_history_empty">保存されたプロンプトはまだありません。分析キューと失敗した分析のプロンプトがここに表示されます。</string>
+    <string name="prompt_history_use">このプロンプトを使う</string>
+    <string name="caffeine">カフェイン</string>
+    <string name="caffeine_add">カフェインを追加</string>
+    <string name="caffeine_log_title">カフェインを記録</string>
+    <string name="caffeine_edit_title">カフェインを編集</string>
+    <string name="caffeine_history_title">カフェイン履歴</string>
+    <string name="caffeine_mg">カフェイン (mg)</string>
+    <string name="caffeine_daily_limit">1日の上限</string>
+    <string name="caffeine_daily_limit_summary">%1$d mg</string>
+    <string name="caffeine_no_limit">上限なし</string>
+    <string name="caffeine_progress">%1$s / %2$d mg</string>
+    <string name="caffeine_total_today">%1$s mg</string>
+    <string name="caffeine_mg_value">%1$s mg</string>
+    <string name="caffeine_no_entries">この日のカフェインはまだ記録されていません。</string>
+    <string name="caffeine_quick_plus_one">+1 %1$s</string>
+    <string name="caffeine_custom_short">カスタム</string>
+    <string name="caffeine_kind_coffee">コーヒー</string>
+    <string name="caffeine_kind_tea">お茶</string>
+    <string name="caffeine_kind_energy">エナジードリンク</string>
+    <string name="caffeine_kind_other">その他</string>
+    <string name="milk_kind_whole">全乳</string>
+    <string name="milk_kind_semi">低脂肪乳</string>
+    <string name="milk_kind_skim">スキム</string>
+    <string name="milk_kind_oat">オーツ</string>
+    <string name="milk_kind_almond">アーモンド</string>
+    <string name="caffeine_milk_section">ミルク</string>
+    <string name="caffeine_milk_ml">量</string>
+    <string name="caffeine_history_total">%1$s · %2$s mg</string>
+    <string name="cd_log_caffeine">カフェインを記録</string>
+    <string name="cd_delete_caffeine">カフェインの記録を削除</string>
+    <string name="settings_caffeine_title">カフェイン</string>
+    <string name="settings_caffeine_tracking">カフェイントラッキング</string>
+    <string name="settings_caffeine_intro">コーヒー、お茶、エナジードリンクを記録し、食事のエントリーからのカフェインを含む今日の合計を、自分で設定した1日の mg 上限と照らして確認できます。日ごとの履歴から記録の編集や削除もできます。</string>
+    <string name="settings_caffeine_section_quick">クイック記録</string>
+    <string name="settings_caffeine_section_tracking">トラッキング</string>
+    <string name="settings_caffeine_quick_kinds_help">食事追加シートに +1 チップとして表示されるプリセットです。</string>
+    <string name="settings_caffeine_limit_wheel_help">スクロールして0（上限なし）から1000 mgまでの1日のカフェイン上限を設定します。</string>
+    <string name="settings_caffeine_privacy_note">カフェインの記録はこの端末とWebDAV同期にのみ残ります。共有の食事に含まれることはなく、AIプロバイダーに送信されることもありません。</string>
+    <!-- Tracker preset managers (custom/renamed caffeine + nicotine presets, #55 follow-up). -->
+    <string name="settings_tracker_presets_section">プリセット</string>
+    <string name="settings_tracker_presets_help_caffeine">組み込みの飲み物の名前を変更したり、デフォルト量を指定して独自の飲み物を追加したりできます。ここでの順序が、食事追加シートのチップの順序です。</string>
+    <string name="settings_tracker_presets_help_nicotine">組み込みの製品の名前を変更したり、デフォルト個数を指定して独自の製品を追加したりできます。ここでの順序が、食事追加シートのチップの順序です。</string>
+    <string name="settings_caffeine_preset_add">飲み物を追加</string>
+    <string name="settings_nicotine_preset_add">製品を追加</string>
+    <string name="caffeine_preset_editor_title_add">新しい飲み物</string>
+    <string name="caffeine_preset_editor_title_edit">飲み物を編集</string>
+    <string name="nicotine_preset_editor_title_add">新しい製品</string>
+    <string name="nicotine_preset_editor_title_edit">製品を編集</string>
+    <string name="settings_tracker_preset_name">名前</string>
+    <string name="caffeine_preset_default_mg">デフォルト量 (mg)</string>
+    <string name="nicotine_preset_default_count">デフォルト個数</string>
+    <string name="nicotine_preset_default_dose">1回あたりのデフォルトニコチン (mg、任意)</string>
+    <string name="settings_tracker_preset_delete_title">プリセットを削除しますか？</string>
+    <string name="settings_tracker_preset_delete_named">「%1$s」を削除します。</string>
+    <string name="settings_tracker_preset_amounts_kept">量は変更されません。</string>
+    <plurals name="settings_tracker_preset_delete_entries">
+        <item quantity="other">記録した %1$d 件は「その他」に移動します。</item>
+    </plurals>
+    <string name="nicotine">ニコチン</string>
+    <string name="nicotine_add">ニコチンを追加</string>
+    <string name="nicotine_log_title">ニコチンを記録</string>
+    <string name="nicotine_edit_title">ニコチンを編集</string>
+    <string name="nicotine_history_title">ニコチン履歴</string>
+    <string name="nicotine_count">本数</string>
+    <string name="nicotine_count_today">%1$d</string>
+    <string name="nicotine_count_unit">本</string>
+    <string name="nicotine_daily_limit">1日の上限</string>
+    <string name="nicotine_daily_limit_summary">%1$d</string>
+    <string name="nicotine_no_limit">上限なし</string>
+    <string name="nicotine_progress">%1$d / %2$d</string>
+    <string name="nicotine_no_entries">この日のニコチンはまだ記録されていません。</string>
+    <string name="nicotine_quick_plus_one">+1 %1$s</string>
+    <string name="nicotine_custom_short">カスタム</string>
+    <string name="nicotine_kind_cigarette">たばこ</string>
+    <string name="nicotine_kind_vape">電子たばこ</string>
+    <string name="nicotine_kind_pouch">ニコチンパウチ</string>
+    <string name="nicotine_kind_gum">ガム</string>
+    <string name="nicotine_kind_patch">パッチ</string>
+    <string name="nicotine_kind_other">その他</string>
+    <string name="nicotine_mg_optional">ニコチン (mg、任意)</string>
+    <string name="nicotine_count_with_mg">%1$d · %2$s mg</string>
+    <string name="nicotine_history_total">%1$s · %2$d</string>
+    <string name="cd_log_nicotine">ニコチンを記録</string>
+    <string name="cd_delete_nicotine">ニコチンの記録を削除</string>
+    <string name="settings_nicotine_title">ニコチン</string>
+    <string name="settings_nicotine_tracking">ニコチントラッキング</string>
+    <string name="settings_nicotine_intro">たばこ、電子たばこ、パウチを記録し、今日の合計を自分で設定した1日の上限と照らして確認できます。日ごとの履歴から記録の編集や削除もできます。</string>
+    <string name="settings_nicotine_section_quick">クイック記録</string>
+    <string name="settings_nicotine_section_tracking">トラッキング</string>
+    <string name="settings_nicotine_quick_kinds_help">食事追加シートに +1 チップとして表示されるプリセットです。</string>
+    <string name="settings_nicotine_limit_wheel_help">スクロールして0（上限なし）から100本までの1日の上限を設定します。</string>
+    <string name="settings_nicotine_privacy_note">ニコチンの記録はこの端末とWebDAV同期にのみ残ります。共有の食事に含まれることはなく、AIプロバイダーに送信されることもありません。</string>
+    <string name="settings_notes_title">デイリーノート</string>
+    <string name="settings_notes_tracking">デイリーノート</string>
+    <string name="settings_notes_intro">どんな日にもプライベートなメモを書けます。日記、ログ、リマインダーとして。ノートは日誌と一緒に同期・書き出しされます。</string>
+    <string name="settings_notes_section_tracking">トラッキング</string>
+    <string name="settings_notes_privacy_note">ノートは非公開です。この端末の外に出るのはWebDAV同期と日誌の書き出しだけで、AIプロバイダーに送信されることはありません。</string>
+    <string name="home_day_type_chip_a11y">今日のデイタイプ: %1$s。タップで切り替え。</string>
+    <string name="day_type_sheet_title">デイタイプ</string>
+    <string name="day_type_sheet_subtitle">今日の目標を別のデイタイプに切り替えます。</string>
+    <string name="day_type_base_goals">基本の目標</string>
+    <string name="day_type_clear_override">今日の上書きを解除</string>
+    <string name="day_type_edit_settings">デイタイプを編集</string>
+    <string name="day_type_plan_off_hint">デイタイプはオフです。日ごとに違う目標を使うには設定でオンにしてください。</string>
+    <string name="day_type_targets_summary">%1$s %5$s · %2$dP %3$dC %4$dF</string>
+    <string name="day_type_active_typical">≈ %1$d %2$s active typical</string>
+    <string name="day_type_tomorrow">明日: %1$s · %2$s %3$s</string>
+    <string name="settings_day_types_title">デイタイプ</string>
+    <string name="settings_day_types_intro">日ごとに違うカロリーとマクロの目標を使えます。トレーニング日と休養日など。</string>
+    <string name="settings_day_types_add">デイタイプを追加</string>
+    <string name="settings_day_types_copy_current">現在の目標からコピー</string>
+    <string name="settings_day_types_default">デフォルトのデイタイプ</string>
+    <string name="settings_day_types_delete">デイタイプを削除</string>
+    <string name="settings_day_types_delete_replace">「%1$s」に置き換える</string>
+    <string name="settings_day_types_delete_scrub">スケジュールから外す</string>
+    <string name="settings_day_types_delete_used_message">スケジュールで使われています。該当する日をどうするか選んでください。</string>
+    <string name="settings_day_types_delete_used_title">「%1$s」を削除しますか？</string>
+    <string name="settings_day_types_floor_warning">この目標はカロリーの下限（%1$d %2$s）にあります。デイタイプとしては強めです。</string>
+    <string name="settings_day_types_follow_schedule">スケジュールに従う</string>
+    <string name="settings_day_types_keto_paused">ケトモードではデイタイプは一時停止中</string>
+    <string name="settings_day_types_mode_cycle">サイクル</string>
+    <string name="settings_day_types_mode_cycle_hint">2日オン・1日オフのようなパターンを繰り返します。</string>
+    <string name="settings_day_types_mode_manual">手動</string>
+    <string name="settings_day_types_mode_manual_hint">ホームから日ごとに自分で切り替えます。</string>
+    <string name="settings_day_types_mode_weekdays">曜日</string>
+    <string name="settings_day_types_mode_weekdays_hint">デイタイプを曜日に割り当てます。</string>
+    <string name="settings_day_types_move_down">%1$s を下へ</string>
+    <string name="settings_day_types_move_up">%1$s を上へ</string>
+    <string name="settings_day_types_name">名前</string>
+    <string name="settings_day_types_name_placeholder">例: トレーニング日</string>
+    <string name="settings_day_types_name_taken">この名前はすでに使われています</string>
+    <string name="settings_day_types_need_two">オンにするには2つ以上のデイタイプを作ってください。</string>
+    <string name="settings_day_types_override">上書き</string>
+    <string name="settings_day_types_overrides">日ごとの上書き</string>
+    <string name="settings_day_types_pattern">サイクルのパターン</string>
+    <string name="settings_day_types_pattern_add">日を追加</string>
+    <string name="settings_day_types_pattern_day">%1$d日目</string>
+    <string name="settings_day_types_pattern_remove">日を削除</string>
+    <string name="settings_day_types_paused_hint">一時停止中。デイタイプは保持され、いつでもオンに戻せます。</string>
+    <string name="settings_day_types_preview">今後7日間</string>
+    <string name="settings_day_types_preview_help">日をタップすると上書きできます。</string>
+    <string name="settings_day_types_restart">サイクルを今日から再スタート</string>
+    <string name="settings_day_types_schedule">スケジュール</string>
+    <string name="settings_day_types_summary_format">%1$dタイプ · %2$s</string>
+    <string name="settings_day_types_weekday_default">デフォルト（%1$s）</string>
+    <string name="recalc_sheet_day_types">デイタイプ</string>
+    <string name="recalc_sheet_daytype_change">%1$s: %2$s → %3$s %4$s</string>
+    <string name="recalc_sheet_daytype_value">%1$s: %2$s %3$s</string>
+    <string name="recalc_sheet_daytype_macros_format">たんぱく質 %1$d g · 炭水化物 %2$d g · 脂質 %3$d g</string>
+    <string name="recalc_sheet_daytype_avg_change">週の平均: %1$s → %2$s %3$s</string>
+    <string name="recalc_sheet_daytype_avg_value">週の平均: %1$s %2$s</string>
+    <string name="settings_calc_sec_day_types">デイタイプ</string>
+    <string name="settings_calc_daytypes_resolve_name">デイタイプごとの目標の決定</string>
+    <string name="settings_calc_daytypes_resolve_used">デイタイプがオンのとき、各日のカロリーとマクロの目標は単一のセットではなくプランから取られます。1日だけの手動切り替えはスケジュールより優先され、スケジュールはデフォルトより優先され、決まらないものは基本の目標に戻ります。</string>
+    <string name="settings_calc_daytypes_resolve_formula">日の割り当て → スケジュール（手動 / 曜日 / サイクル）→ デフォルト → 基本の目標
+サイクル位置 = floorMod(エポック日 − アンカー日, パターン長)</string>
+    <string name="settings_calc_daytypes_avg_name">デイタイプの平均</string>
+    <string name="settings_calc_daytypes_avg_used">計画用の数値（アダプティブ、AI再計算、コーチ）は未来の期間の平均を使います。サイクル長または7日間で、予定された1日だけの切り替えも含まれます。履歴と分析は、その日実際に効いていた目標を目標ジャーナルから使います。記録のない日は埋めずに飛ばします。</string>
+    <string name="settings_calc_daytypes_avg_formula">未来: 解決された目標の平均、今日から今日 + 期間 − 1 まで
+ジャーナル: 期間内の記録された目標の平均、欠落はスキップ</string>
+    <string name="settings_calc_daytypes_clamp_name">デイタイプごとの安全上限</string>
+    <string name="settings_calc_daytypes_clamp_used">プランが書き込まれるたびに、各デイタイプは基本の目標と同じカロリーの下限と上限に収まります。max(BMR, 1,200 kcal)を下回ることや自動上限を超えることはありません。手動編集、AI再計算、アダプティブ目標に同じように適用されます。</string>
+    <string name="settings_calc_daytypes_clamp_formula">タイプのカロリー = max(BMR, 1,200) と自動上限の間に制限
+マクロは新しいカロリー合計に合わせて再配分</string>
+    <string name="picker_type_value">値を入力</string>
+    <string name="picker_use_wheel">ホイールに戻る</string>
+
+    <string name="settings_meals">食事</string>
+    <string name="settings_meals_description">名前、順、開始時刻</string>
+    <string name="settings_meals_help">新しい食事は、今より前で最も近い開始時刻の枠を使います。</string>
+    <string name="settings_meals_add">食事を追加</string>
+    <string name="settings_meals_remove_title">この食事を外しますか？</string>
+    <string name="settings_meals_remove_body">既存の記録は編集するまで種類を保ちます。標準の食事は削除せず非表示にします。</string>
+    <string name="settings_meals_hidden">%1$s（非表示）</string>
+    <string name="settings_meals_no_auto">自動推定なし</string>
+    <string name="settings_meals_save_error">時刻は15分以上空けて、1日の範囲内に収めてください。</string>
+    <string name="settings_meals_unsaved_title">食事の変更を破棄しますか？</string>
+    <string name="settings_meals_unsaved_body">変更は一覧下部の「保存」ボタンで保存されます。</string>
+    <string name="action_keep_editing">編集を続ける</string>
+  <string name="recovered_review_chip">復元した解析: %1$s</string>
+  <string name="cd_discard_recovered_review">復元した解析を破棄</string>
+    <string name="health_sync_failed">Health Connectと同期できませんでした。自動的に再試行します。</string>
+    <string name="plan_week_load_failed">今週を読み込めませんでした。</string>
+    <string name="coach_image_only_message">この画像を分析して。</string>
+    <string name="a11y_chart_inspection">%2$sの%1$s: %3$s</string>
+    <string name="cd_ingredient_decrease">材料の量を減らす</string>
+    <string name="cd_ingredient_increase">材料の量を増やす</string>
+    <string name="onboarding_key_checking">キーを確認中…</string>
+    <string name="sheet_serving_baseless_hint">100g 当たりの値は1食分に合わせて変わります。</string>
+    <string name="body_metrics_height_hint">ウエスト比と体脂肪率の推定を見るには身長を追加してください。</string>
+    <string name="settings_day_type_color">色</string>
+    <string name="settings_day_type_color_auto">自動</string>
+    <string name="a11y_marker_lane">日タイプと記録なしマーカー</string>
+    <string name="a11y_day_marker_type">日タイプ %1$s</string>
+    <string name="a11y_day_untracked">記録なし</string>
+    <string name="home_untracked_chip">追跡なし</string>
+    <string name="home_mark_untracked_chip">日付をマーク</string>
+    <string name="home_untracked_chip_a11y">この日は追跡しない設定です。タップして変更。</string>
+    <string name="home_mark_untracked_chip_a11y">この日を追跡しないとしてマーク。</string>
+    <string name="home_today">今日</string>
+
+    <plurals name="home_fill_gaps_banner">
+        <item quantity="one">栄養データが欠けている食事が1件あります</item>
+        <item quantity="other">栄養データが欠けている食事が%1$d件あります</item>
+    </plurals>
+    <string name="cd_dismiss_fill_gaps_banner">バナーを閉じる</string>
+    <string name="fill_gaps_title">欠落データを補完</string>
+    <string name="fill_gaps_adds_line">追加: %1$s</string>
+    <string name="fill_gaps_no_values">新しい値は返されませんでした</string>
+    <string name="fill_gaps_run_all">すべて補完</string>
+    <string name="fill_gaps_focus_all">未入力をすべて</string>
+    <string name="fill_gaps_focus_pick">埋める項目を選択</string>
+    <string name="fill_gaps_apply">適用</string>
+    <plurals name="fill_gaps_confirm_remote">
+        <item quantity="one">AIリクエストを1件実行しますか？</item>
+        <item quantity="other">AIリクエストを%1$d件実行しますか？</item>
+    </plurals>
+    <plurals name="fill_gaps_confirm_ondevice">
+        <item quantity="one">端末内で1件の食事を補完しますか？</item>
+        <item quantity="other">端末内で%1$d件の食事を補完しますか？</item>
+    </plurals>
+    <plurals name="fill_gaps_cascade">
+        <item quantity="one">今日の記録1件も更新する</item>
+        <item quantity="other">今日の記録%1$d件も更新する</item>
+    </plurals>
+    <plurals name="fill_gaps_snackbar">
+        <item quantity="one">1件の記録を補完しました</item>
+        <item quantity="other">%1$d件の記録を補完しました</item>
+    </plurals>
+    <string name="fill_gaps_empty">現在、欠落しているものはありません</string>
+    <string name="settings_fill_missing_row">欠落データを補完</string>
+    <string name="settings_fill_missing_reminders">不足値のリマインダー</string>
+    <string name="settings_fill_missing_reminders_footer">記録された食事やお気に入りに不足値があるときホームバナーを表示します</string>
+    <string name="fill_gaps_never_remind">今後表示しない</string>
+    <string name="home_budget_clamped_row">安全上限：計算式では %1$s、目標は %2$s のままです</string>
+    <string name="home_budget_clamped_floor_hint">推定安静時カロリー以上に保たれます。</string>
+    <string name="home_budget_clamped_ceiling_hint">安全上限 %1$s を超えています。</string>
+    <string name="home_budget_bf_stale">体脂肪の測定から %1$d 日 — Mifflin-St Jeor を使用</string>
+    <string name="recalc_sheet_clamped_row">安全上限を適用：%1$s → %2$s</string>
+    <string name="onboarding_goal_suggested">おすすめ</string>
+    <string name="onboarding_goal_suggested_bmi">BMI %1$.1f に基づく</string>
+    <!-- Progress v2: 体オーバーレイ、カロリー組み合わせ、目標フェーズ、達成度。 -->
+    <string name="progress_body_section">体</string>
+    <string name="progress_overlay_off">オフ</string>
+    <string name="progress_no_entries_in_range">この期間の記録はありません</string>
+    <string name="progress_no_series_selected">表示するには上の項目をタップしてください</string>
+    <string name="settings_goal_phases_title">目標フェーズ</string>
+    <string name="settings_goal_phases_intro">減量・維持・増量の期間を計画します。フェーズは期間内の毎日に目標を適用します。日付付きの一日タイプです。</string>
+    <string name="settings_goal_phases_add">フェーズを追加</string>
+    <string name="settings_goal_phases_edit">フェーズを編集</string>
+    <string name="settings_goal_phases_none">まだフェーズがありません。追加して減量や増量の期間を計画しましょう。</string>
+    <string name="settings_goal_phases_name_placeholder">例: 減量</string>
+    <string name="settings_goal_phases_start">開始</string>
+    <string name="settings_goal_phases_end">終了</string>
+    <string name="settings_goal_phases_targets">目標</string>
+    <string name="settings_goal_phases_range_clip_hint">期間は一日タイプと同じく%1$d日の計画ウィンドウに収まります。</string>
+    <string name="settings_goal_phases_delete">フェーズを削除</string>
+    <string name="settings_goal_phases_delete_title">「%1$s」を削除しますか？</string>
+    <string name="settings_goal_phases_delete_message">期間内の日はデフォルト目標に戻ります。手動の一日変更は残ります。</string>
+    <string name="settings_goal_phases_error_blank_name">名前を入力してください</string>
+    <string name="settings_goal_phases_error_bad_range">終了日は開始日以降にしてください</string>
+    <string name="settings_goal_phases_error_too_long">期間が%1$d日を超えています</string>
+    <string name="settings_goal_phases_error_no_slot">一日タイプのプランが満杯です（7件）。先に空きを作ってください。</string>
+    <string name="phase_intent_cut">減量</string>
+    <string name="phase_intent_maintain">維持</string>
+    <string name="phase_intent_bulk">増量</string>
+    <string name="settings_goal_phases_adherence_format">平均 %1$s/日 · 合計 %2$s</string>
+    <string name="settings_goal_phases_overlap_days">記録%1$d日</string>
+    <string name="progress_adherence_title">達成度</string>
+    <string name="progress_adherence_headline_format">平均 %1$s 対 目標 %2$s · %3$s/日</string>
+    <string name="progress_adherence_net_format">合計 %1$s</string>
+    <string name="progress_adherence_band_format">目標内 %1$d%% · 不足 %2$d · 超過 %3$d</string>
+    <string name="progress_adherence_by_day_type">一日タイプ別</string>
+    <string name="progress_adherence_by_phase">フェーズ別</string>
+    <string name="progress_adherence_row_format">平均 %1$s · %2$s · %3$d日</string>
+    <string name="progress_adherence_overlap_days">%1$d日</string>
+    <string name="a11y_week_strip_day">%1$s、%2$s</string>
+    <string name="add_food_saved_meals_sub">最近、お気に入り、レシピ</string>
+    <string name="add_food_trackers_section">トラッカー</string>
+    <string name="body_fat_method_bia4">BIA 4電極</string>
+    <string name="body_fat_method_bia8">BIA 8電極</string>
+    <string name="body_fat_method_dexa">DEXA</string>
+    <string name="body_fat_method_tape">メジャー</string>
+    <string name="cd_collapsed">折りたたみ中</string>
+    <string name="cd_decrease">減らす</string>
+    <string name="cd_expanded">展開中</string>
+    <string name="cd_import_mealie">Mealie からインポート</string>
+    <string name="cd_increase">増やす</string>
+    <string name="cd_plan_suggestion">1日分を計画</string>
+    <string name="cd_plan_week">週のプランを開く</string>
+    <string name="cd_plan_week_next">次の週</string>
+    <string name="cd_plan_week_prev">前の週</string>
+    <string name="confirm_tape_source_navy">米海軍</string>
+    <string name="confirm_tape_source_rfm">RFM</string>
+    <string name="diary_planned">予定</string>
+    <string name="entry_log_now">今すぐ記録</string>
+    <string name="home_display_food_log_layout">食事記録レイアウト</string>
+    <string name="home_display_nutrient_card_layout">栄養素カードレイアウト</string>
+    <string name="home_jump_to_today">今日に移動</string>
+    <string name="home_look_sample_caption">サンプルの日</string>
+    <string name="home_look_sample_food_bowl">チキンとライスのボウル</string>
+    <string name="home_look_sample_food_yogurt">ギリシャヨーグルト</string>
+    <string name="home_no_foods_planned">予定された食事はありません</string>
+    <string name="home_planned_for">%1$s の予定</string>
+    <string name="macro_glyph_calories">kcal</string>
+    <string name="macro_glyph_carbs">炭</string>
+    <string name="macro_glyph_fat">脂</string>
+    <string name="macro_glyph_fiber">食</string>
+    <string name="macro_glyph_protein">タ</string>
+    <string name="macro_glyph_sugar">糖</string>
+    <string name="mealie_host_label">MealieのURL</string>
+    <string name="mealie_import_n_format">%1$d 件をインポート</string>
+    <string name="mealie_import_title">Mealie からインポート</string>
+    <string name="mealie_imported_format">レシピを %1$d 件インポートしました</string>
+    <string name="mealie_importing">インポート中…</string>
+    <string name="mealie_select_all">すべて選択</string>
+    <string name="mealie_select_none">すべて解除</string>
+    <string name="mealie_test_connection">接続をテスト</string>
+    <string name="mealie_token_label">API トークン</string>
+    <string name="nutrition_stale_composition">以前の材料構成で推定された値です。編集した材料と一致しない場合があります。</string>
+    <string name="nutrition_stale_reestimate">再推定</string>
+    <string name="onboarding_home_look_subtitle">何かを記録する前に、ゲージ・栄養素カード・食事記録を確認できるサンプルの1日です。</string>
+    <string name="onboarding_home_look_title">ホームを自分好みに</string>
+    <string name="plan_pick_day_title">日を選択</string>
+    <string name="plan_week_add_meal">食事を追加</string>
+    <string name="plan_week_range">%1$s – %2$s</string>
+    <string name="plan_week_title">週のプラン</string>
+    <string name="settings_meal_planning">食事プラン</string>
+    <string name="settings_meal_planning_info">これからの日の食事を計画します。日記では予定の記録がマークされ、ワンタップで食べたものとして記録できます。</string>
+    <string name="settings_meal_times_enabled">時間帯に応じて食事を提案</string>
+    <string name="settings_ollama_models_error">Ollama に接続できませんでした。デフォルトのリストを表示します。</string>
+    <string name="settings_ollama_models_loading">Ollama からモデルを読み込み中…</string>
+    <string name="settings_progress_nutrient_averages">栄養素の平均</string>
+    <string name="settings_progress_nutrient_averages_confirm">表示する</string>
+    <string name="settings_progress_nutrient_averages_subtitle">オンにするまでオフです。下から平均する栄養素を選べます。Open Food Facts や写真では、これらの値が欠けていたり推測だったりすることがよくあります。</string>
+    <string name="settings_progress_nutrient_averages_warning_body">Open Food Facts や写真による分析では、ラベルに記載がない場合にこれらの値が省略されたり推測されたりすることがよくあります。平均には記録されたものだけが含まれるため、ずれることがあります。</string>
+    <string name="settings_progress_nutrient_averages_warning_title">完全な全体像ではありません</string>
+    <string name="sheet_body_fat_accuracy">± %1$s ポイントまで信頼</string>
+    <string name="sheet_body_fat_method">測定方法</string>
+    <string name="sheet_constituents_estimates_note">材料のビタミンとミネラルの値は独立した推定値です。上の食事の合計と正確に一致しない場合があります。</string>
+    <string name="sheet_serving_unlocked_hint">数値はロックされていないため、量を変更しても値は保持されます。</string>
+    <string name="unit_pp">ポイント</string>
+    <string name="untracked_sheet_body">%1$s は平均・トレンド・連続記録のリマインダーに含まれません。任意の概算カロリーは自分の記録用です。</string>
+    <string name="untracked_sheet_kcal_optional">概算カロリー（任意）</string>
+    <string name="untracked_sheet_title">追跡なし</string>
+    <string name="untracked_sheet_toggle">追跡なし</string>
+    <string name="voice_transcribing">文字起こし中…</string>
+    <!-- Settings hub search vocabulary (SettingsIndex.kt); translated from
+         the English defaults in values/strings.xml. Not UI copy, so
+         check_android_strings.py does not count them. -->
+    <string-array name="settings_search_kw_units">
+        <item>メートル法</item>
+        <item>ヤード・ポンド法</item>
+        <item>cm</item>
+        <item>ft</item>
+        <item>kg</item>
+        <item>lbs</item>
+        <item>単位系</item>
+    </string-array>
+    <string-array name="settings_search_kw_energy">
+        <item>エネルギー</item>
+        <item>kJ</item>
+        <item>kj</item>
+        <item>キロジュール</item>
+        <item>kcal</item>
+        <item>カロリー単位</item>
+    </string-array>
+    <string-array name="settings_search_kw_gender">
+        <item>性別</item>
+    </string-array>
+    <string-array name="settings_search_kw_birthday">
+        <item>誕生日</item>
+        <item>年齢</item>
+        <item>生年月日</item>
+        <item>生まれ</item>
+    </string-array>
+    <string-array name="settings_search_kw_height">
+        <item>身長</item>
+        <item>背</item>
+        <item>cm</item>
+        <item>ft</item>
+    </string-array>
+    <string-array name="settings_search_kw_weight">
+        <item>体重</item>
+        <item>現在</item>
+        <item>kg</item>
+        <item>lbs</item>
+    </string-array>
+    <string-array name="settings_search_kw_body_fat">
+        <item>体脂肪率</item>
+        <item>体脂肪</item>
+        <item>パーセント</item>
+    </string-array>
+    <string-array name="settings_search_kw_use_body_fat_bmr">
+        <item>BMR</item>
+        <item>Katch</item>
+        <item>McArdle</item>
+        <item>代謝</item>
+    </string-array>
+    <string-array name="settings_search_kw_goal_body_fat">
+        <item>体脂肪目標</item>
+    </string-array>
+    <string-array name="settings_search_kw_body_measurements">
+        <item>ウエスト</item>
+        <item>メジャー</item>
+        <item>周囲長</item>
+        <item>ヒップ</item>
+        <item>胸囲</item>
+    </string-array>
+    <string-array name="settings_search_kw_weight_goal">
+        <item>減量</item>
+        <item>増量</item>
+        <item>維持</item>
+        <item>目標</item>
+    </string-array>
+    <string-array name="settings_search_kw_diet_mode">
+        <item>ダイエット</item>
+        <item>ケト</item>
+        <item>ビーガン</item>
+        <item>ベジタリアン</item>
+        <item>肉食</item>
+    </string-array>
+    <string-array name="settings_search_kw_keto_carb_mode">
+        <item>ネット</item>
+        <item>合計</item>
+        <item>ケト</item>
+    </string-array>
+    <string-array name="settings_search_kw_keto_net_carbs">
+        <item>ケト</item>
+        <item>グラム</item>
+    </string-array>
+    <string-array name="settings_search_kw_activity_level">
+        <item>活動</item>
+        <item>座位</item>
+        <item>運動</item>
+    </string-array>
+    <string-array name="settings_search_kw_weekly_change">
+        <item>ペース</item>
+        <item>速度</item>
+        <item>週あたり</item>
+    </string-array>
+    <string-array name="settings_search_kw_goal_weight">
+        <item>目標</item>
+    </string-array>
+    <string-array name="settings_search_kw_adaptive_goals">
+        <item>毎週</item>
+        <item>自動</item>
+        <item>ナッジ</item>
+    </string-array>
+    <string-array name="settings_search_kw_energy_goals">
+        <item>消費</item>
+        <item>Health Connect</item>
+        <item>実測</item>
+    </string-array>
+    <string-array name="settings_search_kw_calories">
+        <item>カロリー</item>
+        <item>kcal</item>
+        <item>カロリー目標</item>
+    </string-array>
+    <string-array name="settings_search_kw_macro_protein">
+        <item>マクロ</item>
+        <item>タンパク質</item>
+    </string-array>
+    <string-array name="settings_search_kw_macro_carbs">
+        <item>マクロ</item>
+        <item>炭水化物</item>
+        <item>炭水化物</item>
+    </string-array>
+    <string-array name="settings_search_kw_macro_fat">
+        <item>マクロ</item>
+        <item>脂質</item>
+        <item>脂肪</item>
+    </string-array>
+    <string-array name="settings_search_kw_other_nutrient_goals">
+        <item>食物繊維</item>
+        <item>ナトリウム</item>
+        <item>微量栄養素</item>
+        <item>ビタミン</item>
+    </string-array>
+    <string-array name="settings_search_kw_recalculate_goals">
+        <item>再計算</item>
+        <item>再計算</item>
+        <item>更新</item>
+        <item>目標を更新</item>
+    </string-array>
+    <string-array name="settings_search_kw_day_types">
+        <item>炭水化物サイクリング</item>
+        <item>炭水化物サイクル</item>
+        <item>デイタイプ</item>
+        <item>トレーニング日</item>
+        <item>休養日</item>
+        <item>スケジュール</item>
+        <item>曜日</item>
+    </string-array>
+    <string-array name="settings_search_kw_goal_phases">
+        <item>カット</item>
+        <item>バルク</item>
+        <item>維持</item>
+        <item>フェーズ</item>
+        <item>シェイプ</item>
+        <item>減量フェーズ</item>
+        <item>増量フェーズ</item>
+    </string-array>
+    <string-array name="settings_search_kw_calc_methods">
+        <item>計算式</item>
+        <item>BMR</item>
+        <item>TDEE</item>
+        <item>Mifflin</item>
+        <item>Katch</item>
+        <item>検証</item>
+    </string-array>
+    <string-array name="settings_search_kw_default_to_grams">
+        <item>グラム</item>
+        <item>単位</item>
+    </string-array>
+    <string-array name="settings_search_kw_food_log_sort">
+        <item>順序</item>
+        <item>並び替え</item>
+    </string-array>
+    <string-array name="settings_search_kw_meal_times">
+        <item>食事</item>
+        <item>朝食</item>
+        <item>昼食</item>
+        <item>夕食</item>
+        <item>スケジュール</item>
+    </string-array>
+    <string-array name="settings_search_kw_photo_note_prompt">
+        <item>写真</item>
+        <item>求める</item>
+        <item>メモ</item>
+        <item>説明</item>
+    </string-array>
+    <string-array name="settings_search_kw_meal_constituents">
+        <item>材料</item>
+        <item>内訳</item>
+    </string-array>
+    <string-array name="settings_search_kw_food_databases">
+        <item>データベース</item>
+        <item>検索</item>
+        <item>ソース</item>
+        <item>Open Food Facts</item>
+        <item>USDA</item>
+        <item>スイス</item>
+        <item>オフライン</item>
+    </string-array>
+    <string-array name="settings_search_kw_serving_unit_mode">
+        <item>分量</item>
+        <item>単位</item>
+        <item>検出</item>
+    </string-array>
+    <string-array name="settings_search_kw_serving_unit_heuristics">
+        <item>分量</item>
+        <item>ルール</item>
+        <item>検出</item>
+    </string-array>
+    <string-array name="settings_search_kw_home_display">
+        <item>ホーム</item>
+        <item>カード</item>
+        <item>栄養素</item>
+    </string-array>
+    <string-array name="settings_search_kw_calorie_gauge">
+        <item>ゲージ</item>
+        <item>アクティブ</item>
+        <item>消費</item>
+        <item>食べ戻し</item>
+        <item>Health Connect</item>
+        <item>ワークアウト</item>
+    </string-array>
+    <string-array name="settings_search_kw_appearance">
+        <item>ダーク</item>
+        <item>ライト</item>
+        <item>OLED</item>
+        <item>夜間</item>
+        <item>テーマモード</item>
+    </string-array>
+    <string-array name="settings_search_kw_theme_color">
+        <item>テーマ</item>
+        <item>アクセント</item>
+        <item>カラー</item>
+        <item>色</item>
+        <item>ティール</item>
+        <item>青</item>
+    </string-array>
+    <string-array name="settings_search_kw_language">
+        <item>言語</item>
+        <item>ロケール</item>
+        <item>翻訳</item>
+        <item>ドイツ語</item>
+        <item>スペイン語</item>
+    </string-array>
+    <string-array name="settings_search_kw_fixed_launcher_icon">
+        <item>ランチャー</item>
+        <item>アプリアイコン</item>
+        <item>ティール</item>
+    </string-array>
+    <string-array name="settings_search_kw_system_date_time_pickers">
+        <item>日付</item>
+        <item>時刻</item>
+        <item>ピッカー</item>
+        <item>時計</item>
+        <item>カレンダー</item>
+    </string-array>
+    <string-array name="settings_search_kw_customize_progress">
+        <item>進捗</item>
+        <item>期間</item>
+        <item>グラフ</item>
+        <item>グラフ</item>
+        <item>トレンド</item>
+        <item>デフォルト</item>
+        <item>食物繊維</item>
+        <item>糖質</item>
+        <item>ナトリウム</item>
+        <item>栄養素</item>
+    </string-array>
+    <string-array name="settings_search_kw_progress_nutrient_averages">
+        <item>食物繊維</item>
+        <item>糖質</item>
+        <item>ナトリウム</item>
+        <item>微量</item>
+        <item>栄養素</item>
+        <item>平均</item>
+    </string-array>
+    <string-array name="settings_search_kw_week_starts">
+        <item>カレンダー</item>
+        <item>月曜日</item>
+        <item>日曜日</item>
+        <item>週</item>
+    </string-array>
+    <string-array name="settings_search_kw_water">
+        <item>水分補給</item>
+        <item>目標</item>
+        <item>飲む</item>
+        <item>ml</item>
+        <item>プリセット</item>
+    </string-array>
+    <string-array name="settings_search_kw_nicotine">
+        <item>たばこ</item>
+        <item>電子たばこ</item>
+        <item>パウチ</item>
+        <item>喫煙</item>
+        <item>上限</item>
+    </string-array>
+    <string-array name="settings_search_kw_caffeine">
+        <item>コーヒー</item>
+        <item>お茶</item>
+        <item>エナジードリンク</item>
+        <item>上限</item>
+        <item>カフェイン</item>
+    </string-array>
+    <string-array name="settings_search_kw_notes">
+        <item>日誌</item>
+        <item>メモ</item>
+        <item>日記</item>
+        <item>デイリーノート</item>
+    </string-array>
+    <string-array name="settings_search_kw_fasting">
+        <item>ファスティング</item>
+        <item>間欠的</item>
+        <item>タイマー</item>
+        <item>目標</item>
+        <item>断食</item>
+    </string-array>
+    <string-array name="settings_search_kw_notifications">
+        <item>リマインダー</item>
+        <item>連続記録</item>
+        <item>サマリー</item>
+        <item>体重リマインダー</item>
+        <item>バッテリー</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_features_master">
+        <item>AI</item>
+        <item>オン</item>
+        <item>オフ</item>
+        <item>プライバシー</item>
+    </string-array>
+    <string-array name="settings_search_kw_show_coach_tab">
+        <item>コーチ</item>
+        <item>タブ</item>
+        <item>非表示</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_provider">
+        <item>Gemini</item>
+        <item>OpenAI</item>
+        <item>Anthropic</item>
+        <item>Claude</item>
+        <item>Ollama</item>
+        <item>GPT</item>
+        <item>ローカル</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_model">
+        <item>モデル</item>
+        <item>バージョン</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_vision_model">
+        <item>ビジョン</item>
+        <item>画像</item>
+        <item>マルチモーダル</item>
+    </string-array>
+    <string-array name="settings_search_kw_api_key">
+        <item>APIキー</item>
+        <item>シークレット</item>
+        <item>トークン</item>
+        <item>Gemini</item>
+        <item>OpenAI</item>
+    </string-array>
+    <string-array name="settings_search_kw_base_url">
+        <item>エンドポイント</item>
+        <item>URL</item>
+        <item>Ollama</item>
+        <item>ローカル</item>
+        <item>サーバー</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_allow_insecure_http">
+        <item>HTTP</item>
+        <item>平文</item>
+        <item>ローカル</item>
+    </string-array>
+    <string-array name="settings_search_kw_on_device_model">
+        <item>オンデバイス</item>
+        <item>Gemma</item>
+        <item>ダウンロード</item>
+        <item>ローカル</item>
+        <item>オフライン</item>
+    </string-array>
+    <string-array name="settings_search_kw_max_tokens">
+        <item>トークン</item>
+        <item>長さ</item>
+        <item>上限</item>
+    </string-array>
+    <string-array name="settings_search_kw_ai_read_timeout">
+        <item>タイムアウト</item>
+        <item>秒</item>
+        <item>ネットワーク</item>
+    </string-array>
+    <string-array name="settings_search_kw_gemini_google_search">
+        <item>グラウンディング</item>
+        <item>Google</item>
+        <item>ウェブ</item>
+    </string-array>
+    <string-array name="settings_search_kw_section_custom_instructions">
+        <item>コンテキスト</item>
+        <item>プロンプト</item>
+        <item>コーチ</item>
+        <item>パーソナリティ</item>
+    </string-array>
+    <string-array name="settings_search_kw_section_fallback">
+        <item>フォールバック</item>
+        <item>バックアップ</item>
+        <item>セカンダリ</item>
+        <item>再試行</item>
+    </string-array>
+    <string-array name="settings_search_kw_section_speech">
+        <item>音声</item>
+        <item>声</item>
+        <item>ディクテーション</item>
+        <item>音声認識</item>
+        <item>マイク</item>
+        <item>STT</item>
+    </string-array>
+    <string-array name="settings_search_kw_health_connect">
+        <item>同期</item>
+        <item>歩数</item>
+        <item>睡眠</item>
+        <item>権限</item>
+        <item>Google Fit</item>
+        <item>Samsung</item>
+    </string-array>
+    <string-array name="settings_search_kw_manage_health_access">
+        <item>権限</item>
+        <item>Health Connect</item>
+    </string-array>
+    <string-array name="settings_search_kw_health_background_sync">
+        <item>バックグラウンド</item>
+        <item>自動</item>
+    </string-array>
+    <string-array name="settings_search_kw_export_diary">
+        <item>エクスポート</item>
+        <item>JSON</item>
+        <item>バックアップ</item>
+        <item>ファイル</item>
+    </string-array>
+    <string-array name="settings_search_kw_export_body_metrics">
+        <item>エクスポート</item>
+        <item>体重</item>
+        <item>体脂肪率</item>
+        <item>ファイル</item>
+    </string-array>
+    <string-array name="settings_search_kw_import_diary">
+        <item>インポート</item>
+        <item>復元</item>
+        <item>JSON</item>
+    </string-array>
+    <string-array name="settings_search_kw_import_body_metrics">
+        <item>インポート</item>
+        <item>復元</item>
+        <item>体重</item>
+        <item>CSV</item>
+    </string-array>
+    <string-array name="settings_search_kw_sync">
+        <item>WebDAV</item>
+        <item>バックアップ</item>
+        <item>クラウド</item>
+        <item>自動同期</item>
+        <item>サーバー</item>
+    </string-array>
+    <string-array name="settings_search_kw_clear_food_log">
+        <item>削除</item>
+        <item>消去</item>
+        <item>全消去</item>
+        <item>食事</item>
+    </string-array>
+    <string-array name="settings_search_kw_delete_all_data">
+        <item>削除</item>
+        <item>消去</item>
+        <item>全消去</item>
+        <item>リセット</item>
+        <item>初期化</item>
+    </string-array>
+</resources>

@@ -1,0 +1,144 @@
+package app.chompass.services
+
+import android.util.Log
+import app.chompass.R
+import app.chompass.data.FoodRepository
+import app.chompass.data.PreferencesStore
+import app.chompass.data.ProfileRepository
+import app.chompass.data.WeightRepository
+import app.chompass.data.saveLastGoalChangeSheet
+import app.chompass.models.DayTypeActiveStats
+import app.chompass.models.EnergyFormat
+import app.chompass.models.EnergyUnit
+import app.chompass.models.UserProfile
+import app.chompass.services.ai.GoalCalculation
+import app.chompass.services.ai.RecalcSheetData
+import app.chompass.services.ai.RecalcSheetSource
+import app.chompass.services.health.HealthConnectManager
+import java.time.LocalDate
+import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
+
+/**
+ * Adaptive Goals + measured Energy Burn TDEE resolution. Extracted from
+ * [app.chompass.AppContainer] so the DI root stays a wiring map, not a use-case bag.
+ */
+class AdaptiveGoalsService(
+    private val prefs: PreferencesStore,
+    private val health: HealthConnectManager,
+    private val profileRepository: ProfileRepository,
+    private val foodRepository: FoodRepository,
+    private val weightRepository: WeightRepository,
+    private val strings: (Int, Array<out Any>) -> String,
+) {
+    private var refreshInFlight = false
+
+    /**
+     * Energy Burn toggle resolved to a number: the user's measured maintenance from Health Connect
+     * (14-day active + basal average), or null when Energy Burn is off, Health is unavailable, or
+     * there isn't enough data. Single source consulted by both manual Recalculate and Adaptive.
+     */
+    suspend fun measuredEnergyTdeeIfEnabled(profile: UserProfile): Int? {
+        if (!prefs.healthEnergyGoalsEnabled.first()) return null
+        if (!prefs.healthConnectEnabled.first()) return null
+        if (!health.isAvailable() || !health.hasEnergyRead()) return null
+        val summary = runCatching { health.readRecentEnergySummary(days = 14) }.getOrNull() ?: return null
+        // Persist the measured active average so the home gauge can split the measured goal
+        // into a sedentary base (goal − measured active) instead of a PAL estimate.
+        prefs.setHealthEnergyMeasuredActive(summary.activeAverageCalories)
+        persistDailyActiveHistory(summary.dailyActiveKcal)
+        return summary.totalAverageCalories ?: (profile.bmr.roundToInt() + summary.activeAverageCalories)
+    }
+
+    /**
+     * Adaptive Goals: once a week, apply the deterministic ±150 kcal tweak
+     * ([AdaptiveGoalService.apply]) from the logged weight trend (or measured Health Connect
+     * TDEE). Locked calories are left untouched. Recalculate stays the AI path.
+     */
+    suspend fun refreshIfNeeded(force: Boolean = false): AdaptiveGoalResult? {
+        if (refreshInFlight) return null
+        refreshInFlight = true
+        try {
+            if (!prefs.adaptiveGoalsEnabled.first()) return null
+
+            val today = LocalDate.now()
+            if (!force && !shouldCheckAdaptiveGoals(prefs.adaptiveGoalsLastCheckDay.first(), today)) {
+                return null
+            }
+
+            val profile = profileRepository.current() ?: return null
+            val measuredTdee = measuredEnergyTdeeIfEnabled(profile)
+            // #60 phase 4: with day types on, the baseline is what the user
+            // actually targeted (journaled lookback, MACRO-CYCLE-D) or, before
+            // enough journal coverage, the forward window average — not the
+            // base single-target number.
+            val planAverageCalories = AdaptiveGoalService.planCurrentCalories(
+                profile = profile,
+                journal = prefs.goalJournal.first(),
+                today = today,
+            )
+            val result = AdaptiveGoalService.apply(
+                profile = profile,
+                weights = weightRepository.entries.first(),
+                foods = foodRepository.entries.first(),
+                measuredTdee = measuredTdee,
+                planAverageCalories = planAverageCalories,
+            )
+            Log.d("Chompass", "adaptive: changed=${result.changed} kcal=${result.updatedCalories} ${result.message}")
+            prefs.setAdaptiveGoalsLastCheckDay(today.toString())
+            if (!result.changed || result.updatedCalories == null) return result
+
+            prefs.saveAdaptiveGoalPreviousTargetsIfNeeded(profile)
+            profileRepository.save(result.profile)
+            val unit = EnergyUnit.fromStorage(prefs.energyUnit.first())
+            val unitLabel = strings(if (unit == EnergyUnit.KJ) R.string.unit_kj else R.string.unit_kcal, arrayOf())
+            val message = strings(R.string.vm_adaptive_updated, arrayOf(EnergyFormat.quantity(result.updatedCalories, unit), unitLabel)) +
+                " ${result.message}"
+            // Record the change for the Goals transparency sheet (reopenable on demand):
+            // deterministic, so tier/provider stay null and the sheet renders the
+            // built-in-formulas lines + the formula baseline/data used + this reason.
+            val untracked = app.chompass.models.UntrackedDays.parseIsoSet(prefs.untrackedDays.first())
+            val forecast = WeightAnalysisService.compute(
+                weights = weightRepository.entries.first(),
+                foods = foodRepository.entries.first(),
+                profile = profile,
+                untrackedDates = untracked,
+            )
+            prefs.saveLastGoalChangeSheet(
+                RecalcSheetData(
+                    result = GoalCalculation(
+                        calories = result.updatedCalories,
+                        protein = result.profile.proteinGoal,
+                        carbs = result.profile.carbsGoal,
+                        fat = result.profile.fatGoal,
+                        reason = message,
+                        report = buildGoalCalculationReport(profile, forecast, measuredTdee),
+                    ),
+                    before = profile,
+                    after = result.profile,
+                    savedAtMillis = System.currentTimeMillis(),
+                    source = RecalcSheetSource.ADAPTIVE,
+                )
+            )
+            return result.copy(message = message)
+        } finally {
+            refreshInFlight = false
+        }
+    }
+
+    private suspend fun persistDailyActiveHistory(daily: Map<String, Int>) {
+        if (daily.isEmpty()) return
+        val today = LocalDate.now()
+        val merged = DayTypeActiveStats.pruneHistory(
+            prefs.healthEnergyActiveByDay.first() + daily.filterValues { it > 0 },
+            today,
+        )
+        prefs.setHealthEnergyActiveByDay(merged)
+    }
+
+    private fun shouldCheckAdaptiveGoals(lastCheckDay: String?, today: LocalDate): Boolean {
+        val lastCheck = lastCheckDay?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: return true
+        return !lastCheck.plusDays(7).isAfter(today)
+    }
+}

@@ -1,0 +1,224 @@
+package app.chompass.data
+
+import app.chompass.models.UnitFormat
+import app.chompass.models.WeightEntry
+import app.chompass.services.health.ExternalWeight
+import app.chompass.services.health.HealthConnectManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneId
+import java.util.UUID
+import kotlin.math.abs
+
+/** Emitted when the user crosses their goal weight (under -> at/below for lose, over -> at/above for gain). */
+data class WeightGoalReachedEvent(val reachedEntry: WeightEntry)
+
+/**
+ * CRUD + reactive reads for weight entries. Port of iOS WeightStore.
+ * Also handles two cross-cutting behaviors:
+ *
+ * 1. After each add/delete, syncs [UserProfile.weightKg] to the latest entry
+ *    so BMR/TDEE math and Settings stay in sync with Progress.
+ * 2. Returns a [WeightGoalReachedEvent] from [addEntry] when the new weight
+ *    crosses the user's goal, for the caller to surface as a celebration UI.
+ */
+class WeightRepository(
+    private val prefs: PreferencesStore,
+    private val profileRepository: ProfileRepository,
+    private val health: HealthConnectManager? = null,
+    private val sync: app.chompass.sync.SyncRepository? = null,
+) {
+    val entries: Flow<List<WeightEntry>> = prefs.weightEntries.map { it.sortedBy { e -> e.date } }
+
+    val latest: Flow<WeightEntry?> = prefs.weightEntries.map { list ->
+        list.maxByOrNull { it.date }
+    }
+
+    /** Safe to call repeatedly — no-ops once any entries exist. */
+    suspend fun seedInitialWeightIfEmpty(weightKg: Double) {
+        if (prefs.weightEntries.first().isNotEmpty()) return
+        addEntry(WeightEntry(weightKg = weightKg))
+    }
+
+    suspend fun addEntry(entry: WeightEntry): WeightGoalReachedEvent? {
+        val current = prefs.weightEntries.first()
+        val previousLatest = current.maxByOrNull { it.date }
+        val stored = entry.copy(weightKg = UnitFormat.roundKgToHundredths(entry.weightKg))
+        prefs.applyWeightBucketChanges(upsertsByMonth = mapOf(stored.month() to listOf(stored)))
+        sync?.touch(stored.id, "weight")
+
+        syncProfileWeightToLatest()
+        if (shouldSyncHealth()) {
+            health?.writeWeight(stored)
+        }
+
+        val profile = profileRepository.current()
+        val goal = profile?.goalWeightKg
+        if (profile != null && goal != null && previousLatest != null) {
+            val crossed = when (profile.goal) {
+                app.chompass.models.WeightGoal.LOSE ->
+                    previousLatest.weightKg > goal && stored.weightKg <= goal
+                app.chompass.models.WeightGoal.GAIN ->
+                    previousLatest.weightKg < goal && stored.weightKg >= goal
+                app.chompass.models.WeightGoal.MAINTAIN -> false
+            }
+            if (crossed) return WeightGoalReachedEvent(stored)
+        }
+        return null
+    }
+
+    suspend fun deleteEntry(id: UUID) {
+        val existing = prefs.weightEntries.first().firstOrNull { it.id == id } ?: return
+        // Tombstone BEFORE the bucket removal (upstream d03be0ea): the id lands in
+        // healthDeletedWeightIds so a later Health Connect import mapping onto the
+        // same deterministic id is filtered out instead of resurrecting the record.
+        prefs.setHealthDeletedWeightIds(appendTombstoneId(prefs.healthDeletedWeightIds.first(), id))
+        prefs.applyWeightBucketChanges(removalIdsByMonth = mapOf(existing.month() to setOf(id)))
+        sync?.tombstone(id, "weight")
+        syncProfileWeightToLatest()
+        // Delete the HC record even when sync is off (iOS parity, best-effort) —
+        // a surviving fudai-tagged record would resurrect through the own-record
+        // restore path on the next full backfill.
+        health?.deleteWeight(id)
+    }
+
+    suspend fun replaceAll(entries: List<WeightEntry>) {
+        prefs.setWeightEntries(entries)
+        syncProfileWeightToLatest()
+    }
+
+    suspend fun clear() {
+        prefs.setWeightEntries(emptyList())
+    }
+
+    suspend fun entriesInRange(from: Instant, to: Instant): List<WeightEntry> =
+        prefs.weightEntries.first()
+            .filter { it.date in from..to }
+            .sortedBy { it.date }
+
+    private suspend fun syncProfileWeightToLatest() {
+        val profile = profileRepository.current() ?: return
+        val newest = prefs.weightEntries.first().maxByOrNull { it.date } ?: return
+        if (abs(profile.weightKg - newest.weightKg) > 0.01) {
+            // The new weight moves BMR/TDEE: an auto-sourced target that now sits
+            // outside CAL-SAFE is pulled back in (manual/locked goals untouched).
+            profileRepository.save(profile.copy(weightKg = newest.weightKg).reclampedAutoGoal())
+        }
+    }
+
+    /**
+     * Merge externally-sourced weigh-ins (e.g. a Withings scale via Health Connect)
+     * into local history. Idempotent: each external record maps to a deterministic id
+     * so repeated imports upsert in place instead of duplicating, and the user's own
+     * manual entries (random ids) are preserved. Records Fud AI itself wrote restore
+     * under their original UUID — after a reinstall the local store is empty and this
+     * is what brings the history back; when the entry still exists locally the
+     * same-id upsert is a no-op. The change-token path filters own records at the
+     * manager level, so live echo-imports are still suppressed.
+     */
+    suspend fun importExternalWeights(external: List<ExternalWeight>) {
+        val manager = health ?: return
+        val tombstoned = prefs.healthDeletedWeightIds.first()
+        val incoming = external
+            .map {
+                WeightEntry(
+                    id = manager.ownRecordId(it.clientRecordId)
+                        ?: externalId(it.clientRecordId, it.recordId, it.time),
+                    date = it.time,
+                    weightKg = it.weightKg
+                )
+            }
+            // Deleted stays deleted (upstream d03be0ea). Applies regardless of the
+            // fudai_ tag: when the user deleted our own record but the HC delete
+            // failed, the surviving record must still not resurrect here.
+            .filter { it.id !in tombstoned }
+        if (incoming.isEmpty()) return
+        // Upsert into current month files. Do not replaceAll from a snapshot taken
+        // around a slow Health Connect read: that wipe is #63 (a weigh-in logged
+        // while the pull is in flight disappears when the stale list is written).
+        prefs.applyWeightBucketChanges(upsertsByMonth = incoming.groupBy { it.month() })
+        syncProfileWeightToLatest()
+    }
+
+    /**
+     * Merge file-imported weigh-ins (Chompass JSON/CSV, openScale, generic CSV) into
+     * local history. Same by-id upsert semantics as [importExternalWeights] — the
+     * importer assigns deterministic ids, so re-importing the same file is a no-op.
+     * Deliberately does NOT push the imported history to Health Connect: a bulk
+     * file import echoing hundreds of writes into HC would spam every connected app.
+     * Returns the number of entries added or updated.
+     */
+    suspend fun importFromFile(entries: List<WeightEntry>): Int {
+        if (entries.isEmpty()) return 0
+        val existing = prefs.weightEntries.first()
+        val (merged, changed) = mergeWeightsById(existing, entries)
+        // Persist an id-duplicate collapse even when nothing else changed,
+        // otherwise the duplicate survives and keeps skewing the trend math
+        // (upstream fud-ai 736f25fc).
+        if (changed == 0 && merged.size == existing.size) return 0
+        val existingById = existing.associateBy { it.id }
+        val duplicateIds = existing.groupBy { it.id }.filterValues { it.size > 1 }.keys
+        val upserts = merged.filter { row ->
+            val prev = existingById[row.id]
+            prev == null || abs(prev.weightKg - row.weightKg) > 0.0001 || prev.date != row.date ||
+                row.id in duplicateIds
+        }
+        prefs.applyWeightBucketChanges(upsertsByMonth = upserts.groupBy { it.month() })
+        syncProfileWeightToLatest()
+        return changed
+    }
+
+    /** Stable id for an external record: prefer the source's clientRecordId, then the
+     *  Health Connect record id, then the timestamp. Crucially the VALUE is never part of
+     *  the seed, so an in-place correction (same record, new weight) upserts in place
+     *  instead of leaving an orphaned duplicate. */
+    private fun externalId(clientRecordId: String?, recordId: String, time: Instant): UUID {
+        val seed = clientRecordId?.takeIf { it.isNotBlank() }
+            ?: recordId.takeIf { it.isNotBlank() }
+            ?: "hc-weight:${time.toEpochMilli()}"
+        return UUID.nameUUIDFromBytes(seed.toByteArray())
+    }
+
+    private fun WeightEntry.month(): YearMonth = YearMonth.from(date.atZone(ZoneId.systemDefault()))
+
+    /** Write gate — only push to Health Connect when the user granted weight WRITE. */
+    private suspend fun shouldSyncHealth(): Boolean {
+        val manager = health ?: return false
+        return prefs.healthConnectEnabled.first() && manager.hasWeightWrite()
+    }
+}
+
+/**
+ * Pure merge for file imports: by-id upsert plus a near-duplicate guard — an incoming
+ * entry whose value matches an existing entry (any id) within the same minute is
+ * skipped, so importing a file that mirrors manually-logged weigh-ins doesn't double
+ * them. Returns the merged list and the number of entries added or updated.
+ */
+internal fun mergeWeightsById(
+    existing: List<WeightEntry>,
+    incoming: List<WeightEntry>,
+): Pair<List<WeightEntry>, Int> {
+    val byId = existing.associateBy { it.id }.toMutableMap()
+    var changed = 0
+    for (entry in incoming) {
+        val current = byId[entry.id]
+        if (current != null) {
+            if (abs(current.weightKg - entry.weightKg) > 0.0001 || current.date != entry.date) {
+                byId[entry.id] = entry
+                changed++
+            }
+            continue
+        }
+        val nearDuplicate = existing.any {
+            abs(it.weightKg - entry.weightKg) < 0.005 &&
+                abs(it.date.toEpochMilli() - entry.date.toEpochMilli()) < 60_000
+        }
+        if (nearDuplicate) continue
+        byId[entry.id] = entry
+        changed++
+    }
+    return byId.values.sortedBy { it.date } to changed
+}

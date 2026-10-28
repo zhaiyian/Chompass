@@ -1,0 +1,1012 @@
+package app.chompass.ui.home
+
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.OverscrollEffect
+import androidx.compose.foundation.OverscrollFactory
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.WbTwilight
+import app.chompass.ChompassApp
+import app.chompass.R
+import app.chompass.models.CurrentMealCatalog
+import app.chompass.models.MealType
+import app.chompass.models.ServingUnitOption
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.components.isDarkTheme
+import app.chompass.ui.components.MagnitudeDrafts
+import app.chompass.ui.theme.AppRadii
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.models.MacroValueFormatter
+import app.chompass.ui.components.SplitDecimalWheelPicker
+import app.chompass.ui.components.UnitWheelPicker
+import app.chompass.ui.components.WheelSelectionHighlight
+import app.chompass.ui.components.culinaryUnitLabels
+
+// Shared visual primitives for the food review/edit sheets. Names are
+// `Sheet*`-prefixed so they don't collide with the look-alike privates in
+// HomeScreen.kt and NutritionDetailSheet.kt.
+
+/**
+ * Top chrome for review/edit sheets. Pass [primaryLabel]/[onPrimary] to keep
+ * the primary action in the toolbar (utility sheets). Food review/edit sheets
+ * omit primary here and use [SheetStickyPrimaryBar] instead.
+ */
+@Composable
+internal fun SheetReviewToolbar(
+    title: String,
+    onCancel: () -> Unit,
+    primaryLabel: String? = null,
+    secondaryLabel: String? = null,
+    primaryEnabled: Boolean = true,
+    onPrimary: (() -> Unit)? = null,
+    onSecondary: (() -> Unit)? = null
+) {
+    val compact = LocalConfiguration.current.screenWidthDp < 380
+    val outerPadding = if (compact) 8.dp else 14.dp
+    val itemGap = if (compact) 6.dp else 8.dp
+    val primaryText = primaryLabel
+    val primaryClick = onPrimary
+    val secondaryText = secondaryLabel
+    val secondaryClick = onSecondary
+    val buttonPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = outerPadding, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(onClick = onCancel, contentPadding = buttonPadding) {
+            Text(
+                stringResource(R.string.action_cancel),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            title,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f)
+        )
+        if (secondaryText != null && secondaryClick != null) {
+            Spacer(Modifier.width(itemGap))
+            TextButton(
+                onClick = {
+                    MagnitudeDrafts.commitAll()
+                    secondaryClick()
+                },
+                modifier = Modifier.weight(1f, fill = false),
+                contentPadding = buttonPadding,
+            ) {
+                Text(secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (primaryText != null && primaryClick != null) {
+            Spacer(Modifier.width(itemGap))
+            Button(
+                onClick = {
+                    MagnitudeDrafts.commitAll()
+                    primaryClick()
+                },
+                enabled = primaryEnabled,
+                contentPadding = buttonPadding,
+            ) {
+                Text(primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** Dim note in More Nutrition when meal-level micros no longer match the constituent mix. */
+@Composable
+internal fun StaleCompositionNote(
+    onReestimate: (() -> Unit)? = null,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            stringResource(R.string.nutrition_stale_composition),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            lineHeight = 18.sp,
+        )
+        if (onReestimate != null) {
+            Text(
+                stringResource(R.string.nutrition_stale_reestimate),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onReestimate),
+            )
+        }
+    }
+}
+
+/**
+ * Dim note under the macros card when the fill-missing scan found gaps:
+ * "<N> values missing" plus the Fill action that opens the Ask-AI section
+ * with the Fill mode preselected (WP2 UX-1).
+ */
+@Composable
+internal fun MissingValuesNote(
+    missingCount: Int,
+    onFill: (() -> Unit)? = null,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            pluralStringResource(R.plurals.edit_ai_missing_values, missingCount, missingCount),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            lineHeight = 18.sp,
+        )
+        if (onFill != null) {
+            Text(
+                stringResource(R.string.edit_ai_missing_action),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onFill),
+            )
+        }
+    }
+}
+
+/**
+ * Sticky primary CTA for [FoodResultSheet] / [EditFoodEntrySheet].
+ * Sits below the scroll body so Log/Save stays visible with the IME open.
+ */
+@Composable
+internal fun SheetStickyPrimaryBar(
+    primaryLabel: String,
+    onPrimary: () -> Unit,
+    primaryEnabled: Boolean = true,
+    textActionLabel: String? = null,
+    onTextAction: (() -> Unit)? = null,
+    textActionEnabled: Boolean = true,
+) {
+    val isDark = isDarkTheme()
+    val hairline = if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .navigationBarsPadding()
+            .imePadding(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(hairline),
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (textActionLabel != null && onTextAction != null) {
+                TextButton(
+                    onClick = {
+                        MagnitudeDrafts.commitAll()
+                        onTextAction()
+                    },
+                    enabled = textActionEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(textActionLabel, fontWeight = FontWeight.Medium)
+                }
+            }
+            val shape = RoundedCornerShape(AppRadii.Sheet)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .alpha(if (primaryEnabled) 1f else 0.45f)
+                    .clickable(enabled = primaryEnabled, onClick = {
+                        MagnitudeDrafts.commitAll()
+                        onPrimary()
+                    })
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    primaryLabel,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SheetToolbarPill(
+    label: String,
+    bold: Boolean = false,
+    compact: Boolean = false,
+    enabled: Boolean = true,
+    maxLines: Int = 1,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+
+    val shape = CircleShape
+    val isDark = isDarkTheme()
+    val horizontalPadding = when {
+        compact && bold -> 12.dp
+        compact -> 10.dp
+        else -> 16.dp
+    }
+    val pillContainer = (if (bold) {
+        Modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primary)
+    } else {
+        Modifier
+            .clip(shape)
+            .background(if (isDark) AppColors.TranslucentSurfaceDark else AppColors.TranslucentSurfaceLight)
+            .border(0.5.dp, if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight, shape)
+    }).alpha(if (enabled) 1f else 0.45f)
+    Box(
+        modifier
+            .then(pillContainer)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (bold) MaterialTheme.colorScheme.onPrimary else AppColors.Calorie,
+            fontSize = if (compact) 14.sp else 16.sp,
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = maxLines,
+            softWrap = maxLines > 1,
+            overflow = TextOverflow.Ellipsis,
+
+        )
+
+    }
+}
+
+@Composable
+internal fun SheetSectionHeader(title: String) {
+    Text(
+        title,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+        modifier = Modifier.padding(start = 18.dp, top = 8.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+internal fun SheetPillRow(
+    onClick: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(AppRadii.PillCard)
+    val isDark = isDarkTheme()
+    val rowFill = if (isDark) {
+        AppColors.TranslucentSurfaceDark
+    } else {
+        AppColors.TranslucentSurfaceLight
+    }
+    val rowBorder = if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight
+    val base = Modifier
+        .fillMaxWidth()
+        .clip(shape)
+        .background(rowFill)
+        .border(0.5.dp, rowBorder, shape)
+    val withClick = if (onClick != null) base.clickable(onClick = onClick) else base
+    Row(
+        withClick.padding(horizontal = 18.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content
+    )
+}
+
+@Composable
+internal fun SheetPillCard(content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(AppRadii.PillCard)
+    val isDark = isDarkTheme()
+    val cardFill = if (isDark) {
+        AppColors.TranslucentSurfaceDark
+    } else {
+        AppColors.TranslucentSurfaceLight
+    }
+    val cardBorder = if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(cardFill)
+            .border(0.5.dp, cardBorder, shape)
+            .padding(vertical = 4.dp),
+        content = content
+    )
+}
+
+/**
+ * Quantity + unit for review/edit sheets. Collapsed by default to a summary
+ * row (same pattern as the macro pickers); tap expands the dual wheel.
+ * Last wheel-vs-numpad mode (#62) is honored when expanded.
+ */
+@Composable
+internal fun ServingQuantityCard(
+    quantityText: String,
+    onQuantityChange: (String) -> Unit,
+    selectedUnitId: String,
+    onSelectedUnitChange: (String) -> Unit,
+    servingSizeGrams: Double,
+    unitOptions: List<ServingUnitOption>,
+    menuExpanded: Boolean,
+    onMenuExpandedChange: (Boolean) -> Unit,
+    gramUnit: String,
+    isLoadingUnits: Boolean = false,
+    enabled: Boolean = true,
+    /** Set false for hosts that don't resolve deltas/expressions (constituents). */
+    showQuantityCalc: Boolean = true,
+    /**
+     * Opt-in per-entry serving customization (Codeberg #10 follow-up): renames /
+     * re-weights the selected unit right in the card. Receives the updated option
+     * list plus the new selected unit id (the normalized id follows the name).
+     * Hosts without editable options pass null to hide the affordance.
+     */
+    onUnitOptionsChange: ((List<ServingUnitOption>, String) -> Unit)? = null,
+    /** Fired when the expanded quantity editor collapses (input blur) so hosts
+     *  on the draft-while-typing model can resolve the pending draft. */
+    onQuantityEditingDone: (() -> Unit)? = null,
+) {
+    val pickerOptions = ServingUnitOption.pickerOptions(unitOptions)
+    val selectedOption = ServingUnitOption.optionMatching(selectedUnitId, unitOptions)
+    val parsedQuantity = ServingUnitOption.parseQuantity(quantityText)
+    // App-generated "serving" unit (OFF barcode / AI fallback) is English in the
+    // model; display the localized label(s) instead (unit_serving / _plural).
+    val servingLabel = stringResource(R.string.unit_serving)
+    val servingPluralLabel = stringResource(R.string.unit_serving_plural)
+    val packageLabel = stringResource(R.string.unit_package)
+    val packagePluralLabel = stringResource(R.string.unit_package_plural)
+    val culinaryLabels = culinaryUnitLabels()
+    val selectedUnitLabel = selectedOption.displayUnit(
+        parsedQuantity,
+        servingLabel,
+        servingPluralLabel,
+        packageLabel,
+        packagePluralLabel,
+        culinaryLabels,
+    )
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val dismissKeyboard = {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+    var expanded by remember { mutableStateOf(false) }
+    // Per-entry custom serving: rename / re-weight the selected unit inline.
+    // Available on any unit — including plain grams — so a dish without a
+    // heuristic or analyzed unit (homemade curry, a stew, ...) can still get a
+    // named serving ("bowl" = 300 g). Drafts reset when the selected option
+    // changes (its id is the key).
+    var editingServing by remember { mutableStateOf(false) }
+    val canCustomizeServing = onUnitOptionsChange != null
+    var servingNameDraft by remember(selectedUnitId) { mutableStateOf(selectedOption.unit) }
+    var servingGramsDraft by remember(selectedUnitId) {
+        mutableStateOf(
+            ServingUnitOption.formatQuantity(
+                if (selectedOption.isGramUnit) {
+                    // Starting from plain grams the new serving defaults to the
+                    // whole dish's grams (one bowl of the logged amount); manual
+                    // entries have no total yet, so fall back to 1.
+                    servingSizeGrams.takeIf { it > 0 } ?: 1.0
+                } else {
+                    selectedOption.gramsPerUnit
+                }
+            )
+        )
+    }
+    // Commit-only (Codeberg #59): the name and grams fields are drafts; the
+    // unit options are only mutated when the checkmark commits, never per
+    // keystroke. Committing on every keystroke fed each typed prefix ("s",
+    // "sp", "spi", ...) into the unit wheel as a separate entry because a
+    // unit's id follows its name. Returns true when the edit was applied so
+    // the caller can close the editor, or false to keep it open on rejection
+    // (empty name on the grams path, non-positive grams).
+    val pushServingEdit: () -> Boolean = {
+        val grams = ServingUnitOption.parseQuantity(servingGramsDraft)
+        if (grams != null) {
+            ServingUnitOption.servingEdit(
+                selectedUnitId = selectedUnitId,
+                selectedOption = selectedOption,
+                unitOptions = unitOptions,
+                name = servingNameDraft,
+                grams = grams,
+            )?.let { result ->
+                onUnitOptionsChange?.invoke(result.options, result.updated.id)
+                true
+            } ?: false
+        } else {
+            false
+        }
+    }
+
+    SheetPillCard {
+        val maxQuantity = when (selectedOption.normalizedUnit) {
+            "g", "gram", "grams", "mg" -> 2000.0
+            "kg" -> 5.0
+            "ml", "l" -> 2000.0
+            "oz", "fl oz", "fl. oz" -> 64.0
+            "lb", "lbs", "pound" -> 10.0
+            "tbsp" -> 50.0
+            "tsp" -> 100.0
+            "piece", "pieces", "pc", "pcs" -> 20.0
+            "cup", "cups", "c" -> 10.0
+            "serving", "servings" -> 10.0
+            else -> 100.0
+        }
+        val currentQty = parsedQuantity ?: 1.0
+        val showUnitWheel = pickerOptions.size > 1
+        val summaryValue = buildString {
+            val qty = parsedQuantity
+            if (qty != null) {
+                append(ServingUnitOption.formatQuantity(qty))
+                append(' ')
+            } else if (quantityText.isNotBlank()) {
+                append(quantityText.trim())
+                append(' ')
+            }
+            append(selectedUnitLabel)
+        }
+        val rotation by animateFloatAsState(
+            targetValue = if (expanded) 180f else 0f,
+            animationSpec = spring(dampingRatio = 0.75f),
+        )
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) {
+                    expanded = !expanded
+                    if (!expanded) {
+                        dismissKeyboard()
+                        editingServing = false
+                        onQuantityEditingDone?.invoke()
+                    }
+                }
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.sheet_quantity),
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+            )
+            if (isLoadingUnits && unitOptions.isEmpty()) {
+                CircularProgressIndicator(
+                    color = AppColors.Calorie,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+            } else {
+                Text(
+                    summaryValue,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.Calorie,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            if (expanded && canCustomizeServing && !editingServing) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = stringResource(R.string.cd_edit_serving),
+                    tint = AppColors.Calorie,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            dismissKeyboard()
+                            editingServing = true
+                        },
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.graphicsLayer { rotationZ = rotation },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = spring(dampingRatio = 0.75f)),
+            exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.75f)),
+        ) {
+            Column {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, end = 18.dp, bottom = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (showUnitWheel) {
+                        WheelSelectionHighlight(Modifier.align(Alignment.Center))
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SplitDecimalWheelPicker(
+                            value = currentQty.coerceIn(0.1, maxQuantity),
+                            onValueChange = { newVal ->
+                                val formatted = ServingUnitOption.formatQuantity(newVal)
+                                onQuantityChange(formatted)
+                            },
+                            min = 0,
+                            max = maxQuantity.toInt(),
+                            unit = if (showUnitWheel) null else selectedUnitLabel,
+                            showSelectionHighlight = !showUnitWheel,
+                            modifier = if (showUnitWheel) Modifier.weight(1.4f) else Modifier.fillMaxWidth(),
+                        )
+                        if (showUnitWheel) {
+                            UnitWheelPicker(
+                                options = unitOptions,
+                                selectedId = selectedUnitId,
+                                onSelect = onSelectedUnitChange,
+                                showSelectionHighlight = false,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+
+                if (isLoadingUnits && unitOptions.isEmpty()) {
+                    SheetHairline()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            color = AppColors.Calorie,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            stringResource(R.string.entry_analysis_inferring_units),
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary),
+                        )
+                    }
+                }
+
+                if (canCustomizeServing && editingServing) {
+                    SheetHairline()
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(R.string.sheet_serving_custom_name),
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                                modifier = Modifier.width(92.dp)
+                            )
+                            BasicTextField(
+                                value = servingNameDraft,
+                                onValueChange = { servingNameDraft = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp,
+                                ),
+                                cursorBrush = SolidColor(AppColors.Calorie),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(R.string.sheet_serving_custom_grams),
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                                modifier = Modifier.width(92.dp)
+                            )
+                            BasicTextField(
+                                value = servingGramsDraft,
+                                onValueChange = {
+                                    servingGramsDraft = it.filter { c -> c.isDigit() || c == '.' || c == ',' }
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                textStyle = TextStyle(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp,
+                                ),
+                                cursorBrush = SolidColor(AppColors.Calorie),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.unit_g),
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = stringResource(R.string.cd_apply_serving_edit),
+                                tint = AppColors.Calorie,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        dismissKeyboard()
+                                        if (pushServingEdit()) editingServing = false
+                                    }
+                            )
+                            if (!selectedOption.isGramUnit) {
+                                Spacer(Modifier.width(10.dp))
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = stringResource(R.string.cd_remove_serving_unit),
+                                    tint = AppColors.Calorie,
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            dismissKeyboard()
+                                            ServingUnitOption.servingRemove(
+                                                selectedUnitId = selectedUnitId,
+                                                selectedOption = selectedOption,
+                                                unitOptions = unitOptions,
+                                            )?.let { result ->
+                                                onUnitOptionsChange?.invoke(result.options, result.updated.id)
+                                                editingServing = false
+                                            }
+                                        }
+                                )
+                            }
+                        }
+                    }
+                } else if (!selectedOption.isGramUnit) {
+                    SheetHairline()
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stringResource(R.string.label_total), fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Text(
+                            "~${MacroValueFormatter.string(servingSizeGrams)} $gramUnit",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SheetNutritionRow(
+    label: String,
+    value: String,
+    unit: String,
+    dim: Boolean = false,
+    accentColor: Color? = null,
+) {
+    val labelColor = accentColor?.let {
+        if (dim) it.copy(alpha = AppTextOpacity.Secondary) else it
+    } ?: if (dim) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val valueColor = accentColor ?: MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            fontSize = 16.sp,
+            color = labelColor,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = valueColor
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            unit,
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            modifier = Modifier.width(36.dp)
+        )
+    }
+}
+
+@Composable
+internal fun SheetHairline() {
+    Box(
+        Modifier
+            .padding(start = 18.dp)
+            .fillMaxWidth()
+            .height(0.5.dp)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+    )
+}
+
+@Composable
+internal fun SheetGlassDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    menuWidth: Dp? = null,
+    /** Shift from the anchor's start edge — used to centre a menu on its anchor. */
+    offset: DpOffset = DpOffset(0.dp, 0.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(AppRadii.Container)
+    val sizedModifier = if (menuWidth != null) modifier.width(menuWidth) else modifier
+    val isDark = isDarkTheme()
+    val menuContainer = if (isDark) AppColors.TranslucentSurfaceDark else AppColors.TranslucentSurfaceLight
+    val borderColor = if (isDark) AppColors.HairlineBorderDark else AppColors.HairlineBorderLight
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        offset = offset,
+        shape = shape,
+        containerColor = menuContainer,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = sizedModifier
+            .border(0.5.dp, borderColor, shape)
+            .padding(vertical = 5.dp),
+        content = content
+    )
+}
+
+@Composable
+internal fun SheetGlassDropdownMenuItem(
+    label: String,
+    selected: Boolean = false,
+    leadingIcon: ImageVector? = null,
+    reserveSelectionSlot: Boolean = false,
+    onClick: () -> Unit
+) {
+    val isDark = isDarkTheme()
+    val checkTint = if (isDark) Color.White else AppColors.Calorie
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 7.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(AppRadii.Field))
+            .clickable(onClick = onClick)
+            // ~48dp tap target per row (Material menu guidance), matching the
+            // roomier iOS add-menu rows instead of the old cramped ~36dp.
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        when {
+            leadingIcon != null -> {
+                Icon(
+                    leadingIcon,
+                    contentDescription = null,
+                    tint = AppColors.Calorie,
+                    modifier = Modifier.size(19.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            reserveSelectionSlot -> {
+                Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    if (selected) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = checkTint,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+        }
+
+        Text(
+            label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.NearFull),
+            lineHeight = 19.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (selected && leadingIcon != null) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = checkTint,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+    }
+}
+
+/**
+ * No-op [OverscrollEffect]: no glow, no stretch, no animations. Used on long
+ * sheet lists whose default stretch overscroll spring can get stuck oscillating
+ * (endless bounce at the list edge after an overshooting fling until a tap
+ * cancels it) when combined with the modal sheet's nested scroll handling.
+ *
+ * [applyToScroll] must forward the delta to [consume]: the callback performs
+ * the actual scroll (nested-scroll pre/post dispatch included). Returning
+ * `Offset.Zero` without calling it silently swallows every drag/fling delta —
+ * the list never scrolls (foundation's own NoOp does the same forwarding).
+ */
+private val NoOpOverscrollEffect: OverscrollEffect = object : OverscrollEffect {
+    override fun applyToScroll(
+        delta: Offset,
+        source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+        consume: (Offset) -> Offset,
+    ): Offset = consume(delta)
+
+    override suspend fun applyToFling(velocity: Velocity, performFling: suspend (Velocity) -> Velocity) {
+        performFling(velocity)
+    }
+
+    override val isInProgress: Boolean = false
+}
+
+/** Renders [content] with the stretch/glow overscroll effect disabled. */
+@Composable
+internal fun WithoutOverscroll(content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalOverscrollFactory provides object : OverscrollFactory {
+            override fun createOverscrollEffect(): OverscrollEffect = NoOpOverscrollEffect
+            override fun equals(other: Any?): Boolean = this === other
+            override fun hashCode(): Int = System.identityHashCode(this)
+        },
+        content = content,
+    )
+}
+
+internal fun sheetMealIcon(mealId: String): ImageVector =
+    sheetMealIcon(MealType.iconMeal(mealId))
+
+@Composable
+private fun rememberedMealCatalog(): app.chompass.models.MealCatalog {
+    val app = LocalContext.current.applicationContext as? ChompassApp
+    if (app == null) return CurrentMealCatalog.value
+    val catalog by app.container.prefs.mealCatalog.collectAsState(initial = CurrentMealCatalog.value)
+    return catalog
+}
+
+@Composable
+internal fun mealLabel(mealId: String): String {
+    val def = rememberedMealCatalog().def(mealId)
+    val custom = def?.label?.trim().orEmpty()
+    if (custom.isNotEmpty()) return custom
+    val builtin = MealType.fromId(mealId)
+    return if (builtin != null) stringResource(builtin.displayNameRes) else mealId
+}
+
+@Composable
+internal fun pickerMealIds(includeOther: Boolean = false): List<String> {
+    val enabled = rememberedMealCatalog().enabledForPicker().map { it.id }
+    val ids = enabled.ifEmpty { listOf(MealType.SNACK.id) }
+    return if (includeOther && MealType.OTHER.id !in ids) ids + MealType.OTHER.id else ids
+}
+
+internal fun sheetMealIcon(meal: MealType): ImageVector = when (meal) {
+    MealType.BREAKFAST -> Icons.Filled.WbTwilight
+    MealType.LUNCH -> Icons.Filled.WbSunny
+    MealType.DINNER -> Icons.Filled.Bedtime
+    MealType.SNACK -> Icons.Filled.LocalCafe
+    MealType.OTHER -> Icons.Filled.Restaurant
+}

@@ -1,0 +1,157 @@
+package app.chompass.ui.progress
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.chompass.R
+import app.chompass.models.LocaleFormat
+import app.chompass.models.MacroValueFormatter
+import app.chompass.ui.components.macroGramsText
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.ui.theme.nutrientAccentColor
+import kotlin.math.roundToInt
+
+@Composable
+internal fun MacroAveragesSection(
+    avgProtein: Double, avgCarbs: Double, avgFat: Double,
+    proteinGoal: Int, carbsGoal: Int, fatGoal: Int
+) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.progressCollapseHeader(expanded) { expanded = !expanded },
+        ) {
+            Text(stringResource(R.string.progress_macro_averages), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            CollapseChevron(expanded)
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MacroProgressRow(stringResource(R.string.macro_protein), avgProtein, proteinGoal, AppColors.Protein)
+                MacroProgressRow(stringResource(R.string.macro_carbs), avgCarbs, carbsGoal, AppColors.Carbs)
+                MacroProgressRow(stringResource(R.string.macro_fat), avgFat, fatGoal, AppColors.Fat)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NutrientAveragesSection(
+    nutrientAverages: List<NutrientAverage>,
+) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.progressCollapseHeader(expanded) { expanded = !expanded },
+        ) {
+            Text(stringResource(R.string.progress_nutrient_averages), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            CollapseChevron(expanded)
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                nutrientAverages.forEach { row ->
+                    val unitRes = when (row.nutrient.unit) {
+                        "mg" -> R.string.unit_mg
+                        "mcg" -> R.string.unit_mcg
+                        else -> R.string.unit_g
+                    }
+                    MacroProgressRow(
+                        stringResource(row.nutrient.displayNameRes),
+                        row.avg,
+                        row.goal,
+                        nutrientAccentColor(row.nutrient),
+                        unitRes = unitRes,
+                        wholeNumbers = row.nutrient.unit != "g",
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MacroProgressRow(
+    label: String,
+    current: Double,
+    goal: Int,
+    accentColor: Color,
+    unitRes: Int = R.string.unit_g,
+    wholeNumbers: Boolean = false,
+) {
+    val progress = if (goal > 0) (current.toFloat() / goal).coerceIn(0f, 1f) else 0f
+    val unit = stringResource(unitRes)
+    val currentLabel = if (wholeNumbers) {
+        "${LocaleFormat.integer(current.roundToInt())}$unit"
+    } else {
+        "${MacroValueFormatter.string(current)}$unit"
+    }
+    val goalLabel = if (wholeNumbers) {
+        "${LocaleFormat.integer(goal)}$unit"
+    } else {
+        macroGramsText(goal.toDouble())
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = accentColor)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "$currentLabel / $goalLabel",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+            )
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().height(8.dp)) {
+            val w = maxWidth
+            Box(
+                Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                    .background(accentColor.copy(alpha = 0.16f))
+            )
+            val barWidth = (w * progress).coerceAtLeast(6.dp)
+            Box(
+                Modifier
+                    .width(barWidth)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(accentColor)
+            )
+        }
+    }
+}

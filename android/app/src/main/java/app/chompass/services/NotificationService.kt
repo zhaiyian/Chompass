@@ -1,0 +1,919 @@
+package app.chompass.services
+
+import android.Manifest
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import app.chompass.services.update.AndroidUpdateChecker
+import app.chompass.utils.LocaleHelper
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import app.chompass.AppContainer
+import app.chompass.ChompassApp
+import app.chompass.R
+import app.chompass.debug.DebugTrace
+import app.chompass.models.WaterAmountFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+
+/**
+ * Schedules + fires the local reminders the app supports:
+ *   - Weight log reminder: daily at 8:00am — gated by the master Notifications
+ *     toggle so it tracks the system permission state and never fires silently
+ *   - Streak reminder: skip when food is already logged today
+ *   - Weight and body-fat reminders: skip when that reading already exists
+ *     for the local day (issue #133)
+ *   - Daily summary: evening energy-balance notification (measured burn vs
+ *     eaten). Toggle + time live under Settings → Notifications. Off by default.
+ *     Copy is computed at fire time ([DailySummaryPolicy]); static extras are
+ *     the fail-open payload when the app container is missing.
+ *
+ * Uses inexact alarms (setAndAllowWhileIdle) — a daily nudge firing within a
+ * few minutes of the chosen time is perfectly fine, and Play Store reserves
+ * the exact-alarm permission for calendar / alarm-clock apps only.
+ *
+ * Also owns the "weight_goal" channel used from WeightRepository crossings.
+ *
+ * OriginOS / MIUI / HyperOS aggressive battery optimization can still kill
+ * inexact alarms unless the app is whitelisted — Settings UI exposes a deep
+ * link to the battery-optimization exception screen.
+ */
+class NotificationService(private val context: Context) {
+    // API < 33: resolve notification strings through the cached in-app
+    // language (identity wrap on API 33+ and when following the system).
+    private val localizedContext: Context
+        get() = LocaleHelper.wrapIfLegacy(context)
+
+    fun createChannels() {
+        val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val streak = NotificationChannel(
+            CHANNEL_STREAK,
+            localizedContext.getString(R.string.notif_channel_streak),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_streak_desc) }
+
+        val daily = NotificationChannel(
+            CHANNEL_DAILY,
+            localizedContext.getString(R.string.notif_channel_daily),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply { description = localizedContext.getString(R.string.notif_channel_daily_desc) }
+
+        val goal = NotificationChannel(
+            CHANNEL_WEIGHT_GOAL,
+            localizedContext.getString(R.string.notif_channel_weight_goal),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply { description = localizedContext.getString(R.string.notif_channel_weight_goal_desc) }
+
+        val weight = NotificationChannel(
+            CHANNEL_WEIGHT_LOG,
+            localizedContext.getString(R.string.notif_channel_weight_log),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_weight_log_desc) }
+
+        val bodyFat = NotificationChannel(
+            CHANNEL_BODY_FAT_LOG,
+            localizedContext.getString(R.string.notif_channel_body_fat),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_body_fat_desc) }
+
+        val appUpdate = NotificationChannel(
+            CHANNEL_APP_UPDATE,
+            localizedContext.getString(R.string.notif_channel_updates),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_updates_desc) }
+
+        val water = NotificationChannel(
+            CHANNEL_WATER,
+            localizedContext.getString(R.string.notif_channel_water),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_water_desc) }
+
+        val fasting = NotificationChannel(
+            CHANNEL_FASTING,
+            localizedContext.getString(R.string.notif_channel_fasting),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = localizedContext.getString(R.string.notif_channel_fasting_desc) }
+
+        val modelDownload = NotificationChannel(
+            CHANNEL_MODEL_DOWNLOAD,
+            localizedContext.getString(R.string.notif_channel_model_download),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = localizedContext.getString(R.string.notif_channel_model_download_desc)
+            setSound(null, null)
+        }
+
+        mgr.createNotificationChannels(listOf(streak, daily, goal, weight, bodyFat, appUpdate, water, fasting, modelDownload))
+    }
+
+    fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun showGoalReached() {
+        val intent = ChompassLaunchIntents.openApp(context, destination = DESTINATION_PROGRESS)
+        val content = PendingIntent.getActivity(
+            context, REQUEST_GOAL, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notif = NotificationCompat.Builder(context, CHANNEL_WEIGHT_GOAL)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(localizedContext.getString(R.string.notif_goal_weight_title))
+            .setContentText(localizedContext.getString(R.string.notif_goal_weight_text))
+            .setContentIntent(content)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        NotificationManagerCompat.from(context).notifySafely(GOAL_NOTIFICATION_ID, notif)
+    }
+
+    /** Post a "new version available" notification. Tapping it opens the Play Store listing
+     *  (market:// → web fallback), mirroring the About screen's open-store behavior. */
+    fun showUpdateAvailable() {
+        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse(AndroidUpdateChecker.PLAY_STORE_MARKET_URL)).apply {
+            setPackage("com.android.vending")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        }
+        val resolvable = marketIntent.resolveActivity(context.packageManager) != null
+        val intent = if (resolvable) marketIntent else
+            Intent(Intent.ACTION_VIEW, Uri.parse(AndroidUpdateChecker.PLAY_STORE_WEB_URL))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        val pi = PendingIntent.getActivity(
+            context, REQUEST_APP_UPDATE, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notif = NotificationCompat.Builder(context, CHANNEL_APP_UPDATE)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(localizedContext.getString(R.string.notif_update_title))
+            .setContentText(localizedContext.getString(R.string.notif_update_text))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        NotificationManagerCompat.from(context).notifySafely(APP_UPDATE_NOTIFICATION_ID, notif)
+    }
+
+    // -- Scheduling ------------------------------------------------------
+
+    fun scheduleStreakReminder(hour: Int, minute: Int) = schedule(
+        REQUEST_STREAK, hour, minute, CHANNEL_STREAK,
+        title = localizedContext.getString(R.string.notif_streak_title),
+        text = localizedContext.getString(R.string.notif_streak_text)
+    )
+
+    fun scheduleDailySummary(hour: Int, minute: Int) = schedule(
+        REQUEST_DAILY, hour, minute, CHANNEL_DAILY,
+        title = localizedContext.getString(R.string.notif_summary_title),
+        text = localizedContext.getString(R.string.notif_summary_text)
+    )
+
+    /** Debug extra / device-pass: post today's Daily summary immediately, no alarm. */
+    suspend fun postDailySummaryNow() {
+        val container = (context.applicationContext as? ChompassApp)?.container ?: return
+        val fallbackTitle = localizedContext.getString(R.string.notif_summary_title)
+        val fallbackText = localizedContext.getString(R.string.notif_summary_text)
+        val copy = buildDailySummaryNotification(context, container, fallbackTitle, fallbackText)
+            ?: DailySummaryNotification(fallbackTitle, fallbackText, fallbackText)
+        postChannelNotification(
+            channel = CHANNEL_DAILY,
+            request = REQUEST_DAILY,
+            title = copy.title,
+            text = copy.text,
+            bigText = copy.bigText,
+        )
+    }
+
+    internal fun postChannelNotification(
+        channel: String,
+        request: Int,
+        title: String,
+        text: String,
+        bigText: String? = null,
+    ) {
+        val open = PendingIntent.getActivity(
+            context, request,
+            ChompassLaunchIntents.openApp(context, destination = destinationForChannel(channel)),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val builder = NotificationCompat.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        if (bigText != null) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+        }
+        NotificationManagerCompat.from(context).notifySafely(request, builder.build())
+    }
+
+    fun scheduleWeightReminder(hour: Int = 8, minute: Int = 0) = schedule(
+        REQUEST_WEIGHT, hour, minute, CHANNEL_WEIGHT_LOG,
+        title = localizedContext.getString(R.string.notif_weight_log_title),
+        text = localizedContext.getString(R.string.notif_weight_log_text)
+    )
+
+    fun scheduleBodyFatReminder(hour: Int = 8, minute: Int = 0) = schedule(
+        REQUEST_BODY_FAT, hour, minute, CHANNEL_BODY_FAT_LOG,
+        title = localizedContext.getString(R.string.notif_body_fat_log_title),
+        text = localizedContext.getString(R.string.notif_body_fat_log_text)
+    )
+
+    /**
+     * Arms the adaptive water chain to fire at [fireAtMillis]. The receiver
+     * recomputes the next fire from live state, so the cadence always reflects
+     * the latest entries. Uses the same request code as the old fixed-time
+     * reminder, so previously armed alarms are replaced in place.
+     */
+    fun scheduleWaterReminderAt(fireAtMillis: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_WATER)
+            putExtra(EXTRA_TITLE, localizedContext.getString(R.string.notif_water_title))
+            putExtra(EXTRA_TEXT, localizedContext.getString(R.string.notif_water_text))
+            putExtra(EXTRA_REQUEST, REQUEST_WATER)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_WATER, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pi)
+    }
+
+    fun cancelStreakReminder() = cancel(REQUEST_STREAK)
+    fun cancelDailySummary() = cancel(REQUEST_DAILY)
+    fun cancelWeightReminder() = cancel(REQUEST_WEIGHT)
+    fun cancelBodyFatReminder() = cancel(REQUEST_BODY_FAT)
+    fun cancelWaterReminder() = cancel(REQUEST_WATER)
+
+    /**
+     * Arms the break-fast nudge to fire at [fireAtMillis] (goal time − lead).
+     * The receiver re-checks the session at fire time and latches the
+     * notification, so a fast stopped before the fire never notifies. Copy is
+     * lead-aware: >0 minutes before the goal says "ends soon", 0 says
+     * "complete". Same computed-future-time shape as [scheduleWaterReminderAt].
+     */
+    fun scheduleFastingGoalAt(fireAtMillis: Long, leadMinutes: Int) {
+        val text = if (leadMinutes > 0) {
+            localizedContext.getString(R.string.notif_fasting_end_soon_text, leadMinutes)
+        } else {
+            localizedContext.getString(R.string.notif_fasting_goal_text)
+        }
+        val title = if (leadMinutes > 0) {
+            localizedContext.getString(R.string.notif_fasting_end_soon_title)
+        } else {
+            localizedContext.getString(R.string.notif_fasting_goal_title)
+        }
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_FASTING)
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_TEXT, text)
+            putExtra(EXTRA_REQUEST, REQUEST_FASTING_GOAL)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_FASTING_GOAL, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pi)
+    }
+
+    fun cancelFastingGoal() = cancel(REQUEST_FASTING_GOAL)
+
+    /**
+     * Arms the start-fast nudge to fire at [fireAtMillis] (anchor − lead). The
+     * receiver skips it when a fast is already running. Copy is lead-aware and
+     * mode-aware: [auto] fasts start on their own ("starts in X min"), manual
+     * ones tell the user the eating window is closing.
+     */
+    fun scheduleFastingStartReminderAt(fireAtMillis: Long, leadMinutes: Int, auto: Boolean = false) {
+        val text = when {
+            auto -> localizedContext.getString(R.string.notif_fasting_start_soon_auto, leadMinutes)
+            leadMinutes > 0 -> localizedContext.getString(R.string.notif_fasting_start_soon_text, leadMinutes)
+            else -> localizedContext.getString(R.string.notif_fasting_start_text)
+        }
+        val title = if (leadMinutes > 0) {
+            localizedContext.getString(if (auto) R.string.notif_fasting_start_soon_auto_title else R.string.notif_fasting_start_soon_title)
+        } else {
+            localizedContext.getString(R.string.notif_fasting_start_title)
+        }
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_FASTING)
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_TEXT, text)
+            putExtra(EXTRA_REQUEST, REQUEST_FASTING_START)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_FASTING_START, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pi)
+    }
+
+    fun cancelFastingStartReminder() = cancel(REQUEST_FASTING_START)
+
+    /**
+     * Silent auto-cycle alarms: fire at the eating-window end (start the next
+     * fast) or the goal instant (end the fast). The receiver performs the
+     * transition and posts nothing.
+     */
+    fun scheduleFastingAutoStartAt(fireAtMillis: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_FASTING)
+            putExtra(EXTRA_REQUEST, REQUEST_FASTING_AUTO_START)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_FASTING_AUTO_START, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pi)
+    }
+
+    fun cancelFastingAutoStart() = cancel(REQUEST_FASTING_AUTO_START)
+
+    fun scheduleFastingAutoEndAt(fireAtMillis: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_FASTING)
+            putExtra(EXTRA_REQUEST, REQUEST_FASTING_AUTO_END)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_FASTING_AUTO_END, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pi)
+    }
+
+    fun cancelFastingAutoEnd() = cancel(REQUEST_FASTING_AUTO_END)
+
+    /** Disarms user reminder alarms. Does not touch the silent widget midnight refresh. */
+    fun cancelRemindersForDataWipe() {
+        cancelStreakReminder()
+        cancelDailySummary()
+        cancelWeightReminder()
+        cancelBodyFatReminder()
+        cancelWaterReminder()
+        cancelFastingGoal()
+        cancelFastingStartReminder()
+        cancelFastingAutoStart()
+        cancelFastingAutoEnd()
+    }
+
+    /**
+     * Arms a silent daily alarm for just after midnight that rewrites the
+     * widget snapshot to "today" (issue #16). The receiver re-arms the chain;
+     * ChompassApp re-arms on cold start (reboots drop alarms). No notification
+     * is ever posted — this is a data refresh only.
+     */
+    fun scheduleWidgetMidnightRefresh() {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, CHANNEL_WIDGET_MIDNIGHT)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_WIDGET_MIDNIGHT, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val nextMidnight = nextMidnightMillis()
+        // +60s: let day-boundary writes settle; the exact instant is irrelevant
+        // as long as the widget rolls over shortly after midnight.
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMidnight + 60_000L, pi)
+    }
+
+    fun cancelWidgetMidnightRefresh() = cancel(REQUEST_WIDGET_MIDNIGHT)
+
+    private fun schedule(requestCode: Int, hour: Int, minute: Int, channel: String, title: String, text: String) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra(EXTRA_CHANNEL, channel)
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_TEXT, text)
+            putExtra(EXTRA_REQUEST, requestCode)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, requestCode, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val nextFire = nextDailyFireMillis(hour, minute)
+        DebugTrace.event(
+            "op=alarm phase=schedule channel=$channel request=$requestCode " +
+                "hour=$hour minute=$minute next=$nextFire",
+        )
+        am.setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            nextFire,
+            pi,
+        )
+    }
+
+    private fun cancel(requestCode: Int) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java)
+        val pi = PendingIntent.getBroadcast(
+            context, requestCode, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+        )
+        if (pi != null) {
+            DebugTrace.event("op=alarm phase=cancel request=$requestCode")
+            am.cancel(pi)
+            pi.cancel()
+        }
+    }
+
+    companion object {
+        const val CHANNEL_STREAK = "streak_reminder"
+        const val CHANNEL_DAILY = "daily_summary"
+        const val CHANNEL_WEIGHT_GOAL = "weight_goal"
+        const val CHANNEL_WEIGHT_LOG = "weight_log_reminder"
+        const val CHANNEL_BODY_FAT_LOG = "body_fat_log_reminder"
+        const val CHANNEL_APP_UPDATE = "app_update"
+        const val CHANNEL_WATER = "water_reminder"
+        const val CHANNEL_FASTING = "fasting_goal"
+        const val CHANNEL_WIDGET_MIDNIGHT = "widget_midnight_refresh"
+        const val CHANNEL_MODEL_DOWNLOAD = "model_download"
+
+        /** Notification tap destinations (Codeberg #27); also openable via `chompass://go/<dest>`. */
+        const val DESTINATION_PROGRESS = "progress"
+        const val DESTINATION_SETTINGS_AI = "settings/ai"
+
+        /**
+         * Where a notification tap should land, by channel. Weight/body-fat/goal
+         * reminders open the Progress tab; the model-download FGS opens AI settings;
+         * everything else stays on the Home tab.
+         */
+        fun destinationForChannel(channel: String): String? = when (channel) {
+            CHANNEL_WEIGHT_GOAL, CHANNEL_WEIGHT_LOG, CHANNEL_BODY_FAT_LOG -> DESTINATION_PROGRESS
+            CHANNEL_MODEL_DOWNLOAD -> DESTINATION_SETTINGS_AI
+            else -> null
+        }
+        const val EXTRA_CHANNEL = "channel"
+        const val EXTRA_TITLE = "title"
+        const val EXTRA_TEXT = "text"
+        const val EXTRA_REQUEST = "request"
+        private const val GOAL_NOTIFICATION_ID = 4242
+        private const val APP_UPDATE_NOTIFICATION_ID = 5555
+        private const val REQUEST_STREAK = 1001
+        private const val REQUEST_DAILY = 1002
+        private const val REQUEST_WEIGHT = 1003
+        private const val REQUEST_BODY_FAT = 1004
+        private const val REQUEST_APP_UPDATE = 1005
+        private const val REQUEST_WATER = 1006
+        internal const val REQUEST_FASTING_GOAL = 1009
+        internal const val REQUEST_FASTING_START = 1010
+        internal const val REQUEST_FASTING_AUTO_START = 1011
+        internal const val REQUEST_FASTING_AUTO_END = 1012
+        private const val REQUEST_WIDGET_MIDNIGHT = 1007
+        private const val REQUEST_GOAL = 1008
+    }
+}
+
+/**
+ * Pure gate for streak reminders: skip the nudge when the diary already has
+ * food logged today (upstream #150). Non-streak channels ignore this helper.
+ */
+fun shouldNotifyStreak(
+    hasFoodLoggedToday: Boolean,
+    todayUntracked: Boolean = false,
+): Boolean = !hasFoodLoggedToday && !todayUntracked
+
+/**
+ * Pure gate for weight and body-fat log reminders: skip the nudge when a
+ * reading for the local day already exists (issue #133). The call site fails
+ * open (posts) when the store read fails.
+ */
+fun shouldNotifyBodyMetric(hasEntryToday: Boolean): Boolean = !hasEntryToday
+
+/** True when [entry] falls on [day] in [zone]. */
+internal fun entryFallsOnLocalDay(entry: Instant, day: LocalDate, zone: ZoneId): Boolean =
+    entry.atZone(zone).toLocalDate() == day
+
+/**
+ * Next instant strictly after [nowMillis] at [hour]:[minute] local in [zone].
+ * A fire at that clock time arms tomorrow, not the instant that just passed.
+ */
+internal fun nextDailyFireMillis(
+    hour: Int,
+    minute: Int,
+    nowMillis: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): Long {
+    val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
+    var fire = now.toLocalDate().atTime(hour, minute).atZone(zone)
+    if (!fire.toInstant().isAfter(now.toInstant())) {
+        fire = fire.plusDays(1)
+    }
+    return fire.toInstant().toEpochMilli()
+}
+
+/**
+ * Pure: millis of the first instant strictly after [nowMillis]'s local
+ * midnight in [zone] — the widget-rollover arm instant (issue #16).
+ */
+internal fun nextMidnightMillis(
+    nowMillis: Long = System.currentTimeMillis(),
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+): Long = Instant.ofEpochMilli(nowMillis)
+    .atZone(zone)
+    .toLocalDate()
+    .plusDays(1)
+    .atStartOfDay(zone)
+    .toInstant()
+    .toEpochMilli()
+
+/** Fired by the alarm. Posts the notification and re-schedules the same alarm +24h. */
+class ReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        // API < 33: localize fire-time strings (daily summary, water qty lines)
+        // through the cached in-app language.
+        val ctx = LocaleHelper.wrapIfLegacy(context)
+        // Reboot drops all alarms. Re-arm the adaptive water chain. Other daily
+        // reminders keep their existing reboot gap (out of scope; the receiver is
+        // the natural home for a follow-up that re-arms them too).
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            // goAsync only buys ~10s; an unmanaged CoroutineScope could be
+            // killed mid re-arm and is never cancelled. The application's
+            // process-lifetime scope keeps the work alive past onReceive and
+            // finishes the broadcast result when the block completes.
+            val appScope = (context.applicationContext as? ChompassApp)?.applicationScope
+            val pendingResult = goAsync()
+            if (appScope == null) {
+                pendingResult.finish()
+                return
+            }
+            appScope.launch {
+                try {
+                    val container = (context.applicationContext as? ChompassApp)?.container
+                    if (container != null) {
+                        WaterReminderPlanner.rearm(container)
+                        // Rebooting drops the fasting alarms too; re-arm them
+                        // from the persisted session + prefs (goal is one-shot,
+                        // start nudge is daily — same computed class as water).
+                        FastingGoalPlanner.rearm(container)
+                        FastingReminderPlanner.rearmStartReminder(container)
+                        FastingAutoPlanner.rearm(container)
+                        FastingAutoPlanner.heal(container)
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
+        val channel = intent.getStringExtra(NotificationService.EXTRA_CHANNEL) ?: return
+
+        // Silent auto-cycle transitions: the fast starts when the eating window
+        // closes and ends at its goal. No notification is posted; re-arm the
+        // next transition from the resulting session.
+        val request = intent.getIntExtra(NotificationService.EXTRA_REQUEST, -1)
+        DebugTrace.event(
+            "op=reminder phase=fire channel=$channel request=$request " +
+                "perm=${NotificationService(context).canPostNotifications()}",
+        )
+        if (channel == NotificationService.CHANNEL_FASTING &&
+            (request == NotificationService.REQUEST_FASTING_AUTO_START ||
+                request == NotificationService.REQUEST_FASTING_AUTO_END)
+        ) {
+            // Process-lifetime scope + goAsync finish — see the BOOT path.
+            val appScope = (context.applicationContext as? ChompassApp)?.applicationScope
+            val pendingResult = goAsync()
+            if (appScope == null) {
+                pendingResult.finish()
+                return
+            }
+            appScope.launch {
+                try {
+                    val container = (context.applicationContext as? ChompassApp)?.container
+                    if (container != null) {
+                        // Drive the boundary transition (idempotent catch-up) and
+                        // re-arm the next one; nothing is posted.
+                        FastingAutoPlanner.heal(container)
+                        FastingAutoPlanner.rearm(container)
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
+        // Silent midnight widget rollover: rewrite the snapshot to today's data
+        // and re-arm the chain. No notification is posted (issue #16).
+        if (channel == NotificationService.CHANNEL_WIDGET_MIDNIGHT) {
+            // Process-lifetime scope + goAsync finish — see the BOOT path.
+            val appScope = (context.applicationContext as? ChompassApp)?.applicationScope
+            val pendingResult = goAsync()
+            if (appScope == null) {
+                pendingResult.finish()
+                return
+            }
+            appScope.launch {
+                try {
+                    val container = (context.applicationContext as? ChompassApp)?.container
+                    container?.widgetSnapshotWriter?.refresh()
+                    // Day-rollover journal write (#60): freeze the new day's
+                    // resolved targets so a CYCLE/WEEKDAYS switch lands at
+                    // midnight even without a food edit.
+                    container?.goalJournalService?.refresh()
+                } finally {
+                    NotificationService(context).scheduleWidgetMidnightRefresh()
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
+        val title = intent.getStringExtra(NotificationService.EXTRA_TITLE) ?: return
+        val text = intent.getStringExtra(NotificationService.EXTRA_TEXT) ?: return
+
+        // Process-lifetime scope + goAsync finish — see the BOOT path.
+        val appScope = (context.applicationContext as? ChompassApp)?.applicationScope
+        val pendingResult = goAsync()
+        if (appScope == null) {
+            pendingResult.finish()
+            return
+        }
+        appScope.launch {
+            try {
+                // Water reminders recompute the cadence at fire time, so the plan
+                // reflects any entries logged since this alarm was armed.
+                val container = (context.applicationContext as? ChompassApp)?.container
+                val waterPlan = if (channel == NotificationService.CHANNEL_WATER) {
+                    container?.let { WaterReminderPlanner.next(it) }
+                } else {
+                    null
+                }
+
+                val dailyCopy = if (channel == NotificationService.CHANNEL_DAILY && container != null) {
+                    buildDailySummaryNotification(ctx, container, title, text)
+                } else {
+                    null
+                }
+
+                // Fasting goal reached: post only while the fast is still running
+                // and this goal wasn't already notified; latch it in the same step
+                // so the one-shot alarm can never double-notify.
+                var fastingGoalSkipReason = "none"
+                val fastingGoalReached = if (
+                    channel == NotificationService.CHANNEL_FASTING &&
+                    request == NotificationService.REQUEST_FASTING_GOAL &&
+                    container != null
+                ) {
+                    val session = container.fastingRepository.current()
+                    if (session.isFasting && !session.goalReachedNotified) {
+                        container.fastingRepository.markGoalReachedNotified()
+                        true
+                    } else {
+                        fastingGoalSkipReason =
+                            if (session.isFasting) "goalAlreadyNotified" else "fastEnded"
+                        false
+                    }
+                } else {
+                    false
+                }
+
+                // Daily start-fast nudge: skip when a fast is already running
+                // (you started already) — never nag mid-fast.
+                val fastingStartNudge = if (
+                    channel == NotificationService.CHANNEL_FASTING &&
+                    request == NotificationService.REQUEST_FASTING_START &&
+                    container != null
+                ) {
+                    !container.fastingRepository.current().isFasting
+                } else {
+                    false
+                }
+
+                // Weight/body-fat entry presence is computed once so the gate
+                // log and the post decision cannot disagree.
+                val isBodyMetricChannel =
+                    channel == NotificationService.CHANNEL_WEIGHT_LOG ||
+                        channel == NotificationService.CHANNEL_BODY_FAT_LOG
+                val hasBodyMetricToday = if (isBodyMetricChannel) {
+                    // Fail open: a store miss still posts, matching the streak gate.
+                    runCatching {
+                        val c = container ?: return@runCatching false
+                        hasBodyMetricEntryToday(c, channel)
+                    }.getOrDefault(false)
+                } else {
+                    false
+                }
+
+                var skipReason = "none"
+                val shouldPost = if (channel == NotificationService.CHANNEL_STREAK) {
+                    val hasFoodToday = runCatching {
+                        val c = (context.applicationContext as? ChompassApp)?.container
+                            ?: return@runCatching false
+                        c.foodRepository.entriesForDate(LocalDate.now()).first().isNotEmpty()
+                    }.getOrDefault(false) // fail open: post if diary read fails / app not ready
+                    val todayUntracked = runCatching {
+                        val c = (context.applicationContext as? ChompassApp)?.container
+                            ?: return@runCatching false
+                        LocalDate.now().toString() in c.prefs.untrackedDays.first()
+                    }.getOrDefault(false)
+                    shouldNotifyStreak(hasFoodToday, todayUntracked).also { post ->
+                        if (!post) {
+                            skipReason =
+                                if (hasFoodToday) "foodLogged" else if (todayUntracked) "dayUntracked" else "none"
+                        }
+                    }
+                } else if (channel == NotificationService.CHANNEL_WATER) {
+                    // Nothing to post when the reminder got disabled since arming.
+                    (waterPlan != null).also { post ->
+                        if (!post) skipReason = "reminderDisabled"
+                    }
+                } else if (channel == NotificationService.CHANNEL_DAILY && container != null) {
+                    (dailyCopy != null).also { post ->
+                        if (!post) skipReason = "summaryUnavailable"
+                    }
+                } else if (channel == NotificationService.CHANNEL_FASTING) {
+                    // Nothing to post when the fast ended / was already notified,
+                    // or (start nudge) when a fast is already running.
+                    when (request) {
+                        NotificationService.REQUEST_FASTING_GOAL -> fastingGoalReached.also { post ->
+                            if (!post) skipReason = fastingGoalSkipReason
+                        }
+                        NotificationService.REQUEST_FASTING_START -> fastingStartNudge.also { post ->
+                            if (!post) skipReason = "fastRunning"
+                        }
+                        else -> false
+                    }
+                } else if (isBodyMetricChannel) {
+                    shouldNotifyBodyMetric(hasBodyMetricToday).also { post ->
+                        if (!post) skipReason = "bodyMetricLogged"
+                    }
+                } else {
+                    true
+                }
+
+                DebugTrace.event(
+                    "op=reminder phase=gate channel=$channel request=$request post=$shouldPost" +
+                        if (isBodyMetricChannel) " hasEntryToday=$hasBodyMetricToday" else "",
+                )
+                if (!shouldPost) {
+                    DebugTrace.event(
+                        "op=reminder phase=skip channel=$channel request=$request reason=$skipReason",
+                    )
+                }
+
+                if (shouldPost) {
+                    val open = PendingIntent.getActivity(
+                        context, request,
+                        ChompassLaunchIntents.openApp(context, destination = NotificationService.destinationForChannel(channel)),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    val notifText = if (channel == NotificationService.CHANNEL_WATER && waterPlan != null) {
+                        // Tell the user how much to drink: one cup (capped by the goal
+                        // remainder), in the app's own unit (ml or fl oz).
+                        val useMetric = container?.prefs?.weightUnit?.first() == "kg"
+                        val qty = if (useMetric) {
+                            ctx.getString(R.string.water_amount_ml, waterPlan.drinkMl)
+                        } else {
+                            ctx.getString(
+                                R.string.water_amount_fl_oz,
+                                WaterAmountFormat.flOzFromMl(waterPlan.drinkMl),
+                            )
+                        }
+                        val interval = waterPlan.intervalMinutes
+                        if (interval != null) {
+                            ctx.getString(R.string.notif_water_text_next_qty, qty, interval)
+                        } else {
+                            ctx.getString(R.string.notif_water_text_qty, qty)
+                        }
+                    } else {
+                        dailyCopy?.text ?: text
+                    }
+                    val notifTitle = dailyCopy?.title ?: title
+                    val builder = NotificationCompat.Builder(context, channel)
+                        .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                        .setContentTitle(notifTitle)
+                        .setContentText(notifText)
+                        .setContentIntent(open)
+                        .setAutoCancel(true)
+                    val bigText = dailyCopy?.bigText
+                    if (bigText != null) {
+                        builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+                    }
+                    DebugTrace.event(
+                        "op=reminder phase=post channel=$channel request=$request",
+                    )
+                    NotificationManagerCompat.from(context).notifySafely(request, builder.build())
+                }
+
+                if (channel == NotificationService.CHANNEL_WATER) {
+                    // Re-arm from fresh state: next interval, or tomorrow's window start.
+                    if (waterPlan != null) {
+                        NotificationService(context).scheduleWaterReminderAt(waterPlan.nextFireMillis)
+                    } else {
+                        NotificationService(context).cancelWaterReminder()
+                    }
+                } else if (!rearmConfiguredBodyMetric(context, container, channel)) {
+                    // Re-arm at the next local midnight so the reminder fires
+                    // daily (even when the streak post was skipped) and stays
+                    // anchored to calendar days instead of drifting by the
+                    // time between fires.
+                    val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                    val nextFire = nextMidnightMillis()
+                    val reIntent = Intent(context, ReminderReceiver::class.java).apply { putExtras(intent) }
+                    val pi = PendingIntent.getBroadcast(
+                        context, request, reIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    DebugTrace.event(
+                        "op=alarm phase=rearm channel=$channel request=$request " +
+                            "next=$nextFire fallback=true",
+                    )
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextFire, pi)
+                }
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+}
+
+private suspend fun hasBodyMetricEntryToday(container: AppContainer, channel: String): Boolean {
+    val zone = ZoneId.systemDefault()
+    val today = LocalDate.now(zone)
+    val start = today.atStartOfDay(zone).toInstant()
+    // Inclusive end may include the next local midnight; the day filter drops it.
+    val end = today.plusDays(1).atStartOfDay(zone).toInstant()
+    val dates = if (channel == NotificationService.CHANNEL_WEIGHT_LOG) {
+        container.weightRepository.entriesInRange(start, end).map { it.date }
+    } else {
+        container.bodyFatRepository.entriesInRange(start, end).map { it.date }
+    }
+    return dates.any { entryFallsOnLocalDay(it, today, zone) }
+}
+
+/**
+ * Re-arm weight and body-fat reminders at the configured clock time (issue #133).
+ * Returns false when this channel is not one of those two, or when the container
+ * is missing, so the caller keeps the midnight fallback and the chain is not dropped.
+ * A disabled reminder is cancelled here so the fire does not resurrect it.
+ */
+private suspend fun rearmConfiguredBodyMetric(
+    context: Context,
+    container: AppContainer?,
+    channel: String,
+): Boolean {
+    if (channel != NotificationService.CHANNEL_WEIGHT_LOG &&
+        channel != NotificationService.CHANNEL_BODY_FAT_LOG
+    ) {
+        return false
+    }
+    if (container == null) return false
+    val notifications = NotificationService(context)
+    val masterOn = container.prefs.notificationsEnabled.first() &&
+        notifications.canPostNotifications()
+    if (channel == NotificationService.CHANNEL_WEIGHT_LOG) {
+        if (masterOn && container.prefs.weightReminderEnabled.first()) {
+            notifications.scheduleWeightReminder(
+                container.prefs.weightReminderHour.first(),
+                container.prefs.weightReminderMinute.first(),
+            )
+        } else {
+            notifications.cancelWeightReminder()
+        }
+    } else {
+        val profile = container.profileRepository.current()
+        if (masterOn &&
+            container.prefs.bodyFatReminderEnabled.first() &&
+            profile?.bodyFatPercentage != null
+        ) {
+            notifications.scheduleBodyFatReminder(
+                container.prefs.bodyFatReminderHour.first(),
+                container.prefs.bodyFatReminderMinute.first(),
+            )
+        } else {
+            notifications.cancelBodyFatReminder()
+        }
+    }
+    return true
+}
+
+private fun NotificationManagerCompat.notifySafely(id: Int, notif: android.app.Notification) {
+    // Swallow SecurityException if permission revoked.
+    runCatching { notify(id, notif) }
+        .onFailure {
+            DebugTrace.event("op=notify phase=error id=$id error=${it.javaClass.simpleName}")
+        }
+}

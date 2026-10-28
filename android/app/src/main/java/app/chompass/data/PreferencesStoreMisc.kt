@@ -1,0 +1,144 @@
+package app.chompass.data
+
+import androidx.datastore.preferences.core.edit
+import app.chompass.models.ChatMessage
+import app.chompass.models.WidgetSnapshot
+import app.chompass.services.health.DebugActivityDay
+import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+
+// -- Coach chat history ----------------------------------------------
+internal val PreferencesStore.chatHistoryImpl: Flow<List<ChatMessage>>
+    get() = listPref(Keys.CHAT_HISTORY, ChatMessage.serializer())
+
+internal suspend fun PreferencesStore.setChatHistoryImpl(history: List<ChatMessage>) =
+    setListPref(Keys.CHAT_HISTORY, ChatMessage.serializer(), history)
+
+// -- Widget snapshot --------------------------------------------------
+internal val PreferencesStore.widgetSnapshotImpl: Flow<WidgetSnapshot?>
+    get() = objectPref(Keys.WIDGET_SNAPSHOT, WidgetSnapshot.serializer())
+
+internal suspend fun PreferencesStore.setWidgetSnapshotImpl(snapshot: WidgetSnapshot) =
+    setObjectPref(Keys.WIDGET_SNAPSHOT, WidgetSnapshot.serializer(), snapshot)
+
+internal suspend fun PreferencesStore.clearWidgetSnapshotImpl() = removePref(Keys.WIDGET_SNAPSHOT)
+
+// -- Test data backup (used by TestDataSeeder during dev seeding) -------
+internal val PreferencesStore.testSeedBackupJsonImpl: Flow<String?>
+    get() = stringPref(Keys.TEST_SEED_BACKUP)
+
+internal suspend fun PreferencesStore.setTestSeedBackupJsonImpl(json: String) =
+    setStringPref(Keys.TEST_SEED_BACKUP, json)
+
+internal suspend fun PreferencesStore.clearTestSeedBackupImpl() = removePref(Keys.TEST_SEED_BACKUP)
+
+// -- Debug activity (TestDataSeeder synthetic steps / energy burn) --------
+internal suspend fun PreferencesStore.setDebugActivityDaysImpl(days: List<DebugActivityDay>) =
+    setListPref(Keys.DEBUG_ACTIVITY_DAYS, DebugActivityDay.serializer(), days)
+
+internal suspend fun PreferencesStore.clearDebugActivityDaysImpl() = removePref(Keys.DEBUG_ACTIVITY_DAYS)
+
+internal suspend fun PreferencesStore.debugActivityDaysJsonImpl(): String? = dataStore.data.first()[Keys.DEBUG_ACTIVITY_DAYS]
+
+internal suspend fun PreferencesStore.debugActivityDayImpl(date: LocalDate): DebugActivityDay? =
+    dataStore.data.first()
+        .decodeList(Keys.DEBUG_ACTIVITY_DAYS, DebugActivityDay.serializer(), json)
+        .firstOrNull { it.date == date.toString() }
+
+// -- Debug resting-shade flag (home hero A/B) ---------------------------
+internal val PreferencesStore.debugShowRestingShadeImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.DEBUG_SHOW_RESTING_SHADE] ?: false }
+
+internal suspend fun PreferencesStore.setDebugShowRestingShadeImpl(show: Boolean) {
+    dataStore.edit { it[Keys.DEBUG_SHOW_RESTING_SHADE] = show }
+}
+
+// -- Debug demo-analysis flag (demo_ai extra; scripted video capture) --------
+internal val PreferencesStore.debugDemoAnalysisImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.DEBUG_DEMO_ANALYSIS] ?: false }
+
+internal suspend fun PreferencesStore.setDebugDemoAnalysisImpl(enabled: Boolean) {
+    dataStore.edit { it[Keys.DEBUG_DEMO_ANALYSIS] = enabled }
+}
+
+// -- Debug demo-analysis-fail flag (demo_ai_fail extra; failure-path capture) --
+internal val PreferencesStore.debugDemoAnalysisFailImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.DEBUG_DEMO_ANALYSIS_FAIL] ?: false }
+
+internal suspend fun PreferencesStore.setDebugDemoAnalysisFailImpl(enabled: Boolean) {
+    dataStore.edit { it[Keys.DEBUG_DEMO_ANALYSIS_FAIL] = enabled }
+}
+
+// -- Debug demo-analysis-truncate flag (demo_ai_truncate extra; #97 downshift) --
+internal val PreferencesStore.debugDemoAnalysisTruncateImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.DEBUG_DEMO_ANALYSIS_TRUNCATE] ?: false }
+
+internal suspend fun PreferencesStore.setDebugDemoAnalysisTruncateImpl(enabled: Boolean) {
+    dataStore.edit { it[Keys.DEBUG_DEMO_ANALYSIS_TRUNCATE] = enabled }
+}
+
+// -- Settings Suggestions (hub nudge card) ---------------------------------
+internal val PreferencesStore.firstLaunchAtImpl: Flow<Long>
+    get() = dataStore.data.map { it[Keys.FIRST_LAUNCH_AT] ?: 0L }
+
+internal suspend fun PreferencesStore.ensureFirstLaunchAtImpl(nowMillis: Long) {
+    dataStore.edit { prefs ->
+        if (prefs[Keys.FIRST_LAUNCH_AT] == null) prefs[Keys.FIRST_LAUNCH_AT] = nowMillis
+    }
+}
+
+internal val PreferencesStore.dismissedSuggestionIdsImpl: Flow<Set<String>>
+    get() = dataStore.data.map { it[Keys.DISMISSED_SUGGESTIONS] ?: emptySet() }
+
+internal suspend fun PreferencesStore.setSuggestionDismissedImpl(id: String, dismissed: Boolean) {
+    dataStore.edit { prefs ->
+        val current = prefs[Keys.DISMISSED_SUGGESTIONS] ?: emptySet()
+        prefs[Keys.DISMISSED_SUGGESTIONS] = if (dismissed) current + id else current - id
+    }
+}
+
+// -- AI fill-missing banner (at most once per day, sticky dismissal) --------
+internal val PreferencesStore.fillMissingBannerLastShownDayImpl: Flow<Long>
+    get() = dataStore.data.map { it[Keys.FILL_MISSING_BANNER_LAST_SHOWN_DAY] ?: 0L }
+
+internal suspend fun PreferencesStore.setFillMissingBannerShownImpl(epochDay: Long) {
+    dataStore.edit { it[Keys.FILL_MISSING_BANNER_LAST_SHOWN_DAY] = epochDay }
+}
+
+internal val PreferencesStore.fillMissingDismissedSignaturesImpl: Flow<Set<String>>
+    get() = dataStore.data.map { it[Keys.FILL_MISSING_DISMISSED_SIGNATURES] ?: emptySet() }
+
+internal suspend fun PreferencesStore.setFillMissingSignatureDismissedImpl(signature: String) {
+    dataStore.edit { prefs ->
+        prefs[Keys.FILL_MISSING_DISMISSED_SIGNATURES] =
+            (prefs[Keys.FILL_MISSING_DISMISSED_SIGNATURES] ?: emptySet()) + signature
+    }
+}
+
+internal val PreferencesStore.fillMissingBannerDisabledImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.FILL_MISSING_BANNER_DISABLED] ?: false }
+
+internal suspend fun PreferencesStore.setFillMissingBannerDisabledImpl(v: Boolean) {
+    dataStore.edit { it[Keys.FILL_MISSING_BANNER_DISABLED] = v }
+}
+
+// -- Magnitude picker last mode (Codeberg #62) ------------------------
+internal val PreferencesStore.numericPickerEntryImpl: Flow<String>
+    get() = dataStore.data.map { it[Keys.NUMERIC_PICKER_ENTRY] ?: "wheel" }
+
+internal suspend fun PreferencesStore.setNumericPickerEntryImpl(mode: String) =
+    setStringPref(Keys.NUMERIC_PICKER_ENTRY, mode)
+
+// -- Wipe everything --------------------------------------------------
+internal suspend fun PreferencesStore.clearAllImpl() {
+    dataStore.edit { it.clear() }
+    // Bucket datasets live outside the proto; wipe them in the same breath so
+    // "delete all data" really is all data.
+    foodBucketStore.clear()
+    waterBucketStore.clear()
+    weightBucketStore.clear()
+    bodyFatBucketStore.clear()
+    measurementBucketStore.clear()
+}

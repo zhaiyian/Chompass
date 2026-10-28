@@ -1,0 +1,138 @@
+package app.chompass.data
+
+import androidx.datastore.preferences.core.edit
+import app.chompass.models.BodyFatEntry
+import app.chompass.models.BodyMeasurement
+import app.chompass.models.FoodEntry
+import app.chompass.models.WaterEntry
+import app.chompass.models.WeightEntry
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.KSerializer
+import java.time.YearMonth
+import java.time.ZoneId
+
+/**
+ * One-time migration of unbounded datasets out of the single DataStore proto
+ * into JsonBucketStore month files (docs/local/PLAN_FILE_BUCKETS.md).
+ *
+ * Idempotent and crash-safe: driven by key presence, not a flag. Each dataset
+ * is moved only while its legacy key still exists — the month files are
+ * written first, then the key is dropped in one DataStore edit. A crash
+ * mid-migration re-runs and overwrites identical file content; a device that
+ * already migrated skips straight past (the key is gone). This also makes the
+ * migration safe across incremental releases (water shipped before food).
+ *
+ * Must run BEFORE any impl that reads or writes the moved datasets, or the
+ * legacy keys could be dropped with data still in them (reads would go to the
+ * files, writes would go to the files, and the old blob would be stranded).
+ */
+internal suspend fun PreferencesStore.migrateBucketsToFilesIfNeeded() {
+    // Memoized per process (PreferencesStore.bucketsMigrated): this used to
+    // run a full dataStore read + key scan + two monthsOnDisk() probes on
+    // EVERY cold collect of the bucket-backed flows. One completed pass is
+    // enough — the datasets only change through in-process writers from
+    // then on.
+    if (bucketsMigrated) return
+
+    // Pre-bucket-era food history lives in the single `foodEntries` blob; the
+    // file migration must never run before the existing bucket migration, or
+    // that history would be stranded in a key the file store never reads.
+    migrateFoodEntriesToBucketsIfNeededImpl()
+
+    val prefs = dataStore.data.first()
+
+    val waterRaw = prefs[Keys.WATER_ENTRIES]
+    if (waterRaw != null) {
+        val entries = decodeListOrEmpty(waterRaw, WaterEntry.serializer())
+        waterBucketStore.replaceAll(
+            entries.groupBy { YearMonth.from(it.date.atZone(ZoneId.systemDefault())) }
+        )
+        dataStore.edit {
+            preserveUnreadableList(it, Keys.WATER_ENTRIES, WaterEntry.serializer())
+            it.remove(Keys.WATER_ENTRIES)
+        }
+    }
+
+    val weightsRaw = prefs[Keys.WEIGHT_ENTRIES]
+    if (weightsRaw != null) {
+        val entries = decodeListOrEmpty(weightsRaw, WeightEntry.serializer())
+        weightBucketStore.replaceAll(
+            entries.groupBy { YearMonth.from(it.date.atZone(ZoneId.systemDefault())) }
+        )
+        dataStore.edit {
+            preserveUnreadableList(it, Keys.WEIGHT_ENTRIES, WeightEntry.serializer())
+            it.remove(Keys.WEIGHT_ENTRIES)
+        }
+    }
+
+    val bodyFatRaw = prefs[Keys.BODY_FAT_ENTRIES]
+    if (bodyFatRaw != null) {
+        val entries = decodeListOrEmpty(bodyFatRaw, BodyFatEntry.serializer())
+        bodyFatBucketStore.replaceAll(
+            entries.groupBy { YearMonth.from(it.date.atZone(ZoneId.systemDefault())) }
+        )
+        dataStore.edit {
+            preserveUnreadableList(it, Keys.BODY_FAT_ENTRIES, BodyFatEntry.serializer())
+            it.remove(Keys.BODY_FAT_ENTRIES)
+        }
+    }
+
+    val measurementsRaw = prefs[Keys.BODY_MEASUREMENTS]
+    if (measurementsRaw != null) {
+        val entries = decodeListOrEmpty(measurementsRaw, BodyMeasurement.serializer())
+        measurementBucketStore.replaceAll(
+            entries.groupBy { YearMonth.from(it.date.atZone(ZoneId.systemDefault())) }
+        )
+        dataStore.edit {
+            preserveUnreadableList(it, Keys.BODY_MEASUREMENTS, BodyMeasurement.serializer())
+            it.remove(Keys.BODY_MEASUREMENTS)
+        }
+    }
+
+    val foodKeys = prefs.asMap().keys.filter { it.name.startsWith(FOOD_ENTRIES_BUCKET_PREFIX) }
+    if (foodKeys.isNotEmpty()) {
+        val byMonth = foodKeys.mapNotNull { key ->
+            val month = key.name.removePrefix(FOOD_ENTRIES_BUCKET_PREFIX)
+                .let { runCatching { YearMonth.parse(it) }.getOrNull() } ?: return@mapNotNull null
+            month to decodeListOrEmpty(prefs[key] as? String ?: return@mapNotNull null, FoodEntry.serializer())
+        }.toMap()
+        foodBucketStore.replaceAll(byMonth)
+        dataStore.edit { it ->
+            foodKeys.forEach { key ->
+                val raw = prefs[key] as? String ?: return@forEach
+                preserveUnreadableRaw(it, key.name, raw, FoodEntry.serializer())
+            }
+            foodKeys.forEach { key -> it.remove(key) }
+        }
+    }
+
+    // Daily food aggregates (flippidity C.1): a derived per-day totals cache
+    // over the food month files, so Progress never decodes the full diary.
+    // Built once here when food history exists but the cache is empty (upgrade
+    // from a pre-aggregate build); rebuild is idempotent and self-healing — a
+    // cache that is ever emptied rebuilds from the source files, and every
+    // subsequent food write maintains it write-through.
+    // Schema 2 added fiber/sugar/sodium; 3 adds every optional nutrient
+    // (Codeberg #75). Old month files without a newer field deserialize it
+    // as 0, so each shape bump needs a one-time rebuild.
+    val schema = prefs[Keys.FOOD_AGGREGATES_SCHEMA] ?: 0
+    val foodMonths = foodBucketStore.monthsOnDisk()
+    val cacheEmpty = foodAggregateBucketStore.monthsOnDisk().isEmpty()
+    if (foodMonths.isNotEmpty() && (cacheEmpty || schema < Keys.FOOD_AGGREGATES_SCHEMA_LATEST)) {
+        foodAggregateBucketStore.replaceAll(
+            foodMonths.associateWith { month ->
+                aggregateFoodEntriesByDay(foodBucketStore.readMonth(month))
+            }
+        )
+    }
+    if (schema < Keys.FOOD_AGGREGATES_SCHEMA_LATEST) {
+        dataStore.edit { it[Keys.FOOD_AGGREGATES_SCHEMA] = Keys.FOOD_AGGREGATES_SCHEMA_LATEST }
+    }
+
+    // Reached only when the whole migration finished without throwing — a
+    // failed pass must stay un-memoized so the next collect retries it.
+    bucketsMigrated = true
+}
+
+private fun <T> PreferencesStore.decodeListOrEmpty(raw: String, serializer: KSerializer<T>): List<T> =
+    LenientJsonList.decode(json, serializer, raw).itemsOrEmpty

@@ -1,0 +1,303 @@
+package app.chompass.models
+
+import app.chompass.R
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Catalog + resolver unit tests for custom tracker presets (#55 follow-up). */
+class TrackerPresetsTest {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private fun caffeineWithCustoms(count: Int): HabitPresetCatalog {
+        var catalog = HabitPresetDomain.CAFFEINE.defaultCatalog
+        repeat(count) { i ->
+            catalog = catalog.addCustom(
+                HabitPresetDomain.CAFFEINE,
+                label = "Espresso $i",
+                defaultMg = 65.0 + i,
+            )
+        }
+        return catalog
+    }
+
+    @Test
+    fun defaultCatalogsMatchBuiltinKinds() {
+        val caffeine = HabitPresetDomain.CAFFEINE.defaultCatalog
+        assertEquals(listOf("coffee", "tea", "energy", "other"), caffeine.ids())
+        assertEquals(null, caffeine.def("other")!!.defaultMg)
+        assertEquals(95.0, caffeine.def("coffee")!!.defaultMg!!, 0.001)
+
+        val nicotine = HabitPresetDomain.NICOTINE.defaultCatalog
+        assertEquals(listOf("cigarette", "vape", "pouch", "gum", "patch", "other"), nicotine.ids())
+        assertEquals(1, nicotine.def("cigarette")!!.defaultCount)
+        assertNull(nicotine.def("vape")!!.defaultDoseMg)
+    }
+
+    @Test
+    fun defaultCatalogsValidate() {
+        assertNull(HabitPresetDomain.CAFFEINE.defaultCatalog.validate(HabitPresetDomain.CAFFEINE))
+        assertNull(HabitPresetDomain.NICOTINE.defaultCatalog.validate(HabitPresetDomain.NICOTINE))
+    }
+
+    @Test
+    fun validateRejectsDuplicateAndUnknownIds() {
+        val dupes = HabitPresetCatalog(
+            presets = listOf(HabitPreset("coffee"), HabitPreset("coffee")),
+        )
+        assertEquals("duplicate_id", dupes.validate(HabitPresetDomain.CAFFEINE))
+
+        val nicotineIdInCaffeine = HabitPresetCatalog(presets = listOf(HabitPreset("cigarette")))
+        assertEquals("bad_id", nicotineIdInCaffeine.validate(HabitPresetDomain.CAFFEINE))
+
+        val blank = HabitPresetCatalog(presets = listOf(HabitPreset(" ")))
+        assertEquals("blank_id", blank.validate(HabitPresetDomain.CAFFEINE))
+    }
+
+    @Test
+    fun validateRejectsBadCustomIdsAndRanges() {
+        assertEquals("bad_custom_id", HabitPresetCatalog(listOf(HabitPreset("t_ZZ"))).validate(HabitPresetDomain.CAFFEINE))
+        assertEquals("mg", HabitPresetCatalog(listOf(HabitPreset("t_00000001", defaultMg = 501.0))).validate(HabitPresetDomain.CAFFEINE))
+        assertEquals("mg", HabitPresetCatalog(listOf(HabitPreset("t_00000001", defaultMg = -1.0))).validate(HabitPresetDomain.CAFFEINE))
+        assertEquals("count", HabitPresetCatalog(listOf(HabitPreset("t_00000001", defaultCount = 21))).validate(HabitPresetDomain.NICOTINE))
+        assertEquals("dose", HabitPresetCatalog(listOf(HabitPreset("t_00000001", defaultDoseMg = 31.0))).validate(HabitPresetDomain.NICOTINE))
+        assertEquals("label", HabitPresetCatalog(listOf(HabitPreset("t_00000001", label = "x".repeat(25)))).validate(HabitPresetDomain.CAFFEINE))
+    }
+
+    @Test
+    fun validateRejectsCaffeineMilkWithoutKindAndNicotineMilk() {
+        assertEquals(
+            "milk_kind",
+            HabitPresetCatalog(listOf(HabitPreset("t_00000001", milkMl = 50))).validate(HabitPresetDomain.CAFFEINE),
+        )
+        assertEquals(
+            "milk",
+            HabitPresetCatalog(listOf(HabitPreset("t_00000001", milkMl = 50, milkKind = "whole")))
+                .validate(HabitPresetDomain.NICOTINE),
+        )
+        assertNull(
+            HabitPresetCatalog(listOf(HabitPreset("t_00000001", milkMl = 0))).validate(HabitPresetDomain.CAFFEINE),
+        )
+        assertNull(
+            HabitPresetCatalog(listOf(HabitPreset("t_00000001", milkMl = 50, milkKind = "whole")))
+                .validate(HabitPresetDomain.CAFFEINE),
+        )
+    }
+
+    @Test
+    fun addCustomClampsMilkAndStripsNicotineMilk() {
+        val caffeine = HabitPresetDomain.CAFFEINE.defaultCatalog
+            .addCustom(HabitPresetDomain.CAFFEINE, "Latte", defaultMg = 80.0, milkKind = "whole", milkMl = 900)
+        assertEquals(MilkKind.MAX_ML, caffeine.presets.last().milkMl)
+        assertEquals("whole", caffeine.presets.last().milkKind)
+
+        val noKind = HabitPresetDomain.CAFFEINE.defaultCatalog
+            .addCustom(HabitPresetDomain.CAFFEINE, "Espresso", defaultMg = 80.0, milkMl = 50)
+        assertEquals(0, noKind.presets.last().milkMl)
+        assertNull(noKind.presets.last().milkKind)
+
+        val nicotine = HabitPresetDomain.NICOTINE.defaultCatalog
+            .addCustom(HabitPresetDomain.NICOTINE, "Zyn", milkKind = "whole", milkMl = 50)
+        assertEquals(0, nicotine.presets.last().milkMl)
+        assertNull(nicotine.presets.last().milkKind)
+    }
+
+    @Test
+    fun validatedOrDefaultResetsCorruptCatalogs() {
+        val corrupt = HabitPresetCatalog(presets = listOf(HabitPreset("cigarette")))
+        assertEquals(
+            HabitPresetDomain.CAFFEINE.defaultCatalog.ids(),
+            corrupt.validatedOrDefault(HabitPresetDomain.CAFFEINE).ids(),
+        )
+    }
+
+    @Test
+    fun corruptStoredJsonResetsToDefaults() {
+        assertEquals(
+            HabitPresetDomain.CAFFEINE.defaultCatalog,
+            parseHabitPresetCatalog("not json {", HabitPresetDomain.CAFFEINE, json),
+        )
+        assertEquals(
+            HabitPresetDomain.NICOTINE.defaultCatalog,
+            parseHabitPresetCatalog(null, HabitPresetDomain.NICOTINE, json),
+        )
+        val withCustom = caffeineWithCustoms(1)
+        val roundTripped = json.encodeToString(HabitPresetCatalog.serializer(), withCustom)
+        assertEquals(withCustom, parseHabitPresetCatalog(roundTripped, HabitPresetDomain.CAFFEINE, json))
+    }
+
+    @Test
+    fun addCustomGeneratesIdsAndCapsAtEight() {
+        val catalog = caffeineWithCustoms(HabitPresetCatalog.MAX_CUSTOM)
+        assertEquals(HabitPresetCatalog.MAX_CUSTOM, catalog.customCount)
+        // At cap: adding another is a no-op.
+        val atCap = catalog.addCustom(HabitPresetDomain.CAFFEINE, label = "One too many", defaultMg = 10.0)
+        assertEquals(catalog, atCap)
+
+        val one = caffeineWithCustoms(1)
+        val custom = one.presets.last()
+        assertTrue(custom.isCustom)
+        assertTrue(custom.id.startsWith("t_"))
+        assertNotEquals(custom.id, one.addCustom(HabitPresetDomain.CAFFEINE, "Second").presets.last().id)
+    }
+
+    @Test
+    fun addCustomClampsDefaultsToWheelRanges() {
+        val clamped = HabitPresetDomain.CAFFEINE.defaultCatalog
+            .addCustom(HabitPresetDomain.CAFFEINE, "Big", defaultMg = 900.0)
+        assertEquals(500.0, clamped.presets.last().defaultMg!!, 0.001)
+
+        val nicotine = HabitPresetDomain.NICOTINE.defaultCatalog
+            .addCustom(HabitPresetDomain.NICOTINE, "Zyn 6", defaultCount = 40, defaultDoseMg = 90.0)
+        val preset = nicotine.presets.last()
+        assertEquals(20, preset.defaultCount)
+        assertEquals(30.0, preset.defaultDoseMg!!, 0.001)
+        // Mg-based presets never carry count/dose defaults.
+        assertEquals(1, clamped.presets.last().defaultCount)
+        assertNull(clamped.presets.last().defaultDoseMg)
+    }
+
+    @Test
+    fun withLabelAndRenameApplyRenderTime() {
+        val renamed = HabitPresetDomain.CAFFEINE.defaultCatalog.withLabel("coffee", "Doppio")
+        assertEquals("Doppio", renamed.def("coffee")!!.label)
+        // Ids stay stable: entries relabel for free because kind ids don't move.
+        assertEquals(HabitPresetDomain.CAFFEINE.defaultCatalog.ids(), renamed.ids())
+        // Blank label resets to the locale default.
+        assertEquals("", renamed.withLabel("coffee", "  ").def("coffee")!!.label)
+        // Labels are trimmed + capped at 24 chars.
+        assertEquals("Long espresso name way p", renamed.withLabel("coffee", "  Long espresso name way past the cap  ").def("coffee")!!.label)
+    }
+
+    @Test
+    fun withoutAndReordered() {
+        val catalog = caffeineWithCustoms(2)
+        val customId = catalog.presets.last { it.isCustom }.id
+        assertEquals(catalog.presets.size - 1, catalog.without(customId).presets.size)
+        assertNull(catalog.without(customId).def(customId))
+
+        val reordered = catalog.reordered(catalog.ids().asReversed())
+        assertEquals(catalog.ids().asReversed(), reordered.ids())
+        // Unknown reorder ids keep every preset in its existing order.
+        assertEquals(reordered.ids(), reordered.reordered(listOf("unknown")).ids())
+    }
+
+    @Test
+    fun resolverPrecedence() {
+        // Builtin labelRes -> override fallback -> unknown id falls back to Other.
+        assertEquals(R.string.caffeine_kind_coffee, caffeineKindLabelRes("coffee"))
+        assertEquals(R.string.caffeine_kind_other, caffeineKindLabelRes("t_abcd1234"))
+        assertEquals(R.string.nicotine_kind_pouch, nicotineKindLabelRes("pouch"))
+        assertEquals(R.string.nicotine_kind_other, nicotineKindLabelRes("snus_future"))
+    }
+
+    @Test
+    fun quickKindSelectionRetainsCustomIds() {
+        val caffeine = HabitPresetDomain.CAFFEINE
+        // Null (first run) keeps the default chips.
+        assertEquals(listOf("coffee", "tea", "energy"), caffeine.quickKindIdsFromStorage(null))
+        // A present-but-empty string is an explicit empty selection: legal,
+        // zero chips (blank tokens filter to the same state).
+        assertEquals(emptyList<String>(), caffeine.quickKindIdsFromStorage(""))
+        assertEquals(emptyList<String>(), caffeine.quickKindIdsFromStorage(" , , "))
+
+        val custom = caffeine.quickKindIdsFromStorage("tea,t_abcd1234,coffee,tea")
+        assertEquals(listOf("tea", "t_abcd1234", "coffee"), custom)
+        assertEquals("tea,t_abcd1234,coffee", caffeine.quickKindIdsToStorage(custom))
+
+        // Garbage tokens drop; only builtins + t_ ids are retained.
+        assertEquals(listOf("vape"), HabitPresetDomain.NICOTINE.quickKindIdsFromStorage("vape,snus_future"))
+        // All tokens invalid is still an explicit empty selection.
+        assertEquals(
+            emptyList<String>(),
+            HabitPresetDomain.NICOTINE.quickKindIdsFromStorage("snus_future, 9x"),
+        )
+    }
+
+    @Test
+    fun addedCustomIdsReportOnlyNewCustoms() {
+        val domain = HabitPresetDomain.CAFFEINE
+        val base = caffeineWithCustoms(1)
+        val existingCustom = base.presets.last().id
+
+        // Id-identical catalogs and builtin (re)additions report nothing.
+        assertTrue(base.addedCustomIds(base).isEmpty())
+        assertTrue(
+            domain.defaultCatalog.addedCustomIds(domain.defaultCatalog.without("energy")).isEmpty(),
+        )
+
+        // Only the new custom id is reported; appending it to the quick-kind
+        // selection survives the storage round-trip (chip becomes visible).
+        val grown = base.addCustom(domain, "Espresso 1", defaultMg = 66.0)
+        val newCustom = grown.presets.last().id
+        assertEquals(listOf(newCustom), grown.addedCustomIds(base))
+        val kinds = domain.quickKindIdsFromStorage(
+            domain.quickKindIdsToStorage(domain.defaultQuickKindIds + newCustom + existingCustom),
+        )
+        assertTrue(newCustom in kinds && existingCustom in kinds)
+    }
+
+    @Test
+    fun hubPresetsComposeChipsInCatalogOrder() {
+        val domain = HabitPresetDomain.CAFFEINE
+        var catalog = domain.defaultCatalog
+            .withLabel("coffee", "Doppio")
+            .addCustom(domain, "Espresso", defaultMg = 65.0)
+        val espressoId = catalog.presets.last().id
+
+        // Selection order is ignored: chips follow the catalog (user) order.
+        val chips = domain.hubPresets(listOf("tea", espressoId, "coffee"), catalog)
+        assertEquals(listOf("coffee", "tea", espressoId), chips.map { it.id })
+        assertEquals("Doppio", chips.first().label)
+        assertEquals(65.0, chips.last().defaultMg!!, 0.001)
+        // An explicit empty selection means zero chips — the caller hides
+        // the row block (MUST 2's empty-catalog acceptance).
+        assertTrue(domain.hubPresets(emptyList(), catalog).isEmpty())
+
+        // Deleted customs drop out of the chips without affecting the rest;
+        // an "other" selection still resolves.
+        assertEquals(
+            listOf("other"),
+            domain.hubPresets(listOf("other", "t_gone000"), catalog).map { it.id },
+        )
+    }
+
+    @Test
+    fun emptyCatalogIsValidAndSurvivesRoundTrips() {
+        val domain = HabitPresetDomain.CAFFEINE
+        val empty = HabitPresetCatalog(presets = emptyList())
+
+        // "No presets" validates, so validatedOrDefault passes it through
+        // instead of resetting to the builtin set (MUST 2).
+        assertNull(empty.validate(domain))
+        assertEquals(empty, empty.validatedOrDefault(domain))
+
+        // The store round-trip (encode → parse) keeps it empty; corrupt JSON
+        // still resets to the defaults (regression guard, unchanged).
+        val encoded = json.encodeToString(HabitPresetCatalog.serializer(), empty)
+        assertEquals(empty, parseHabitPresetCatalog(encoded, domain, json))
+        assertEquals(domain.defaultCatalog, parseHabitPresetCatalog("not json {", domain, json))
+    }
+
+    @Test
+    fun deleteLastPresetLeavesLegalEmptyState() {
+        val domain = HabitPresetDomain.NICOTINE
+        var catalog = domain.defaultCatalog
+        // Single deletes stick; the last one lands on the legal empty state.
+        while (catalog.presets.isNotEmpty()) {
+            catalog = catalog.without(catalog.presets.first().id).let {
+                it.validatedOrDefault(domain)
+            }
+        }
+        assertTrue(catalog.presets.isEmpty())
+
+        // Empty catalog + any selection renders zero chips; the deselected
+        // selection round-trips through storage as "".
+        assertTrue(domain.hubPresets(domain.defaultQuickKindIds, catalog).isEmpty())
+        assertEquals("", domain.quickKindIdsToStorage(emptyList()))
+        assertEquals(emptyList<String>(), domain.quickKindIdsFromStorage(""))
+    }
+}

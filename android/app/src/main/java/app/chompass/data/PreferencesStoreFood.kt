@@ -1,0 +1,296 @@
+package app.chompass.data
+
+import androidx.datastore.preferences.core.edit
+import app.chompass.models.DailyFoodTotals
+import app.chompass.models.FoodEntry
+import app.chompass.models.PendingFoodAnalysisDraft
+import app.chompass.models.PendingFoodInputDraft
+import java.time.YearMonth
+import java.time.ZoneId
+import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.SetSerializer
+import kotlinx.serialization.builtins.serializer
+
+// -- Food entries (bucketed by calendar month) -------------------------
+    //
+    // Entries are stored one JSON file per calendar month under
+    // filesDir/chompass-buckets/food/<yyyy-MM>.json (JsonBucketStore) instead
+    // of one blob for all history, so adding/editing/deleting a single entry
+    // only decodes+encodes the entries in its own month, not every entry ever
+    // logged (which used to cost ~1s+ per save and grow linearly forever — see
+    // PerfLog "save"/"dataStore"). Before the file move, the same shape lived
+    // as DataStore keys "foodEntries_2026-07"; legacy single-blob data (key
+    // "foodEntries") is migrated via [migrateFoodEntriesToBucketsIfNeededImpl]
+    // then [migrateBucketsToFilesIfNeeded].
+
+internal fun PreferencesStore.decodeEntryListImpl(raw: String?): List<FoodEntry> =
+    LenientJsonList.decode(json, FoodEntry.serializer(), raw).itemsOrEmpty
+
+private fun PreferencesStore.encodeEntryListImpl(entries: List<FoodEntry>): String =
+        json.encodeToString(ListSerializer(FoodEntry.serializer()), entries)
+
+    /** Whole food log across all months. Gated on the one-time bucket-file migration. */
+internal val PreferencesStore.foodEntriesImpl: Flow<List<FoodEntry>> get() = flow {
+        migrateBucketsToFilesIfNeeded()
+        emitAll(foodBucketStore.allFlow())
+    }
+
+/** Latest persisted snapshot of one diary row by id, or null when no log row
+ *  matches — the retry queue's read-back for "is this row still there / what
+ *  does it say now". Backed by the cached month buckets, so repeated lookups
+ *  cost list assembly, not file I/O. */
+internal suspend fun PreferencesStore.foodEntryByIdImpl(id: UUID): FoodEntry? {
+    migrateBucketsToFilesIfNeeded()
+    // Newest month first with early exit: the nutrition retry queue calls
+    // this per pending item, and a hit in a recent month must not decode
+    // the whole history first.
+    for (month in foodBucketStore.monthsOnDisk().sortedDescending()) {
+        foodBucketStore.readMonth(month).firstOrNull { it.id == id }?.let { return it }
+    }
+    return null
+}
+
+    /** One calendar month's entries only, gated on migration — the fast path for date-scoped reads. */
+internal fun PreferencesStore.foodEntriesForMonthImpl(month: YearMonth): Flow<List<FoodEntry>> = flow {
+        migrateBucketsToFilesIfNeeded()
+        emitAll(foodBucketStore.monthFlow(month))
+    }
+    /** Decode only the named month buckets (missing months → empty). */
+internal fun PreferencesStore.foodEntriesForMonthsImpl(months: Collection<YearMonth>): Flow<List<FoodEntry>> = flow {
+        migrateBucketsToFilesIfNeeded()
+        emitAll(foodBucketStore.monthsFlow(months))
+    }
+
+    /** Per-day food totals for the named months, from the aggregates cache (flippidity C.1). */
+internal fun PreferencesStore.dailyFoodTotalsForMonthsImpl(months: Collection<YearMonth>): Flow<List<DailyFoodTotals>> = flow {
+        migrateBucketsToFilesIfNeeded()
+        emitAll(foodAggregateBucketStore.monthsFlow(months))
+    }
+
+    /**
+     * Recomputes the daily-aggregate rows for [months] from the food month
+     * files and writes through to the aggregate store. Runs after every food
+     * write so Progress' aggregate flow re-emits only when a day's totals
+     * actually change. A day whose last entry was removed has its stale row
+     * dropped — a phantom zero day would skew Progress' macro-average day
+     * count. Cache hits only: the food months were just written by the caller.
+     */
+internal suspend fun PreferencesStore.rebuildDailyAggregates(months: Collection<YearMonth>) {
+        if (months.isEmpty()) return
+        val upserts = HashMap<YearMonth, List<DailyFoodTotals>>()
+        val removals = HashMap<YearMonth, Set<UUID>>()
+        for (month in months) {
+            val entries = foodBucketStore.readMonth(month)
+            val totals = aggregateFoodEntriesByDay(entries)
+            val days = totals.mapTo(HashSet()) { it.date }
+            val stale = foodAggregateBucketStore.readMonth(month).filterNot { it.date in days }
+            if (totals.isNotEmpty()) upserts[month] = totals
+            if (stale.isNotEmpty()) removals[month] = stale.map { it.id }.toSet()
+        }
+        foodAggregateBucketStore.applyChanges(upserts, removals)
+    }
+
+    /**
+     * Applies upserts (by id) and/or removals (by id) to exactly the named
+     * month buckets, in one atomic DataStore edit — so a cross-month move
+     * (remove from old bucket + insert into new) can never be observed
+     * half-applied. A bucket that ends up empty is removed entirely, so key
+     * count stays bounded (~12/year) rather than growing without limit.
+     *
+     * When [draft] is non-null it is written in the same transaction, so the
+     * crash-safety snapshot of a confirming AI entry commits atomically with
+     * the diary row instead of costing a second full-file DataStore write.
+     * When [clearDraft] is true the pending draft key is removed in the same
+     * transaction — used at Log-commit time so clearing the consumed draft
+     * never costs a second full-file DataStore write.
+     */
+internal suspend fun PreferencesStore.applyFoodEntryBucketChangesImpl(
+        upsertsByMonth: Map<YearMonth, List<FoodEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+        draft: PendingFoodAnalysisDraft? = null,
+        clearDraft: Boolean = false,
+    ) {
+        if (upsertsByMonth.isEmpty() && removalIdsByMonth.isEmpty() && draft == null && !clearDraft) return
+        migrateBucketsToFilesIfNeeded()
+        // Month files are written first (upsert months before removal months, so
+        // a cross-month move interrupted by a crash leaves the row in BOTH
+        // months — visible, recoverable — rather than in neither). The draft
+        // commit is a separate DataStore edit: the two are no longer one atomic
+        // transaction (see docs/local/PLAN_FILE_BUCKETS.md). A crash between
+        // them leaves an entry without its re-edit snapshot — same UX as the
+        // post-commit clearDraft path — or a harmless orphan draft.
+        foodBucketStore.applyChanges(upsertsByMonth, removalIdsByMonth)
+        // Daily aggregates follow the same write: recompute the touched months
+        // from the (now updated) food cache so Progress never reads stale totals.
+        rebuildDailyAggregates(upsertsByMonth.keys + removalIdsByMonth.keys)
+        if (draft != null || clearDraft) {
+            dataStore.edit { prefs ->
+                if (draft != null) {
+                    prefs[Keys.PENDING_FOOD_ANALYSIS_DRAFT] =
+                        json.encodeToString(PendingFoodAnalysisDraft.serializer(), draft)
+                } else {
+                    prefs.remove(Keys.PENDING_FOOD_ANALYSIS_DRAFT)
+                }
+            }
+        }
+    }
+
+    /** Full replace (reseed / clear-all) — wipes every existing bucket file and regroups [entries] by month. */
+internal suspend fun PreferencesStore.replaceAllFoodEntriesImpl(entries: List<FoodEntry>) {
+        migrateBucketsToFilesIfNeeded()
+        val byMonth = entries.groupBy { YearMonth.from(it.timestamp.atZone(ZoneId.systemDefault())) }
+        foodBucketStore.replaceAll(byMonth)
+        // Full rebuild of the aggregate cache to match — months absent from the
+        // new diary have their aggregate files deleted too (replaceAll semantics).
+        foodAggregateBucketStore.replaceAll(
+            byMonth.mapValues { (_, monthEntries) -> aggregateFoodEntriesByDay(monthEntries) }
+        )
+    }
+
+    /**
+     * One-time migration of the legacy single-blob `foodEntries` key into
+     * monthly buckets. Idempotent: a fast no-op read once already migrated,
+     * otherwise a single atomic edit. DataStore's edit() commits via atomic
+     * file rename, so this can never leave a partially-migrated state on
+     * disk, and it's safe to re-run from scratch if interrupted.
+     */
+internal suspend fun PreferencesStore.migrateFoodEntriesToBucketsIfNeededImpl() {
+        if (dataStore.data.first()[Keys.FOOD_ENTRIES_MIGRATED] == true) return
+        dataStore.edit { prefs ->
+            if (prefs[Keys.FOOD_ENTRIES_MIGRATED] == true) return@edit
+            val legacy = decodeEntryListImpl(prefs[Keys.FOOD_ENTRIES])
+            legacy.groupBy { YearMonth.from(it.timestamp.atZone(ZoneId.systemDefault())) }
+                .forEach { (month, monthEntries) ->
+                    val key = Keys.foodEntriesBucket(month)
+                    val existing = decodeEntryListImpl(prefs[key])
+                    val merged = (existing + monthEntries).distinctBy { it.id }.sortedBy { it.timestamp }
+                    prefs[key] = encodeEntryListImpl(merged)
+                }
+            prefs[Keys.FOOD_ENTRIES]?.let { raw ->
+                preserveUnreadableRaw(prefs, Keys.FOOD_ENTRIES.name, raw, FoodEntry.serializer())
+            }
+            prefs.remove(Keys.FOOD_ENTRIES)
+            prefs[Keys.FOOD_ENTRIES_MIGRATED] = true
+        }
+    }
+
+internal val PreferencesStore.favoriteKeysImpl: Flow<Set<String>> get() = dataStore.data.map { prefs ->
+        prefs[Keys.FAVORITE_KEYS]?.let {
+            runCatching { json.decodeFromString(SetSerializer(String.serializer()), it) }.getOrNull()
+        } ?: emptySet()
+    }
+
+internal suspend fun PreferencesStore.setFavoriteKeysImpl(keys: Set<String>) {
+        dataStore.edit { it[Keys.FAVORITE_KEYS] = json.encodeToString(SetSerializer(String.serializer()), keys) }
+    }
+
+    /**
+     * Ordered list of favorite FoodEntry copies — mirrors iOS UserDefaults
+     * key "favoriteFoodEntries". Stored as a separate copy (not a reference
+     * into [foodEntries]) so a favorite survives deletion of the original
+     * log entry, AND so user-defined order is preserved across restarts.
+     */
+internal val PreferencesStore.favoriteFoodEntriesImpl: Flow<List<FoodEntry>>
+    get() = listPref(Keys.FAVORITE_ENTRIES, FoodEntry.serializer())
+
+internal suspend fun PreferencesStore.setFavoriteFoodEntriesImpl(entries: List<FoodEntry>) =
+    setListPref(Keys.FAVORITE_ENTRIES, FoodEntry.serializer(), entries)
+
+/**
+ * Writes the ordered favorites list AND its legacy keys mirror in one
+ * DataStore edit. Two separate edits left a crash window where the legacy
+ * mirror diverged from the ordered list. An unreadable entries blob is
+ * preserved aside before the write replaces it (same semantics as
+ * [setListPref]).
+ */
+internal suspend fun PreferencesStore.setFavoritesAtomicImpl(entries: List<FoodEntry>) {
+    dataStore.edit { prefs ->
+        preserveUnreadableList(prefs, Keys.FAVORITE_ENTRIES, FoodEntry.serializer())
+        prefs[Keys.FAVORITE_ENTRIES] = json.encodeToString(ListSerializer(FoodEntry.serializer()), entries)
+        prefs[Keys.FAVORITE_KEYS] = json.encodeToString(SetSerializer(String.serializer()), entries.map { it.favoriteKey }.toSet())
+    }
+}
+
+// -- Pending food analysis draft --------------------------------------
+internal val PreferencesStore.pendingFoodAnalysisDraftImpl: Flow<PendingFoodAnalysisDraft?>
+    get() = objectPref(Keys.PENDING_FOOD_ANALYSIS_DRAFT, PendingFoodAnalysisDraft.serializer())
+
+internal suspend fun PreferencesStore.setPendingFoodAnalysisDraftImpl(draft: PendingFoodAnalysisDraft?) =
+    setObjectPrefOrRemove(Keys.PENDING_FOOD_ANALYSIS_DRAFT, PendingFoodAnalysisDraft.serializer(), draft)
+
+// -- Pending food input draft (failed camera+note input) --------------
+internal val PreferencesStore.pendingFoodInputDraftImpl: Flow<PendingFoodInputDraft?>
+    get() = objectPref(Keys.PENDING_FOOD_INPUT_DRAFT, PendingFoodInputDraft.serializer())
+
+internal suspend fun PreferencesStore.setPendingFoodInputDraftImpl(draft: PendingFoodInputDraft?) =
+    setObjectPrefOrRemove(Keys.PENDING_FOOD_INPUT_DRAFT, PendingFoodInputDraft.serializer(), draft)
+
+/**
+ * Returns an atomic snapshot of every persisted food-image reference. A decode
+ * failure returns null so cleanup never treats unreadable user data as empty.
+ */
+internal suspend fun PreferencesStore.foodImageReferenceFilenamesImpl(): Set<String>? {
+    migrateBucketsToFilesIfNeeded()
+    val prefs = dataStore.data.first()
+    val foods = foodBucketStore.readAll()
+    val favorites = prefs[Keys.FAVORITE_ENTRIES]?.let { raw ->
+        runCatching {
+            json.decodeFromString(ListSerializer(FoodEntry.serializer()), raw)
+        }.getOrNull() ?: return null
+    }.orEmpty()
+    val analysisDraft = prefs[Keys.PENDING_FOOD_ANALYSIS_DRAFT]?.let { raw ->
+        runCatching { json.decodeFromString<PendingFoodAnalysisDraft>(raw) }.getOrNull()
+            ?: return null
+    }
+    val inputDraft = prefs[Keys.PENDING_FOOD_INPUT_DRAFT]?.let { raw ->
+        runCatching { json.decodeFromString<PendingFoodInputDraft>(raw) }.getOrNull()
+            ?: return null
+    }
+
+    return buildSet {
+        foods.forEach { entry -> entry.imageFilename?.let { add(it) } }
+        favorites.forEach { entry -> entry.imageFilename?.let { add(it) } }
+        analysisDraft?.imageFilename?.let { add(it) }
+        inputDraft?.resolvedImageFilenames?.forEach { if (it.isNotBlank()) add(it) }
+    }
+}
+
+// -- Food database search sources -------------------------------------
+//
+// Three independent switches for the Add Food search sources. Turning one off
+// only removes it from the search fan-out (see FoodDatabaseSearch.enabledSources)
+// — barcode lookups and already-logged entries are untouched.
+//
+// All three default on. The two bundled indexes are on-device SQLite, so
+// searching them costs a query nothing but milliseconds. Open Food Facts is the
+// one source that leaves the phone, and it ships on too (maintainer call
+// 2026-09-15), so the unified search answers with the packaged products people
+// type by brand; the Settings switch and the sheet's heading chip switch it
+// back off. Both write this one preference, so either control moves the other
+// and the choice survives the sheet, the screen and the process.
+internal val PreferencesStore.foodSearchOpenFoodFactsEnabledImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.FOOD_SEARCH_OFF_ENABLED] ?: true }
+
+internal suspend fun PreferencesStore.setFoodSearchOpenFoodFactsEnabledImpl(v: Boolean) {
+    dataStore.edit { it[Keys.FOOD_SEARCH_OFF_ENABLED] = v }
+}
+
+internal val PreferencesStore.foodSearchUsdaEnabledImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.FOOD_SEARCH_USDA_ENABLED] ?: true }
+
+internal suspend fun PreferencesStore.setFoodSearchUsdaEnabledImpl(v: Boolean) {
+    dataStore.edit { it[Keys.FOOD_SEARCH_USDA_ENABLED] = v }
+}
+
+internal val PreferencesStore.foodSearchSwissEnabledImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.FOOD_SEARCH_SWISS_ENABLED] ?: true }
+
+internal suspend fun PreferencesStore.setFoodSearchSwissEnabledImpl(v: Boolean) {
+    dataStore.edit { it[Keys.FOOD_SEARCH_SWISS_ENABLED] = v }
+}

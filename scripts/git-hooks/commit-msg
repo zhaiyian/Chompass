@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Reject non-human Co-authored-by / Generated-by trailers in commit messages.
+# Installed via scripts/install_git_hooks.sh (or devenv enterShell).
+set -euo pipefail
+
+MSG_FILE="${1:-}"
+if [[ -z "$MSG_FILE" || ! -f "$MSG_FILE" ]]; then
+  exit 0
+fi
+
+if grep -qiE \
+  -e '^[[:space:]]*(Co-authored-by|Assisted-by|Made-with|Generated-by|Generated-with):[[:space:]].*(Cursor|Claude|ChatGPT|GPT-[0-9]|Copilot|Codium|OpenAI|Anthropic|Gemini|DeepSeek|GLM|Qwen|Grok|Aider|Windsurf|Cline|Codex)' \
+  -e '^[[:space:]]*(Made|Generated|Assisted)[[:space:]]+(with|by)[[:space:]].*(Cursor|Claude|ChatGPT|GPT-[0-9]|Copilot|Codium|OpenAI|Anthropic|Gemini|DeepSeek|GLM|Qwen|Grok|Aider|Windsurf|Cline|Codex)' \
+  -e '🤖' \
+  "$MSG_FILE"
+then
+  cat >&2 <<'EOF'
+commit-msg: refusing a non-human attribution trailer in the commit message.
+
+Chompass commits must be authored as the maintainer only — no
+Co-authored-by/Assisted-by/Made-with/Generated-by trailers naming a
+tool, no "Generated with <tool>" lines, no bot emoji.
+
+Fix: remove the trailer from the commit message and retry.
+EOF
+  exit 1
+fi

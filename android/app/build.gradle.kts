@@ -1,0 +1,270 @@
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.screenshot)
+}
+
+// Release signing config is read from android/keystore.properties (gitignored).
+// When the file is absent (fresh checkout, CI without secrets), assembleRelease
+// still works but emits an unsigned APK. Generate one with:
+//   keytool -genkey -v -keystore fudai-release.jks -keyalg RSA -keysize 2048 \
+//           -validity 10000 -alias fudai
+// then create keystore.properties with storeFile / storePassword / keyAlias / keyPassword.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) load(keystorePropsFile.inputStream())
+}
+
+// Optional dev convenience: a Gemini API key read from the gitignored
+// android/secrets.properties (add a line `GEMINI_API_KEY=AIza...`). It is baked
+// into the DEBUG BuildConfig only and seeded into the encrypted KeyStore on
+// first launch so you don't have to re-enter it in Settings after every
+// reinstall. Release builds always get an empty string — never ship a key.
+// JEV_API_KEY rides the same debug-only slot (LLM-classifier experimentation):
+// baked into the DEBUG BuildConfig as BuildConfig.JEV_API_KEY, but NOT seeded
+// into the KeyStore (no AIProvider entry) — debug-only harnesses read it directly.
+// secrets.properties is preferred; local.properties works as a fallback, but
+// the Android tooling rewrites that file and can drop the line, so prefer the
+// dedicated file.
+val secretsProps = Properties().apply {
+    rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { fallback ->
+        val lp = Properties().apply { load(fallback) }
+        lp.getProperty("GEMINI_API_KEY")?.let { if (getProperty("GEMINI_API_KEY") == null) setProperty("GEMINI_API_KEY", it) }
+    }
+}
+fun bcString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+val geminiDebugApiKey: String = (secretsProps.getProperty("GEMINI_API_KEY") ?: "").trim()
+val jevDebugApiKey: String = (secretsProps.getProperty("JEV_API_KEY") ?: "").trim()
+// Optional: -PreleaseAbi=arm64-v8a for a single-ABI release APK (local smoke test /
+// F-Droid). Uses ndk.abiFilters with ABI splits disabled so the artifact is the
+// plain app-*-release(-unsigned).apk name F-Droid discovers without `output:`.
+// Full (non-F-Droid) releases are ARM-only: arm64-v8a + armeabi-v7a. x86/x86_64
+// stay in debug for emulators and are omitted from the Codeberg universal APK.
+val releaseAbi: String? = providers.gradleProperty("releaseAbi").orNull
+
+android {
+    namespace = "app.chompass"
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric (AndroidAppIconManager tests) needs merged resources/manifest.
+            isIncludeAndroidResources = true
+        }
+    }
+
+    defaultConfig {
+        applicationId = "app.chompass"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 101
+        versionName = "5.11.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        if (releaseAbi != null) {
+            ndk {
+                abiFilters += releaseAbi
+            }
+        }
+    }
+
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            ndk {
+                debugSymbolLevel = "NONE"
+                // Phone ABIs only. Debug keeps x86/x86_64 for emulators.
+                // When -PreleaseAbi is set (F-Droid), defaultConfig already pinned
+                // that single ABI: do not add more here or the F-Droid APK grows.
+                if (releaseAbi == null) {
+                    abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+                }
+            }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            // Only attach the signing config if keystore.properties exists. Without
+            // it, gradle emits app-release-unsigned.apk and you sign manually with
+            // apksigner before uploading to a store or release host.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+            // Never bake an API key into a shippable build.
+            buildConfigField("String", "GEMINI_API_KEY", bcString(""))
+            buildConfigField("String", "JEV_API_KEY", bcString(""))
+        }
+        debug {
+            // Suffix the package + version so the debug build installs side-by-side
+            // with a release build on the same device.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            // Seeded into the encrypted KeyStore on first launch (see ChompassApp).
+            buildConfigField("String", "GEMINI_API_KEY", bcString(geminiDebugApiKey))
+            buildConfigField("String", "JEV_API_KEY", bcString(jevDebugApiKey))
+        }
+        create("debug2") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".debug2"
+            versionNameSuffix = "-debug2"
+        }
+    }
+    // Offline food-database assets (USDA ~3.7 MB, Swiss ~1.6 MB) live under
+    // src/main/assets so the Add Food "Search food" feature ships in all build
+    // types. The heavier grounded-entry code (orchestrator, tool loop, candidate
+    // sheets) stays in src/grounded and is compiled for debug/test only; release
+    // gets thin stubs while GroundedEntryFeature.ENABLED stays false. debug2
+    // reuses the debug-only on-device LLM assets from src/debug/assets.
+    sourceSets {
+        getByName("debug") {
+            kotlin.srcDir("src/grounded/java")
+        }
+        getByName("debug2") {
+            assets.srcDir("src/debug/assets")
+            kotlin.srcDir("src/grounded/java")
+        }
+        getByName("release") {
+            kotlin.srcDir("src/groundedStubs/java")
+        }
+        getByName("test") {
+            kotlin.srcDir("src/grounded/java")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
+
+    // IzzyOnDroid (and F-Droid infra) strongly prefer keeping APKs small.
+    // Compress native *.so libs to reduce the on-disk size of "fat" builds.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    // Avoid Google-encrypted "dependency info" blobs in the APK.
+    // These are often flagged during Izzy/F-Droid scanning and add size overhead.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+    // Full releases: per-ABI APKs + universal (ARM only). Single-ABI
+    // (-PreleaseAbi=…): no splits — plain APK name + abiFilters only.
+    // splits.include does not filter the universal APK; release ndk.abiFilters
+    // is what keeps x86/x86_64 out of Chompass-fdroid-*.apk.
+    splits {
+        abi {
+            if (releaseAbi != null) {
+                isEnable = false
+            } else {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "armeabi-v7a")
+                isUniversalApk = true
+            }
+        }
+    }
+}
+
+// UricDiary (uric acid / pain / medication diary) lives in its own Room database.
+// The schema JSON is committed so future migrations can be tested against the
+// exact v4 tables the module started on.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// Cross-app parity fixtures live at repo-root testdata/parity/ (shared with the PWA).
+tasks.withType<Test>().configureEach {
+    val parityDir = rootProject.projectDir.resolve("../testdata/parity").normalize()
+    systemProperty("chompass.parity.dir", parityDir.absolutePath)
+}
+
+dependencies {
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.coil.compose)
+    // Gson is only used by the debug on-device LLM smoke test (src/debug).
+    debugImplementation(libs.gson)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.health.connect)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.cpp.android)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.vico.compose.m3)
+    // Health diary (uric acid / pain / medication) — separate Room database.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation("org.json:json:20240303")
+    testImplementation(libs.mockwebserver)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.compose.ui.test.manifest)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    // On-device LLM (LiteRT-LM) — see docs/ON_DEVICE_LLM.md. Kept as a normal
+    // (release) implementation dependency so ON_DEVICE dispatch works in shipping
+    // builds when the user enables the feature / downloads a model. Behind the
+    // onDeviceFeatureVisible flag (default off). Whether a runtime fetch of a
+    // non-buildable binary blob from Hugging Face clears F-Droid's guidelines
+    // is still an open question (production plan Phase 3). The Google Play
+    // distribution flavor is disabled for now — see docs/DISTRIBUTION.md.
+    implementation(libs.litertlm.android)
+
+    screenshotTestImplementation(libs.screenshot.validation.api)
+    screenshotTestImplementation(libs.androidx.compose.ui.tooling)
+}

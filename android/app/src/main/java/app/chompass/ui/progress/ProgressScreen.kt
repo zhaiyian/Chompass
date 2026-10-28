@@ -1,0 +1,519 @@
+package app.chompass.ui.progress
+
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.models.BodyMeasurement
+import app.chompass.services.health.DailyActivity
+import app.chompass.ui.components.ChompassDialog
+import app.chompass.ui.components.ChompassDialogActions
+import app.chompass.ui.navigation.BottomNavScrollPadding
+import app.chompass.ui.theme.AppColors
+import app.chompass.ui.theme.AppTextOpacity
+import app.chompass.ui.theme.dayTypeColor
+import androidx.compose.ui.graphics.Color
+
+/**
+ * Verbatim port of ios/calorietracker/ContentView.swift > struct ProgressTabView,
+ * including the per-section components in ProgressComponents.swift.
+ *
+ * Layout (top -> bottom):
+ *   1. Segmented TimeRange picker — 1W / 1M / 3M / 6M / 1Y / All
+ *   2. WeightChartSection — Weight title + Log Weight pill + StatBadges
+ *      (Current, Goal, Net Change, Average) + line chart with green dashed goal rule
+ *   3. WeightHistoryLink — only shown if any weight entries exist; shows
+ *      count + chevron, opens AllWeightHistorySheet. BodyFatHistoryLink
+ *      mirrors it for body-fat entries, opening AllBodyFatHistorySheet
+ *   4. CalorieChartSection — Calories title + Avg badge + bar chart of
+ *      per-day calories (accent gradient at/under goal, theme error above)
+ *   5. MacroAveragesSection — averages over the selected time range,
+ *      one MacroProgressRow per macro
+ */
+enum class TimeRange(@StringRes val labelRes: Int, val days: Int, val storageId: String) {
+    WEEK(R.string.progress_range_week, 7, "1W"),
+    MONTH(R.string.progress_range_month, 30, "1M"),
+    THREE_MONTHS(R.string.progress_range_3m, 90, "3M"),
+    SIX_MONTHS(R.string.progress_range_6m, 180, "6M"),
+    YEAR(R.string.progress_range_year, 365, "1Y"),
+    ALL_TIME(R.string.progress_range_all, 3650, "All");
+
+    fun dateRange(today: java.time.LocalDate = java.time.LocalDate.now()): Pair<java.time.LocalDate, java.time.LocalDate> {
+        val start = today.minusDays((days - 1).toLong())
+        return start to today
+    }
+
+    companion object {
+        /** Resolve stored chip id → enum. Unknown / null → [WEEK]. */
+        fun fromStorageId(id: String?): TimeRange =
+            entries.firstOrNull { it.storageId == id } ?: WEEK
+
+        /**
+         * Last viewed chip wins; otherwise Settings default; otherwise factory 1W.
+         */
+        fun resolve(lastViewedId: String?, defaultId: String?): TimeRange =
+            when {
+                !lastViewedId.isNullOrBlank() && entries.any { it.storageId == lastViewedId } ->
+                    fromStorageId(lastViewedId)
+                !defaultId.isNullOrBlank() -> fromStorageId(defaultId)
+                else -> WEEK
+            }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProgressScreen(container: AppContainer, onOpenCustomize: (() -> Unit)? = null) {
+    val vm: ProgressViewModel = viewModel(factory = ProgressViewModel.Factory(container))
+    val ui by vm.ui.collectAsState()
+    val activity by vm.activity.collectAsState()
+    val wellness by vm.wellness.collectAsState()
+    val weightMetric = ui.weightUnit == "kg"
+    val heightUnit by container.prefs.heightUnit.collectAsState(initial = "cm")
+    val heightMetric = heightUnit == "cm"
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddBodyFatDialog by remember { mutableStateOf(false) }
+    var editingMeasurementSite by remember { mutableStateOf<BodyMeasurement.Site?>(null) }
+    var showAllWeights by remember { mutableStateOf(false) }
+    var showAllBodyFats by remember { mutableStateOf(false) }
+    var heavySectionsReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        repeat(2) { withFrameNanos { } }
+        heavySectionsReady = true
+    }
+    val bodyFatAvailable = ui.bodyFatCount > 0
+        || ui.profile?.bodyFatPercentage != null
+        || ui.profile?.goalBodyFatPercentage != null
+    // Marker-lane color resolver: pinned colorKey, stable auto otherwise (UI-UX §10).
+    val typeColorOf: (String) -> Color = remember(ui.profile) {
+        val plan = ui.profile?.macroPlan
+        { id: String -> dayTypeColor(plan?.profileById(id)?.colorKey, id) }
+    }
+
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = BottomNavScrollPadding
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                // F6/B6 entry, condensed: the full-width glass row pushed real
+                // content below the fold. A trailing Tune glyph on the range row
+                // reads as "configure" — the 13sp text link B6 replaced read as a
+                // filter control. The same screen stays reachable via
+                // Settings → Display → Customize progress and hub search.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        TimeRangePicker(selected = ui.timeRange, onSelect = vm::setTimeRange)
+                    }
+                    // Plain Box: ChompassSurface's inner Box is fillMaxWidth,
+                    // which in a Row eats all width and zeroes the chips.
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                            .clickable(
+                                enabled = onOpenCustomize != null,
+                                role = Role.Button,
+                            ) { onOpenCustomize?.invoke() }
+                            .padding(7.dp),
+                    ) {
+                        Icon(
+                            Icons.Outlined.Tune,
+                            contentDescription = stringResource(R.string.settings_customize_progress),
+                            tint = AppColors.Calorie,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
+                CardSection {
+                    BodySection(
+                        weights = ui.filteredWeights,
+                        bodyFats = ui.filteredBodyFats,
+                        measurements = ui.filteredMeasurements,
+                        sites = BodyMeasurement.Site.values().filter { it in ui.measurementSites },
+                        selectedKeys = ui.selectedBodySeries,
+                        onToggleSeries = vm::toggleBodySeries,
+                        weightStats = ui.weightStats,
+                        bodyFatStats = ui.bodyFatStats,
+                        profileBodyFatFraction = ui.profile?.bodyFatPercentage,
+                        goalWeightKg = ui.profile?.goalWeightKg,
+                        goalBodyFatFraction = ui.profile?.goalBodyFatPercentage,
+                        useMetricWeight = weightMetric,
+                        useMetricLength = heightMetric,
+                        bodyFatAvailable = bodyFatAvailable,
+                        onLogWeight = { showAddDialog = true },
+                        onLogBodyFat = { showAddBodyFatDialog = true },
+                        dayTypeByDay = ui.dayTypeByDay,
+                        untrackedDays = ui.untrackedDays,
+                        typeColorOf = typeColorOf,
+                    )
+                }
+            }
+
+            if (ui.weightCount > 0) {
+                item {
+                    WeightHistoryLink(count = ui.weightCount) { showAllWeights = true }
+                }
+            }
+
+            if (ui.bodyFatCount > 0) {
+                item {
+                    BodyFatHistoryLink(count = ui.bodyFatCount) { showAllBodyFats = true }
+                }
+            }
+
+            if (heavySectionsReady) {
+                BodyMeasurement.Site.values()
+                    .filter { it in ui.measurementSites }
+                    .forEach { site ->
+                        item {
+                            MeasurementPlotCard(
+                                site = site,
+                                entries = ui.filteredMeasurements,
+                                useMetric = heightMetric,
+                                dayTypeByDay = ui.dayTypeByDay,
+                                untrackedDays = ui.untrackedDays,
+                                typeColorOf = typeColorOf,
+                                onLog = { editingMeasurementSite = site },
+                            )
+                        }
+                    }
+            }
+
+            if (heavySectionsReady) {
+                item {
+                    CardSection {
+                        CalorieSection(
+                            calorieSlots = ui.calorieSlots,
+                            calorieGoal = ui.calorieGoal,
+                            calorieAverage = ui.calorieAverage,
+                            dailyCalorieGoals = ui.dailyCalorieGoals,
+                            overlayKey = ui.calorieOverlay,
+                            onOverlayKeyChange = vm::setCalorieOverlay,
+                            overlayWeights = ui.filteredWeights,
+                            overlayBodyFats = ui.filteredBodyFats,
+                            useMetricWeight = weightMetric,
+                            dayTypeByDay = ui.dayTypeByDay,
+                            untrackedDays = ui.untrackedDays,
+                            typeColorOf = typeColorOf,
+                        )
+                    }
+                }
+                ui.adherence?.let { adherence ->
+                    item {
+                        CardSection {
+                            ProgressAdherenceSection(
+                                adherence = adherence,
+                                plan = ui.profile?.macroPlan,
+                            )
+                        }
+                    }
+                }
+            } else {
+                item { CardSection { ChartPlaceholder() } }
+            }
+
+            if (heavySectionsReady) {
+                ui.profile?.let { _ ->
+                    item {
+                        CardSection {
+                            MacroAveragesSection(
+                                avgProtein = ui.macroAverages.first,
+                                avgCarbs = ui.macroAverages.second,
+                                avgFat = ui.macroAverages.third,
+                                proteinGoal = ui.proteinGoal,
+                                carbsGoal = ui.carbsGoal,
+                                fatGoal = ui.fatGoal
+                            )
+                        }
+                    }
+                    if (ui.showNutrientAverages) {
+                        item {
+                            CardSection {
+                                NutrientAveragesSection(nutrientAverages = ui.nutrientAverages)
+                            }
+                        }
+                    }
+
+                }
+            } else {
+                item { CardSection { ChartPlaceholder(height = 120.dp) } }
+            }
+
+            if (activity.isNotEmpty()) {
+                item {
+                    CardSection { ActivitySection(days = activity) }
+                }
+            }
+
+            if (wellness.any { it.sleepMinutes != null || it.restingHeartRateBpm != null || it.hydrationMl != null }) {
+                item {
+                    CardSection { WellnessSection(days = wellness) }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        val seedKg = ui.latestWeightKg
+            ?: ui.profile?.weightKg
+            ?: 70.0
+        val scope = rememberCoroutineScope()
+        AddWeightDialog(
+            useMetric = weightMetric,
+            initialKg = seedKg,
+            onUnitChange = { metric ->
+                scope.launch { container.prefs.setWeightUnit(if (metric) "kg" else "lbs") }
+            },
+            onDismiss = { showAddDialog = false }
+        ) { kg, whenLogged ->
+            vm.addWeightAt(kg, whenLogged); showAddDialog = false
+        }
+    }
+    if (showAddBodyFatDialog) {
+        val seedFraction = ui.latestBodyFatFraction
+            ?: ui.profile?.bodyFatPercentage
+            ?: 0.20
+        AddBodyFatDialog(initialFraction = seedFraction, onDismiss = { showAddBodyFatDialog = false }) { fraction, whenLogged ->
+            vm.addBodyFatAt(fraction, whenLogged); showAddBodyFatDialog = false
+        }
+    }
+    // Collected at screen level so the history sheets compose with data
+    // already present: collected inside the `if` they start empty, the sheet
+    // anchors to the header-only height, and the later emission never
+    // re-anchors it (maintainer finding M3 2026-10-08: sheet showed one
+    // entry, nothing to scroll).
+    val allWeights by container.weightRepository.entries.collectAsState(initial = emptyList())
+    val allBodyFats by container.bodyFatRepository.entries.collectAsState(initial = emptyList())
+    val allMeasurements by container.bodyMeasurementRepository.entries.collectAsState(initial = emptyList())
+    editingMeasurementSite?.let { site ->
+        val scope = rememberCoroutineScope()
+        BodyMeasurementEntryDialog(
+            site = site,
+            currentCm = allMeasurements.maxByOrNull { it.date }?.value(site),
+            useMetric = heightMetric,
+            onUnitChange = { metric ->
+                scope.launch { container.prefs.setHeightUnit(if (metric) "cm" else "ftin") }
+            },
+            onSave = { cm ->
+                vm.setBodyMeasurement(site, cm)
+                editingMeasurementSite = null
+            },
+            onDismiss = { editingMeasurementSite = null },
+        )
+    }
+    if (showAllWeights) {
+        AllWeightHistorySheet(
+            entries = allWeights.sortedByDescending { it.date },
+            useMetric = weightMetric,
+            onDelete = vm::deleteWeight,
+            onDismiss = { showAllWeights = false }
+        )
+    }
+    if (showAllBodyFats) {
+        AllBodyFatHistorySheet(
+            entries = allBodyFats.sortedByDescending { it.date },
+            onDelete = vm::deleteBodyFat,
+            onDismiss = { showAllBodyFats = false }
+        )
+    }
+    if (ui.goalReached) {
+        ChompassDialog(onDismissRequest = { vm.dismissGoalReached() }) {
+            Text(stringResource(R.string.progress_goal_reached_title), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.progress_goal_reached_message),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Secondary)
+            )
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_keep_going),
+                onPrimary = { vm.dismissGoalReached() }
+            )
+        }
+    }
+}
+
+/** Static progress layout for release screenshot previews (no ViewModel). */
+@Composable
+internal fun ProgressScreenPreviewContent(
+    ui: ProgressUiState,
+    activity: List<DailyActivity> = emptyList(),
+    chartsImmediate: Boolean = true,
+    measurementMetric: Boolean = true,
+) {
+    val weightMetric = ui.weightUnit == "kg"
+    val heightMetric = measurementMetric
+    val bodyFatAvailable = ui.bodyFatCount > 0
+        || ui.profile?.bodyFatPercentage != null
+        || ui.profile?.goalBodyFatPercentage != null
+    // Marker-lane color resolver: pinned colorKey, stable auto otherwise (UI-UX §10).
+    val typeColorOf: (String) -> Color = remember(ui.profile) {
+        val plan = ui.profile?.macroPlan
+        { id: String -> dayTypeColor(plan?.profileById(id)?.colorKey, id) }
+    }
+
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = BottomNavScrollPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item { TimeRangePicker(selected = ui.timeRange, onSelect = {}) }
+            item {
+                CardSection {
+                    BodySection(
+                        weights = ui.filteredWeights,
+                        bodyFats = ui.filteredBodyFats,
+                        measurements = ui.filteredMeasurements,
+                        sites = BodyMeasurement.Site.values().filter { it in ui.measurementSites },
+                        selectedKeys = ui.selectedBodySeries,
+                        onToggleSeries = {},
+                        weightStats = ui.weightStats,
+                        bodyFatStats = ui.bodyFatStats,
+                        profileBodyFatFraction = ui.profile?.bodyFatPercentage,
+                        goalWeightKg = ui.profile?.goalWeightKg,
+                        goalBodyFatFraction = ui.profile?.goalBodyFatPercentage,
+                        useMetricWeight = weightMetric,
+                        useMetricLength = heightMetric,
+                        bodyFatAvailable = bodyFatAvailable,
+                        chartsImmediate = chartsImmediate,
+                        onLogWeight = {},
+                        onLogBodyFat = {},
+                        dayTypeByDay = ui.dayTypeByDay,
+                        untrackedDays = ui.untrackedDays,
+                        typeColorOf = typeColorOf,
+                    )
+                }
+            }
+            if (ui.weightCount > 0) {
+                item { WeightHistoryLink(count = ui.weightCount) {} }
+            }
+            if (ui.bodyFatCount > 0) {
+                item { BodyFatHistoryLink(count = ui.bodyFatCount) {} }
+            }
+            BodyMeasurement.Site.values()
+                .filter { it in ui.measurementSites }
+                .forEach { site ->
+                    item {
+                        MeasurementPlotCard(
+                            site = site,
+                            entries = ui.filteredMeasurements,
+                            useMetric = heightMetric,
+                            chartsImmediate = chartsImmediate,
+                            dayTypeByDay = ui.dayTypeByDay,
+                            untrackedDays = ui.untrackedDays,
+                            typeColorOf = typeColorOf,
+                        )
+                    }
+                }
+            item {
+                CardSection {
+                    CalorieSection(
+                        calorieSlots = ui.calorieSlots,
+                        calorieGoal = ui.calorieGoal,
+                        calorieAverage = ui.calorieAverage,
+                        dailyCalorieGoals = ui.dailyCalorieGoals,
+                        overlayKey = if (ui.filteredWeights.isNotEmpty()) OVERLAY_KEY_WEIGHT else "off",
+                        onOverlayKeyChange = {},
+                        overlayWeights = ui.filteredWeights,
+                        overlayBodyFats = ui.filteredBodyFats,
+                        useMetricWeight = weightMetric,
+                        chartsImmediate = chartsImmediate,
+                        dayTypeByDay = ui.dayTypeByDay,
+                        untrackedDays = ui.untrackedDays,
+                        typeColorOf = typeColorOf,
+                    )
+                }
+            }
+            ui.adherence?.let { adherence ->
+                item {
+                    CardSection {
+                        ProgressAdherenceSection(
+                            adherence = adherence,
+                            plan = ui.profile?.macroPlan,
+                        )
+                    }
+                }
+            }
+            ui.profile?.let { _ ->
+                item {
+                    CardSection {
+                        MacroAveragesSection(
+                            avgProtein = ui.macroAverages.first,
+                            avgCarbs = ui.macroAverages.second,
+                            avgFat = ui.macroAverages.third,
+                            proteinGoal = ui.proteinGoal,
+                            carbsGoal = ui.carbsGoal,
+                            fatGoal = ui.fatGoal,
+                        )
+                    }
+                }
+                if (ui.showNutrientAverages) {
+                    item {
+                        CardSection {
+                            NutrientAveragesSection(nutrientAverages = ui.nutrientAverages)
+                        }
+                    }
+                }
+
+            }
+            if (activity.isNotEmpty()) {
+                item {
+                    CardSection { ActivitySection(days = activity) }
+                }
+            }
+        }
+    }
+}

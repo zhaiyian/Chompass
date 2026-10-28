@@ -1,0 +1,658 @@
+package app.chompass.data
+
+import android.content.Context
+import app.chompass.models.AIProvider
+import app.chompass.models.AiProfile
+import app.chompass.models.BodyFatEntry
+import app.chompass.models.BodyMeasurement
+import app.chompass.models.ChatMessage
+import app.chompass.models.DailyFoodTotals
+import app.chompass.models.DailyNote
+import app.chompass.models.FoodEntry
+import app.chompass.models.HeuristicServingUnitSettings
+import app.chompass.models.HomeDisplayPreferences
+import app.chompass.models.FastingSession
+import app.chompass.models.ManualActiveEntry
+import app.chompass.models.CaffeineEntry
+import app.chompass.models.HabitPresetCatalog
+import app.chompass.models.NicotineEntry
+import app.chompass.models.OptionalNutrientGoals
+import app.chompass.models.PendingFoodAnalysisDraft
+import app.chompass.models.PendingFoodInputDraft
+import app.chompass.models.ServingUnitInferenceMode
+import app.chompass.models.SpeechLanguage
+import app.chompass.models.SpeechProvider
+import app.chompass.models.UserProfile
+import app.chompass.models.WaterEntry
+import app.chompass.models.WeightEntry
+import app.chompass.models.WidgetSnapshot
+import app.chompass.services.health.DebugActivityDay
+import java.io.File
+import java.time.LocalDate
+import java.time.YearMonth
+import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
+
+/**
+ * Thin wrapper over DataStore Preferences for all app state except API keys
+ * (which live in [KeyStore]). Exposes reactive Flows for reads and suspend
+ * functions for writes. Complex values (profile, entries, history) are stored
+ * as JSON strings via kotlinx.serialization.
+ */
+class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
+    internal val dataStore get() = appContext.fudaiDataStore
+    // coerceInputValues: an enum value this build does not know (e.g. a meal
+    // type added by a newer release) falls back to the property default
+    // instead of failing the whole row (upstream fud-ai c278c64d).
+    internal val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
+    /** Copies unreadable persisted blobs aside before they are replaced (PersistedJsonGuard). */
+    internal val corruptArchive by lazy {
+        CorruptBlobArchive(File(appContext.filesDir, CorruptBlobArchive.DIRECTORY_NAME))
+    }
+
+    /**
+     * Set once [migrateBucketsToFilesIfNeeded] has completed without
+     * exception for this process. The migration is one-shot by design and
+     * every reader/writer is in-process (the single-process assumption is
+     * the bucket design's foundation — see the [JsonBucketStore] KDoc), so
+     * re-running the full key scan + monthsOnDisk() probe on every cold
+     * flow collect is pure overhead.
+     */
+    @Volatile
+    internal var bucketsMigrated = false
+
+    /**
+     * File-backed month buckets for the unbounded datasets. Keeping them out of
+     * the single DataStore proto means a one-row write (sip, relog, weight)
+     * rewrites a ~10-30 KB month file instead of the whole ~650 KB preferences
+     * file (see docs/local/PLAN_FILE_BUCKETS.md). Root: filesDir/chompass-buckets.
+     */
+    internal val waterBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/water"),
+            json = json,
+            serializer = WaterEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(WaterEntry::date),
+        )
+    }
+    internal val noteBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/notes"),
+            json = json,
+            serializer = DailyNote.serializer(),
+            idOf = { it.id },
+            order = compareBy(DailyNote::date),
+        )
+    }
+    internal val nicotineBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/nicotine"),
+            json = json,
+            serializer = NicotineEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(NicotineEntry::date),
+        )
+    }
+    internal val caffeineBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/caffeine"),
+            json = json,
+            serializer = CaffeineEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(CaffeineEntry::date),
+        )
+    }
+    internal val weightBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/weight"),
+            json = json,
+            serializer = WeightEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(WeightEntry::date),
+        )
+    }
+    internal val bodyFatBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/bodyfat"),
+            json = json,
+            serializer = BodyFatEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(BodyFatEntry::date),
+        )
+    }
+    internal val measurementBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/measure"),
+            json = json,
+            serializer = BodyMeasurement.serializer(),
+            idOf = { it.id },
+            order = compareBy(BodyMeasurement::date),
+        )
+    }
+    internal val foodBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/food"),
+            json = json,
+            serializer = FoodEntry.serializer(),
+            idOf = { it.id },
+            order = compareBy(FoodEntry::timestamp),
+        )
+    }
+    /**
+     * Derived per-day totals over [foodBucketStore] (flippidity C.1): Progress
+     * reads one small row per logged day instead of the year of [FoodEntry]s,
+     * so All-range compute no longer holds the full diary in memory. Written
+     * through on every food write; rebuilt from the food files by the bucket
+     * migration if ever empty. A cache, never a source of truth.
+     */
+    internal val foodAggregateBucketStore by lazy {
+        JsonBucketStore(
+            root = File(appContext.filesDir, "chompass-buckets/food-aggregates"),
+            json = json,
+            serializer = DailyFoodTotals.serializer(),
+            idOf = { it.id },
+            order = compareBy(DailyFoodTotals::date),
+        )
+    }
+
+    val userProfile: Flow<UserProfile?> get() = userProfileImpl
+    suspend fun setUserProfile(profile: UserProfile) = setUserProfileImpl(profile)
+    val goalJournal: Flow<List<app.chompass.models.GoalJournalEntry>> get() = goalJournalImpl
+    suspend fun setGoalJournal(entries: List<app.chompass.models.GoalJournalEntry>) = setGoalJournalImpl(entries)
+    val hasCompletedOnboarding: Flow<Boolean> get() = hasCompletedOnboardingImpl
+    suspend fun setOnboardingCompleted(value: Boolean) = setOnboardingCompletedImpl(value)
+    val onboardingDraft: Flow<app.chompass.ui.onboarding.OnboardingDraft?> get() = onboardingDraftImpl
+    suspend fun setOnboardingDraft(draft: app.chompass.ui.onboarding.OnboardingDraft?) = setOnboardingDraftImpl(draft)
+    val hasSeenCameraScaleTip: Flow<Boolean> get() = hasSeenCameraScaleTipImpl
+    suspend fun setHasSeenCameraScaleTip(value: Boolean) = setHasSeenCameraScaleTipImpl(value)
+    val restoredBackupNoticeShown: Flow<Boolean> get() = restoredBackupNoticeShownImpl
+    suspend fun setRestoredBackupNoticeShown(value: Boolean) = setRestoredBackupNoticeShownImpl(value)
+    val firstLaunchAt: Flow<Long> get() = firstLaunchAtImpl
+    /** Idempotent seed of the first-launch timestamp; keeps the earliest value. */
+    suspend fun ensureFirstLaunchAt(nowMillis: Long = System.currentTimeMillis()) = ensureFirstLaunchAtImpl(nowMillis)
+    suspend fun readColdStartPrefs(): ColdStartPrefs = readColdStartPrefsImpl()
+    val dismissedSuggestionIds: Flow<Set<String>> get() = dismissedSuggestionIdsImpl
+    suspend fun setSuggestionDismissed(id: String, dismissed: Boolean = true) = setSuggestionDismissedImpl(id, dismissed)
+    /** AI fill-missing Home banner: last-shown epoch day + sticky scan-signature dismissals. */
+    val fillMissingBannerLastShownDay: Flow<Long> get() = fillMissingBannerLastShownDayImpl
+    suspend fun setFillMissingBannerShown(epochDay: Long) = setFillMissingBannerShownImpl(epochDay)
+    val fillMissingDismissedSignatures: Flow<Set<String>> get() = fillMissingDismissedSignaturesImpl
+    suspend fun setFillMissingSignatureDismissed(signature: String) = setFillMissingSignatureDismissedImpl(signature)
+    val fillMissingBannerDisabled: Flow<Boolean> get() = fillMissingBannerDisabledImpl
+    suspend fun setFillMissingBannerDisabled(v: Boolean) = setFillMissingBannerDisabledImpl(v)
+    val notificationsEnabled: Flow<Boolean> get() = notificationsEnabledImpl
+    suspend fun setNotificationsEnabled(v: Boolean) = setNotificationsEnabledImpl(v)
+    val streakReminderEnabled: Flow<Boolean> get() = streakReminderEnabledImpl
+    suspend fun setStreakReminderEnabled(v: Boolean) = setStreakReminderEnabledImpl(v)
+    val streakReminderHour: Flow<Int> get() = streakReminderHourImpl
+    suspend fun setStreakReminderHour(v: Int) = setStreakReminderHourImpl(v)
+    val streakReminderMinute: Flow<Int> get() = streakReminderMinuteImpl
+    suspend fun setStreakReminderMinute(v: Int) = setStreakReminderMinuteImpl(v)
+    val dailySummaryEnabled: Flow<Boolean> get() = dailySummaryEnabledImpl
+    suspend fun setDailySummaryEnabled(v: Boolean) = setDailySummaryEnabledImpl(v)
+    val dailySummaryHour: Flow<Int> get() = dailySummaryHourImpl
+    suspend fun setDailySummaryHour(v: Int) = setDailySummaryHourImpl(v)
+    val dailySummaryMinute: Flow<Int> get() = dailySummaryMinuteImpl
+    suspend fun setDailySummaryMinute(v: Int) = setDailySummaryMinuteImpl(v)
+    val weightReminderEnabled: Flow<Boolean> get() = weightReminderEnabledImpl
+    suspend fun setWeightReminderEnabled(v: Boolean) = setWeightReminderEnabledImpl(v)
+    val weightReminderHour: Flow<Int> get() = weightReminderHourImpl
+    suspend fun setWeightReminderHour(v: Int) = setWeightReminderHourImpl(v)
+    val weightReminderMinute: Flow<Int> get() = weightReminderMinuteImpl
+    suspend fun setWeightReminderMinute(v: Int) = setWeightReminderMinuteImpl(v)
+    val bodyFatReminderEnabled: Flow<Boolean> get() = bodyFatReminderEnabledImpl
+    suspend fun setBodyFatReminderEnabled(v: Boolean) = setBodyFatReminderEnabledImpl(v)
+    val bodyFatReminderHour: Flow<Int> get() = bodyFatReminderHourImpl
+    suspend fun setBodyFatReminderHour(v: Int) = setBodyFatReminderHourImpl(v)
+    val bodyFatReminderMinute: Flow<Int> get() = bodyFatReminderMinuteImpl
+    suspend fun setBodyFatReminderMinute(v: Int) = setBodyFatReminderMinuteImpl(v)
+    val goalReachedNotificationsEnabled: Flow<Boolean> get() = goalReachedNotificationsEnabledImpl
+    suspend fun setGoalReachedNotificationsEnabled(v: Boolean) = setGoalReachedNotificationsEnabledImpl(v)
+    val appUpdateNotificationsEnabled: Flow<Boolean> get() = appUpdateNotificationsEnabledImpl
+    suspend fun setAppUpdateNotificationsEnabled(v: Boolean) = setAppUpdateNotificationsEnabledImpl(v)
+    val waterTrackingEnabled: Flow<Boolean> get() = waterTrackingEnabledImpl
+    suspend fun setWaterTrackingEnabled(v: Boolean) = setWaterTrackingEnabledImpl(v)
+    val waterDailyGoalMl: Flow<Int> get() = waterDailyGoalMlImpl
+    suspend fun setWaterDailyGoalMl(v: Int) = setWaterDailyGoalMlImpl(v)
+    val waterReminderEnabled: Flow<Boolean> get() = waterReminderEnabledImpl
+    suspend fun setWaterReminderEnabled(v: Boolean) = setWaterReminderEnabledImpl(v)
+    val waterReminderHour: Flow<Int> get() = waterReminderHourImpl
+    suspend fun setWaterReminderHour(v: Int) = setWaterReminderHourImpl(v)
+    val waterReminderMinute: Flow<Int> get() = waterReminderMinuteImpl
+    suspend fun setWaterReminderMinute(v: Int) = setWaterReminderMinuteImpl(v)
+    val waterDynamicEnabled: Flow<Boolean> get() = waterDynamicEnabledImpl
+    suspend fun setWaterDynamicEnabled(v: Boolean) = setWaterDynamicEnabledImpl(v)
+    val waterBaseSource: Flow<String> get() = waterBaseSourceImpl
+    suspend fun setWaterBaseSource(v: String) = setWaterBaseSourceImpl(v)
+    val waterManualTempC: Flow<Int> get() = waterManualTempCImpl
+    suspend fun setWaterManualTempC(v: Int) = setWaterManualTempCImpl(v)
+    val waterUseProfileActivity: Flow<Boolean> get() = waterUseProfileActivityImpl
+    suspend fun setWaterUseProfileActivity(v: Boolean) = setWaterUseProfileActivityImpl(v)
+    val waterFoodWaterEnabled: Flow<Boolean> get() = waterFoodWaterEnabledImpl
+    suspend fun setWaterFoodWaterEnabled(v: Boolean) = setWaterFoodWaterEnabledImpl(v)
+    val waterAwakeStartHour: Flow<Int> get() = waterAwakeStartHourImpl
+    suspend fun setWaterAwakeStartHour(v: Int) = setWaterAwakeStartHourImpl(v)
+    val waterAwakeStartMinute: Flow<Int> get() = waterAwakeStartMinuteImpl
+    suspend fun setWaterAwakeStartMinute(v: Int) = setWaterAwakeStartMinuteImpl(v)
+    val waterAwakeEndHour: Flow<Int> get() = waterAwakeEndHourImpl
+    suspend fun setWaterAwakeEndHour(v: Int) = setWaterAwakeEndHourImpl(v)
+    val waterAwakeEndMinute: Flow<Int> get() = waterAwakeEndMinuteImpl
+    suspend fun setWaterAwakeEndMinute(v: Int) = setWaterAwakeEndMinuteImpl(v)
+    val waterCupSizeMl: Flow<Int> get() = waterCupSizeMlImpl
+    suspend fun setWaterCupSizeMl(v: Int) = setWaterCupSizeMlImpl(v)
+    val weatherSource: Flow<String> get() = weatherSourceImpl
+    suspend fun setWeatherSource(v: String) = setWeatherSourceImpl(v)
+    val weatherOmCity: Flow<String?> get() = weatherOmCityImpl
+    suspend fun setWeatherOmCity(v: String?) = setWeatherOmCityImpl(v)
+    val weatherOmHighC: Flow<Int> get() = weatherOmHighCImpl
+    suspend fun setWeatherOmHighC(v: Int) = setWeatherOmHighCImpl(v)
+    val weatherOmDate: Flow<String?> get() = weatherOmDateImpl
+    suspend fun setWeatherOmDate(v: String?) = setWeatherOmDateImpl(v)
+    val weatherOmUpdatedAt: Flow<Long> get() = weatherOmUpdatedAtImpl
+    suspend fun setWeatherOmUpdatedAt(v: Long) = setWeatherOmUpdatedAtImpl(v)
+    val waterQuickPresetsMl: Flow<List<Int>> get() = waterQuickPresetsMlImpl
+    suspend fun setWaterQuickPresetsMl(amountsMl: List<Int>) = setWaterQuickPresetsMlImpl(amountsMl)
+    val waterEntries: Flow<List<WaterEntry>> get() = waterEntriesImpl
+    suspend fun setWaterEntries(entries: List<WaterEntry>) = setWaterEntriesImpl(entries)
+    /** Month-scoped water write (one bucket file) — the sip path. */
+    suspend fun applyWaterBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<WaterEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyWaterBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val noteEntries: Flow<List<DailyNote>> get() = noteEntriesImpl
+    suspend fun setNoteEntries(entries: List<DailyNote>) = setNoteEntriesImpl(entries)
+    /** Home note-card visibility (optional daily notes; default off). */
+    val dailyNotesEnabled: Flow<Boolean> get() = dailyNotesEnabledImpl
+    suspend fun setDailyNotesEnabled(v: Boolean) = setDailyNotesEnabledImpl(v)
+    val untrackedDays: Flow<Set<String>> get() = untrackedDaysImpl
+    suspend fun setUntrackedDays(dates: Set<String>) = setUntrackedDaysImpl(dates)
+    val untrackedKcalByDay: Flow<Map<String, Int>> get() = untrackedKcalByDayImpl
+    suspend fun setUntrackedKcalByDay(map: Map<String, Int>) = setUntrackedKcalByDayImpl(map)
+    val mealTimesEnabled: Flow<Boolean> get() = mealTimesEnabledImpl
+    suspend fun setMealTimesEnabled(v: Boolean) = setMealTimesEnabledImpl(v)
+    /** Optional meal planning mode; default off. */
+    val mealPlanningEnabled: Flow<Boolean> get() = mealPlanningEnabledImpl
+    suspend fun setMealPlanningEnabled(v: Boolean) = setMealPlanningEnabledImpl(v)
+    /** Month-scoped daily-note write (one bucket file) — the note path. */
+    suspend fun applyNoteBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<DailyNote>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyNoteBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val nicotineTrackingEnabled: Flow<Boolean> get() = nicotineTrackingEnabledImpl
+    suspend fun setNicotineTrackingEnabled(v: Boolean) = setNicotineTrackingEnabledImpl(v)
+    val nicotineDailyLimit: Flow<Int> get() = nicotineDailyLimitImpl
+    suspend fun setNicotineDailyLimit(v: Int) = setNicotineDailyLimitImpl(v)
+    val nicotinePresets: Flow<HabitPresetCatalog> get() = nicotinePresetsImpl
+    suspend fun setNicotinePresets(catalog: HabitPresetCatalog) = setNicotinePresetsImpl(catalog)
+    val nicotineQuickKinds: Flow<List<String>> get() = nicotineQuickKindsImpl
+    suspend fun setNicotineQuickKinds(ids: List<String>) = setNicotineQuickKindsImpl(ids)
+    val nicotineEntries: Flow<List<NicotineEntry>> get() = nicotineEntriesImpl
+    suspend fun setNicotineEntries(entries: List<NicotineEntry>) = setNicotineEntriesImpl(entries)
+    /** Month-scoped nicotine write (one bucket file). */
+    suspend fun applyNicotineBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<NicotineEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyNicotineBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val caffeineTrackingEnabled: Flow<Boolean> get() = caffeineTrackingEnabledImpl
+    suspend fun setCaffeineTrackingEnabled(v: Boolean) = setCaffeineTrackingEnabledImpl(v)
+    suspend fun migrateCaffeineDailyLimitIfNeeded() = migrateCaffeineDailyLimitIfNeededImpl()
+    val caffeineQuickKinds: Flow<List<String>> get() = caffeineQuickKindsImpl
+    suspend fun setCaffeineQuickKinds(ids: List<String>) = setCaffeineQuickKindsImpl(ids)
+    val caffeinePresets: Flow<HabitPresetCatalog> get() = caffeinePresetsImpl
+    suspend fun setCaffeinePresets(catalog: HabitPresetCatalog) = setCaffeinePresetsImpl(catalog)
+    val caffeineEntries: Flow<List<CaffeineEntry>> get() = caffeineEntriesImpl
+    suspend fun setCaffeineEntries(entries: List<CaffeineEntry>) = setCaffeineEntriesImpl(entries)
+    /** Month-scoped caffeine write (one bucket file). */
+    suspend fun applyCaffeineBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<CaffeineEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyCaffeineBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val manualActiveEntries: Flow<List<ManualActiveEntry>> get() = manualActiveEntriesImpl
+    suspend fun setManualActiveEntries(entries: List<ManualActiveEntry>) = setManualActiveEntriesImpl(entries)
+    // Optional intermittent-fasting timer (docs/local/PLAN_FASTING_TRACKER.md); local-only.
+    val fastingEnabled: Flow<Boolean> get() = fastingEnabledImpl
+    suspend fun setFastingEnabled(v: Boolean) = setFastingEnabledImpl(v)
+    val fastingGoalHours: Flow<Int> get() = fastingGoalHoursImpl
+    suspend fun setFastingGoalHours(v: Int) = setFastingGoalHoursImpl(v)
+    val fastingEatHours: Flow<Int> get() = fastingEatHoursImpl
+    suspend fun setFastingEatHours(v: Int) = setFastingEatHoursImpl(v)
+    val fastingGoalNotificationEnabled: Flow<Boolean> get() = fastingGoalNotificationEnabledImpl
+    suspend fun setFastingGoalNotificationEnabled(v: Boolean) = setFastingGoalNotificationEnabledImpl(v)
+    /** Session state (started/last-ended + goal latch) as a pure function of scalars. */
+    val fastingSession: Flow<FastingSession> get() = fastingSessionImpl
+    suspend fun setFastingSessionFields(
+        startedAtMillis: Long?,
+        lastEndedAtMillis: Long? = null,
+        lastFastStartedAtMillis: Long? = null,
+        goalReachedNotified: Boolean = false,
+        autoStarted: Boolean = false,
+    ) = setFastingSessionFieldsImpl(startedAtMillis, lastEndedAtMillis, lastFastStartedAtMillis, goalReachedNotified, autoStarted)
+    val fastingAutoWindows: Flow<Boolean> get() = fastingAutoWindowsImpl
+    suspend fun setFastingAutoWindows(v: Boolean) = setFastingAutoWindowsImpl(v)
+    val fastingStartHour: Flow<Int> get() = fastingStartHourImpl
+    suspend fun setFastingStartHour(v: Int) = setFastingStartHourImpl(v)
+    val fastingStartMinute: Flow<Int> get() = fastingStartMinuteImpl
+    suspend fun setFastingStartMinute(v: Int) = setFastingStartMinuteImpl(v)
+    val fastingStartReminderEnabled: Flow<Boolean> get() = fastingStartReminderEnabledImpl
+    suspend fun setFastingStartReminderEnabled(v: Boolean) = setFastingStartReminderEnabledImpl(v)
+    val fastingStartReminderLeadMinutes: Flow<Int> get() = fastingStartReminderLeadMinutesImpl
+    suspend fun setFastingStartReminderLeadMinutes(v: Int) = setFastingStartReminderLeadMinutesImpl(v)
+    val fastingEndReminderLeadMinutes: Flow<Int> get() = fastingEndReminderLeadMinutesImpl
+    suspend fun setFastingEndReminderLeadMinutes(v: Int) = setFastingEndReminderLeadMinutesImpl(v)
+    val lastNotifiedUpdateVersion: Flow<String?> get() = lastNotifiedUpdateVersionImpl
+    suspend fun setLastNotifiedUpdateVersion(v: String) = setLastNotifiedUpdateVersionImpl(v)
+    override val healthConnectEnabled: Flow<Boolean> get() = healthConnectEnabledImpl
+    suspend fun setHealthConnectEnabled(v: Boolean) = setHealthConnectEnabledImpl(v)
+    val healthPermissionsVersion: Flow<Int> get() = healthPermissionsVersionImpl
+    suspend fun setHealthPermissionsVersion(v: Int) = setHealthPermissionsVersionImpl(v)
+    val healthChangesToken: Flow<String?> get() = healthChangesTokenImpl
+    suspend fun setHealthChangesToken(v: String) = setHealthChangesTokenImpl(v)
+    suspend fun clearHealthChangesToken() = clearHealthChangesTokenImpl()
+    val healthChangesTokenTypes: Flow<Set<String>> get() = healthChangesTokenTypesImpl
+    suspend fun setHealthChangesTokenTypes(types: Set<String>) = setHealthChangesTokenTypesImpl(types)
+    override val pendingNutritionHealthWrites: Flow<Set<String>> get() = pendingNutritionHealthWritesImpl
+    override suspend fun setPendingNutritionHealthWrites(ids: Set<String>) = setPendingNutritionHealthWritesImpl(ids)
+    val healthDeletedWeightIds: Flow<List<UUID>> get() = healthDeletedWeightIdsImpl
+    suspend fun setHealthDeletedWeightIds(ids: List<UUID>) = setHealthDeletedWeightIdsImpl(ids)
+    val healthDeletedBodyFatIds: Flow<List<UUID>> get() = healthDeletedBodyFatIdsImpl
+    suspend fun setHealthDeletedBodyFatIds(ids: List<UUID>) = setHealthDeletedBodyFatIdsImpl(ids)
+    val healthFoodRestoreDone: Flow<Boolean> get() = healthFoodRestoreDoneImpl
+    suspend fun setHealthFoodRestoreDone(v: Boolean) = setHealthFoodRestoreDoneImpl(v)
+    val healthHydrationRestoreDone: Flow<Boolean> get() = healthHydrationRestoreDoneImpl
+    suspend fun setHealthHydrationRestoreDone(v: Boolean) = setHealthHydrationRestoreDoneImpl(v)
+    val healthEnergyGoalsEnabled: Flow<Boolean> get() = healthEnergyGoalsEnabledImpl
+    suspend fun setHealthEnergyGoalsEnabled(v: Boolean) = setHealthEnergyGoalsEnabledImpl(v)
+    val healthEnergyMeasuredActive: Flow<Int> get() = healthEnergyMeasuredActiveImpl
+    suspend fun setHealthEnergyMeasuredActive(v: Int) = setHealthEnergyMeasuredActiveImpl(v)
+    suspend fun clearHealthEnergyMeasuredActive() = clearHealthEnergyMeasuredActiveImpl()
+    val healthEnergyActiveByDay: Flow<Map<String, Int>> get() = healthEnergyActiveByDayImpl
+    suspend fun setHealthEnergyActiveByDay(map: Map<String, Int>) = setHealthEnergyActiveByDayImpl(map)
+    val healthBackgroundSyncEnabled: Flow<Boolean> get() = healthBackgroundSyncEnabledImpl
+    suspend fun setHealthBackgroundSyncEnabled(v: Boolean) = setHealthBackgroundSyncEnabledImpl(v)
+    val healthEnergyGoalsLastAutoRefreshDay: Flow<String?> get() = healthEnergyGoalsLastAutoRefreshDayImpl
+    suspend fun setHealthEnergyGoalsLastAutoRefreshDay(v: String) = setHealthEnergyGoalsLastAutoRefreshDayImpl(v)
+    val reviewPromptedAfterFirstLog: Flow<Boolean> get() = reviewPromptedAfterFirstLogImpl
+    suspend fun setReviewPromptedAfterFirstLog(v: Boolean) = setReviewPromptedAfterFirstLogImpl(v)
+    val adaptiveGoalsEnabled: Flow<Boolean> get() = adaptiveGoalsEnabledImpl
+    suspend fun setAdaptiveGoalsEnabled(v: Boolean) = setAdaptiveGoalsEnabledImpl(v)
+    val adaptiveGoalsLastCheckDay: Flow<String?> get() = adaptiveGoalsLastCheckDayImpl
+    suspend fun setAdaptiveGoalsLastCheckDay(v: String) = setAdaptiveGoalsLastCheckDayImpl(v)
+    suspend fun saveAdaptiveGoalPreviousTargetsIfNeeded(profile: UserProfile) = saveAdaptiveGoalPreviousTargetsIfNeededImpl(profile)
+    suspend fun restoreAdaptiveGoalPreviousTargets(profile: UserProfile): UserProfile = restoreAdaptiveGoalPreviousTargetsImpl(profile)
+    suspend fun clearAdaptiveGoalPreviousTargets() = clearAdaptiveGoalPreviousTargetsImpl()
+    suspend fun saveHealthEnergyGoalPreviousTargetsIfNeeded(profile: UserProfile) = saveHealthEnergyGoalPreviousTargetsIfNeededImpl(profile)
+    suspend fun restoreHealthEnergyGoalPreviousTargets(profile: UserProfile): UserProfile = restoreHealthEnergyGoalPreviousTargetsImpl(profile)
+    suspend fun clearHealthEnergyGoalPreviousTargets() = clearHealthEnergyGoalPreviousTargetsImpl()
+    val useMetric: Flow<Boolean> get() = useMetricImpl
+    suspend fun setUseMetric(v: Boolean) = setUseMetricImpl(v)
+    val heightUnit: Flow<String> get() = heightUnitImpl
+    suspend fun setHeightUnit(v: String) = setHeightUnitImpl(v)
+    val weightUnit: Flow<String> get() = weightUnitImpl
+    suspend fun setWeightUnit(v: String) = setWeightUnitImpl(v)
+    val energyUnit: Flow<String> get() = energyUnitImpl
+    suspend fun setEnergyUnit(v: String) = setEnergyUnitImpl(v)
+    val preferGramsByDefault: Flow<Boolean> get() = preferGramsByDefaultImpl
+    suspend fun setPreferGramsByDefault(v: Boolean) = setPreferGramsByDefaultImpl(v)
+    val appearanceMode: Flow<String> get() = appearanceModeImpl
+    suspend fun setAppearanceMode(v: String) = setAppearanceModeImpl(v)
+    val appLanguage: Flow<String> get() = appLanguageImpl
+    suspend fun setAppLanguage(v: String) = setAppLanguageImpl(v)
+    val coachTabEnabled: Flow<Boolean> get() = coachTabEnabledImpl
+    suspend fun setCoachTabEnabled(v: Boolean) = setCoachTabEnabledImpl(v)
+    /** Codeberg #20 phase 2: master AI-features switch; default ON. */
+    val aiFeaturesEnabled: Flow<Boolean> get() = aiFeaturesEnabledImpl
+    suspend fun setAiFeaturesEnabled(v: Boolean) = setAiFeaturesEnabledImpl(v)
+    /** Issue #8 follow-up: release cleartext opt-in for user-entered AI endpoints; default OFF. */
+    val allowInsecureHttp: Flow<Boolean> get() = allowInsecureHttpImpl
+    suspend fun setAllowInsecureHttp(v: Boolean) = setAllowInsecureHttpImpl(v)
+    val appThemeColor: Flow<String> get() = appThemeColorImpl
+    suspend fun setAppThemeColor(v: String) = setAppThemeColorImpl(v)
+    val fixedLauncherIcon: Flow<Boolean> get() = fixedLauncherIconImpl
+    suspend fun setFixedLauncherIcon(v: Boolean) = setFixedLauncherIconImpl(v)
+    val useSystemDateTimePickers: Flow<Boolean> get() = useSystemDateTimePickersImpl
+    suspend fun setUseSystemDateTimePickers(v: Boolean) = setUseSystemDateTimePickersImpl(v)
+    val weekStartsOnMonday: Flow<Boolean> get() = weekStartsOnMondayImpl
+    suspend fun setWeekStartsOnMonday(v: Boolean) = setWeekStartsOnMondayImpl(v)
+    val weekStartDay: Flow<app.chompass.models.WeekStartDay> get() = weekStartDayImpl
+    suspend fun setWeekStartDay(v: app.chompass.models.WeekStartDay) = setWeekStartDayImpl(v)
+    val progressDefaultRangeId: Flow<String> get() = progressDefaultRangeIdImpl
+    suspend fun setProgressDefaultRangeId(v: String) = setProgressDefaultRangeIdImpl(v)
+    val progressLastRangeId: Flow<String?> get() = progressLastRangeIdImpl
+    suspend fun setProgressLastRangeId(v: String) = setProgressLastRangeIdImpl(v)
+    val progressMeasurementSites: Flow<Set<String>> get() = progressMeasurementSitesImpl
+    suspend fun setProgressMeasurementSites(sites: Set<String>) = setProgressMeasurementSitesImpl(sites)
+    val progressOverlaySeries: Flow<Set<String>?> get() = progressOverlaySeriesImpl
+    suspend fun toggleProgressOverlaySeriesKey(key: String) = toggleProgressOverlaySeriesKeyImpl(key)
+    val progressCalorieOverlay: Flow<String?> get() = progressCalorieOverlayImpl
+    suspend fun setProgressCalorieOverlay(v: String) = setProgressCalorieOverlayImpl(v)
+    val progressNutrientAverages: Flow<Boolean> get() = progressNutrientAveragesImpl
+    suspend fun setProgressNutrientAverages(v: Boolean) = setProgressNutrientAveragesImpl(v)
+    val progressNutrientAveragesSelection: Flow<Set<String>> get() = progressNutrientAveragesSelectionImpl
+    suspend fun setProgressNutrientAveragesSelection(keys: Set<String>) =
+        setProgressNutrientAveragesSelectionImpl(keys)
+
+    val mealSchedule: Flow<app.chompass.models.MealSchedule> get() = mealScheduleImpl
+    suspend fun setMealSchedule(schedule: app.chompass.models.MealSchedule) = setMealScheduleImpl(schedule)
+    val mealCatalog: Flow<app.chompass.models.MealCatalog> get() = mealCatalogImpl
+    suspend fun setMealCatalog(catalog: app.chompass.models.MealCatalog) = setMealCatalogImpl(catalog)
+    val lastSavedMealsSegment: Flow<String> get() = lastSavedMealsSegmentImpl
+    suspend fun setLastSavedMealsSegment(v: String) = setLastSavedMealsSegmentImpl(v)
+    val lastSavedMealsSort: Flow<String> get() = lastSavedMealsSortImpl
+    suspend fun setLastSavedMealsSort(v: String) = setLastSavedMealsSortImpl(v)
+    val foodLogSortOrder: Flow<String> get() = foodLogSortOrderImpl
+    suspend fun setFoodLogSortOrder(v: String) = setFoodLogSortOrderImpl(v)
+    val homeTopNutrients: Flow<String> get() = homeTopNutrientsImpl
+    suspend fun setHomeTopNutrients(v: String) = setHomeTopNutrientsImpl(v)
+    val homeNutrientCardCount: Flow<Int> get() = homeNutrientCardCountImpl
+    suspend fun setHomeNutrientCardCount(v: Int) = setHomeNutrientCardCountImpl(v)
+    val homeShowSteps: Flow<Boolean> get() = homeShowStepsImpl
+    suspend fun setHomeShowSteps(v: Boolean) = setHomeShowStepsImpl(v)
+    val homeSlimFullNames: Flow<Boolean> get() = fullNutrientNamesImpl
+    suspend fun setHomeFullNutrientNames(v: Boolean) = setHomeFullNutrientNamesImpl(v)
+    val homeShowActiveCalories: Flow<Boolean> get() = homeShowActiveCaloriesImpl
+    suspend fun setHomeShowActiveCalories(v: Boolean) = setHomeShowActiveCaloriesImpl(v)
+    val homeStepGoal: Flow<Int> get() = homeStepGoalImpl
+    suspend fun setHomeStepGoal(v: Int) = setHomeStepGoalImpl(v)
+    val homeCalorieDisplayMode: Flow<String> get() = homeCalorieDisplayModeImpl
+    suspend fun setHomeCalorieDisplayMode(v: String) = setHomeCalorieDisplayModeImpl(v)
+    val homeCalorieFullCredit: Flow<Boolean> get() = homeCalorieFullCreditImpl
+    suspend fun setHomeCalorieFullCredit(v: Boolean) = setHomeCalorieFullCreditImpl(v)
+    suspend fun setHomeCalorieHeroLayout(v: String?) = setHomeCalorieHeroLayoutImpl(v)
+    suspend fun setHomeMacroCardLayout(v: String?) = setHomeMacroCardLayoutImpl(v)
+    suspend fun setHomeFoodLogLayout(v: String?) = setHomeFoodLogLayoutImpl(v)
+    val foodLogMacroChips: Flow<String> get() = foodLogMacroChipsImpl
+    suspend fun setFoodLogMacroChips(v: String) = setFoodLogMacroChipsImpl(v)
+    suspend fun migrateHomeDisplayLayoutIfNeeded() = migrateHomeDisplayLayoutIfNeededImpl()
+    val homeDisplayPreferences: Flow<HomeDisplayPreferences> get() = homeDisplayPreferencesImpl
+    val optionalNutrientGoals: Flow<OptionalNutrientGoals> get() = optionalNutrientGoalsImpl
+    suspend fun setOptionalNutrientGoals(goals: OptionalNutrientGoals) = setOptionalNutrientGoalsImpl(goals)
+    val aiProfiles: Flow<List<AiProfile>> get() = aiProfilesImpl
+    suspend fun mutateProfiles(block: (MutableList<AiProfile>) -> Unit) = mutateProfilesImpl(block)
+    /** Append + activate in one edit; see [addAndActivateProfileImpl]. */
+    suspend fun addAndActivateProfile(profile: AiProfile) = addAndActivateProfileImpl(profile)
+    val activeAiProfileId: Flow<String?> get() = activeAiProfileIdImpl
+    suspend fun setActiveAiProfileId(id: String) = setActiveAiProfileIdImpl(id)
+    val activeAiProfile: Flow<AiProfile?> get() = activeAiProfileImpl
+    /** Single-edit transform of the active profile (settings/onboarding ops). */
+    suspend fun editActiveProfile(transform: (AiProfile) -> AiProfile) = editActiveProfileImpl(transform = transform)
+    /**
+     * Provider change on the active profile: drops key, base URL, and vision
+     * model. False when there is no profile or the provider is unchanged.
+     */
+    suspend fun switchActiveProfileProvider(keyStore: KeyStore, provider: AIProvider, model: String): Boolean =
+        switchActiveProfileProviderImpl(keyStore, provider, model)
+    val fallbackAiProfile: Flow<AiProfile?> get() = fallbackAiProfileImpl
+    val fallbackAiProfileId: Flow<String?> get() = dataStore.data.map { it[Keys.FALLBACK_AI_PROFILE_ID] }
+    suspend fun setFallbackAiProfileId(id: String?) = setFallbackAiProfileIdImpl(id)
+    /** Compat view over the active profile (single-slot legacy readers). */
+    val selectedAIProvider: Flow<AIProvider> get() = activeAiProfile.map { it?.provider ?: AIProvider.GEMINI }
+    val selectedAIModel: Flow<String?> get() = activeAiProfile.map { it?.model }
+    /** Legacy single-slot writers → active profile (compat shims, see editActiveProfileImpl). */
+    suspend fun setSelectedAIProvider(p: AIProvider) = setSelectedAIProviderCompatImpl(p)
+    suspend fun setSelectedAIModel(model: String) = setSelectedAIModelCompatImpl(model)
+    fun visionModel(provider: AIProvider): Flow<String?> = visionModelImpl(provider)
+    suspend fun setVisionModel(provider: AIProvider, model: String?) = setVisionModelCompatImpl(provider, model)
+    fun customBaseUrl(provider: AIProvider): Flow<String?> = customBaseUrlImpl(provider)
+    suspend fun setCustomBaseUrl(provider: AIProvider, url: String?) = setCustomBaseUrlCompatImpl(provider, url)
+    fun fallbackCustomBaseUrl(provider: AIProvider): Flow<String?> = fallbackProfileBaseUrlImpl(provider)
+    suspend fun setFallbackCustomBaseUrl(provider: AIProvider, url: String?) = setFallbackCustomBaseUrlCompatImpl(provider, url)
+    val maxResponseTokens: Flow<Int> get() = maxResponseTokensImpl
+    suspend fun setMaxResponseTokens(v: Int) = setMaxResponseTokensImpl(v)
+    val aiReadTimeoutSeconds: Flow<Int> get() = aiReadTimeoutSecondsImpl
+    suspend fun setAiReadTimeoutSeconds(v: Int) = setAiReadTimeoutSecondsImpl(v)
+    val servingUnitInferenceMode: Flow<ServingUnitInferenceMode> get() = servingUnitInferenceModeImpl
+    suspend fun setServingUnitInferenceMode(mode: ServingUnitInferenceMode) = setServingUnitInferenceModeImpl(mode)
+    val heuristicServingUnitSettings: Flow<HeuristicServingUnitSettings> get() = heuristicServingUnitSettingsImpl
+    suspend fun setHeuristicServingUnitSettings(settings: HeuristicServingUnitSettings) = setHeuristicServingUnitSettingsImpl(settings)
+    val userContext: Flow<String> get() = userContextImpl
+    suspend fun setUserContext(value: String) = setUserContextImpl(value)
+    val lastRecalcGoalSignature: Flow<String?> get() = lastRecalcGoalSignatureImpl
+    suspend fun setLastRecalcGoalSignature(value: String) = setLastRecalcGoalSignatureImpl(value)
+    val lastRecalcSignatureVersion: Flow<Int> get() = lastRecalcSignatureVersionImpl
+    suspend fun setLastRecalcSignatureVersion(value: Int) = setLastRecalcSignatureVersionImpl(value)
+    val fallbackEnabled: Flow<Boolean> get() = fallbackEnabledImpl
+    suspend fun setFallbackEnabled(v: Boolean) = setFallbackEnabledImpl(v)
+    val selectedFallbackProvider: Flow<AIProvider> get() = selectedFallbackProviderImpl
+    suspend fun setSelectedFallbackProvider(p: AIProvider) = setSelectedFallbackProviderCompatImpl(p)
+    val selectedFallbackModel: Flow<String?> get() = fallbackAiProfile.map { it?.model }
+    suspend fun setSelectedFallbackModel(model: String) = setSelectedFallbackModelCompatImpl(model)
+    val goalRecalcTier: Flow<GoalRecalcTierOverride> get() = goalRecalcTierImpl
+    val geminiGoogleSearchEnabled: Flow<Boolean> get() = geminiGoogleSearchEnabledImpl
+    suspend fun setGeminiGoogleSearchEnabled(v: Boolean) = setGeminiGoogleSearchEnabledImpl(v)
+    val openRouterReasoningEffort: Flow<OpenRouterReasoningEffort> get() = openRouterReasoningEffortImpl
+    suspend fun setOpenRouterReasoningEffort(e: OpenRouterReasoningEffort) = setOpenRouterReasoningEffortImpl(e)
+    suspend fun setGoalRecalcTier(v: GoalRecalcTierOverride) = setGoalRecalcTierImpl(v)
+    /** One-snapshot read of every AI-call setting — see [AiCallConfig]. */
+    internal suspend fun aiCallConfig(profileOverride: AiProfile? = null): AiCallConfig = aiCallConfigImpl(profileOverride)
+    /** One-shot legacy single-slot → named-profile migration (idempotent). */
+    internal suspend fun ensureAiProfilesMigrated(keyStore: KeyStore, context: Context) =
+        ensureAiProfilesMigratedImpl(keyStore, context)
+    val skipPhotoNotePrompt: Flow<Boolean> get() = skipPhotoNotePromptImpl
+    suspend fun setSkipPhotoNotePrompt(v: Boolean) = setSkipPhotoNotePromptImpl(v)
+    val photoNoteSkipCount: Flow<Int> get() = photoNoteSkipCountImpl
+    suspend fun setPhotoNoteSkipCount(v: Int) = setPhotoNoteSkipCountImpl(v)
+    val photoAccuracyGuideCount: Flow<Int> get() = photoAccuracyGuideCountImpl
+    suspend fun setPhotoAccuracyGuideCount(v: Int) = setPhotoAccuracyGuideCountImpl(v)
+    val mealConstituentsEnabled: Flow<Boolean> get() = mealConstituentsEnabledImpl
+    suspend fun setMealConstituentsEnabled(v: Boolean) = setMealConstituentsEnabledImpl(v)
+    val foodSearchOpenFoodFactsEnabled: Flow<Boolean> get() = foodSearchOpenFoodFactsEnabledImpl
+    suspend fun setFoodSearchOpenFoodFactsEnabled(v: Boolean) = setFoodSearchOpenFoodFactsEnabledImpl(v)
+    val foodSearchUsdaEnabled: Flow<Boolean> get() = foodSearchUsdaEnabledImpl
+    suspend fun setFoodSearchUsdaEnabled(v: Boolean) = setFoodSearchUsdaEnabledImpl(v)
+    val foodSearchSwissEnabled: Flow<Boolean> get() = foodSearchSwissEnabledImpl
+    suspend fun setFoodSearchSwissEnabled(v: Boolean) = setFoodSearchSwissEnabledImpl(v)
+    val selectedSpeechProvider: Flow<SpeechProvider> get() = selectedSpeechProviderImpl
+    suspend fun setSelectedSpeechProvider(p: SpeechProvider) = setSelectedSpeechProviderImpl(p)
+    fun selectedSpeechLanguage(provider: SpeechProvider): Flow<SpeechLanguage> = selectedSpeechLanguageImpl(provider)
+    suspend fun setSelectedSpeechLanguage(provider: SpeechProvider, language: SpeechLanguage) = setSelectedSpeechLanguageImpl(provider, language)
+
+    val onDeviceModelDownloadedVersion: Flow<String?> get() = onDeviceModelDownloadedVersionImpl
+    suspend fun setOnDeviceModelDownloadedVersion(version: String?) = setOnDeviceModelDownloadedVersionImpl(version)
+    val onDeviceDownloadOverWifiOnly: Flow<Boolean> get() = onDeviceDownloadOverWifiOnlyImpl
+    suspend fun setOnDeviceDownloadOverWifiOnly(v: Boolean) = setOnDeviceDownloadOverWifiOnlyImpl(v)
+    /** #46: percent of usable RAM kept in reserve before on-device runs; 0 = shipped default 5%. */
+    val onDeviceHeadroomPercent: Flow<Int> get() = onDeviceHeadroomPercentImpl
+    suspend fun setOnDeviceHeadroomPercent(v: Int) = setOnDeviceHeadroomPercentImpl(v)
+    val onDeviceFeatureVisible: Flow<Boolean> get() = onDeviceFeatureVisibleImpl
+    suspend fun setOnDeviceFeatureVisible(v: Boolean) = setOnDeviceFeatureVisibleImpl(v)
+    val foodEntries: Flow<List<FoodEntry>> get() = foodEntriesImpl
+
+    /** Latest snapshot of one diary row by id, or null once the row is gone. */
+    override suspend fun foodEntryById(id: UUID): FoodEntry? = foodEntryByIdImpl(id)
+    fun foodEntriesForMonth(month: YearMonth): Flow<List<FoodEntry>> = foodEntriesForMonthImpl(month)
+    fun foodEntriesForMonths(months: Collection<YearMonth>): Flow<List<FoodEntry>> =
+        foodEntriesForMonthsImpl(months)
+    /** Per-day food totals for the named months (flippidity C.1 aggregate cache). */
+    fun dailyFoodTotalsForMonths(months: Collection<YearMonth>): Flow<List<DailyFoodTotals>> =
+        dailyFoodTotalsForMonthsImpl(months)
+    suspend fun applyFoodEntryBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<FoodEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+        draft: PendingFoodAnalysisDraft? = null,
+        clearDraft: Boolean = false,
+    ) = applyFoodEntryBucketChangesImpl(upsertsByMonth, removalIdsByMonth, draft, clearDraft)
+    suspend fun replaceAllFoodEntries(entries: List<FoodEntry>) = replaceAllFoodEntriesImpl(entries)
+    val favoriteKeys: Flow<Set<String>> get() = favoriteKeysImpl
+    suspend fun setFavoriteKeys(keys: Set<String>) = setFavoriteKeysImpl(keys)
+    val favoriteFoodEntries: Flow<List<FoodEntry>> get() = favoriteFoodEntriesImpl
+    suspend fun setFavoriteFoodEntries(entries: List<FoodEntry>) = setFavoriteFoodEntriesImpl(entries)
+    /** One-edit write of the favorites list plus its legacy keys mirror. */
+    suspend fun setFavoritesAtomic(entries: List<FoodEntry>) = setFavoritesAtomicImpl(entries)
+    val recipes: Flow<List<app.chompass.models.Recipe>> get() = recipesImpl
+    suspend fun setRecipes(recipes: List<app.chompass.models.Recipe>) = setRecipesImpl(recipes)
+    val pendingFoodAnalysisDraft: Flow<PendingFoodAnalysisDraft?> get() = pendingFoodAnalysisDraftImpl
+    suspend fun setPendingFoodAnalysisDraft(draft: PendingFoodAnalysisDraft?) = setPendingFoodAnalysisDraftImpl(draft)
+    val barcodeCache: Flow<Map<String, CachedBarcodeProduct>> get() = barcodeCacheImpl
+    suspend fun cacheBarcodeLookup(barcode: String, analysis: app.chompass.services.ai.FoodAnalysis) =
+        cacheBarcodeLookupImpl(barcode, analysis)
+    val pendingFoodInputDraft: Flow<PendingFoodInputDraft?> get() = pendingFoodInputDraftImpl
+    suspend fun setPendingFoodInputDraft(draft: PendingFoodInputDraft?) = setPendingFoodInputDraftImpl(draft)
+    suspend fun foodImageReferenceFilenames(): Set<String>? = foodImageReferenceFilenamesImpl()
+    val weightEntries: Flow<List<WeightEntry>> get() = weightEntriesImpl
+    suspend fun setWeightEntries(entries: List<WeightEntry>) = setWeightEntriesImpl(entries)
+    /** Month-scoped weight write (one bucket file). */
+    suspend fun applyWeightBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<WeightEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyWeightBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val bodyFatEntries: Flow<List<BodyFatEntry>> get() = bodyFatEntriesImpl
+    suspend fun setBodyFatEntries(entries: List<BodyFatEntry>) = setBodyFatEntriesImpl(entries)
+    /** Month-scoped body-fat write (one bucket file). */
+    suspend fun applyBodyFatBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<BodyFatEntry>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyBodyFatBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val bodyMeasurements: Flow<List<BodyMeasurement>> get() = bodyMeasurementsImpl
+    suspend fun setBodyMeasurements(entries: List<BodyMeasurement>) = setBodyMeasurementsImpl(entries)
+    /** Month-scoped measurement write (one bucket file). */
+    suspend fun applyMeasurementBucketChanges(
+        upsertsByMonth: Map<YearMonth, List<BodyMeasurement>> = emptyMap(),
+        removalIdsByMonth: Map<YearMonth, Set<UUID>> = emptyMap(),
+    ) = applyMeasurementBucketChangesImpl(upsertsByMonth, removalIdsByMonth)
+    val chatHistory: Flow<List<ChatMessage>> get() = chatHistoryImpl
+    suspend fun setChatHistory(history: List<ChatMessage>) = setChatHistoryImpl(history)
+    val widgetSnapshot: Flow<WidgetSnapshot?> get() = widgetSnapshotImpl
+    suspend fun setWidgetSnapshot(snapshot: WidgetSnapshot) = setWidgetSnapshotImpl(snapshot)
+    suspend fun clearWidgetSnapshot() = clearWidgetSnapshotImpl()
+    val testSeedBackupJson: Flow<String?> get() = testSeedBackupJsonImpl
+    suspend fun setTestSeedBackupJson(json: String) = setTestSeedBackupJsonImpl(json)
+    suspend fun clearTestSeedBackup() = clearTestSeedBackupImpl()
+    suspend fun setDebugActivityDays(days: List<DebugActivityDay>) = setDebugActivityDaysImpl(days)
+    suspend fun clearDebugActivityDays() = clearDebugActivityDaysImpl()
+    suspend fun debugActivityDaysJson(): String? = debugActivityDaysJsonImpl()
+    suspend fun debugActivityDay(date: LocalDate): DebugActivityDay? = debugActivityDayImpl(date)
+    val debugShowRestingShade: Flow<Boolean> get() = debugShowRestingShadeImpl
+    suspend fun setDebugShowRestingShade(show: Boolean) = setDebugShowRestingShadeImpl(show)
+    val debugDemoAnalysis: Flow<Boolean> get() = debugDemoAnalysisImpl
+    suspend fun setDebugDemoAnalysis(enabled: Boolean) = setDebugDemoAnalysisImpl(enabled)
+    val debugDemoAnalysisFail: Flow<Boolean> get() = debugDemoAnalysisFailImpl
+    suspend fun setDebugDemoAnalysisFail(enabled: Boolean) = setDebugDemoAnalysisFailImpl(enabled)
+    val debugDemoAnalysisTruncate: Flow<Boolean> get() = debugDemoAnalysisTruncateImpl
+    suspend fun setDebugDemoAnalysisTruncate(enabled: Boolean) = setDebugDemoAnalysisTruncateImpl(enabled)
+    val syncRevisions: Flow<Map<String, SyncRevision>> get() = syncRevisionsImpl
+    suspend fun setSyncRevisions(revisions: Map<String, SyncRevision>) = setSyncRevisionsImpl(revisions)
+    val webDavUrl: Flow<String> get() = webDavUrlImpl
+    suspend fun setWebDavUrl(url: String) = setWebDavUrlImpl(url)
+    val mealieBaseUrl: Flow<String> get() = mealieBaseUrlImpl
+    suspend fun setMealieBaseUrl(url: String) = setMealieBaseUrlImpl(url)
+    val webDavUsername: Flow<String> get() = webDavUsernameImpl
+    suspend fun setWebDavUsername(username: String) = setWebDavUsernameImpl(username)
+    val webDavEnabled: Flow<Boolean> get() = webDavEnabledImpl
+    suspend fun setWebDavEnabled(enabled: Boolean) = setWebDavEnabledImpl(enabled)
+    val webDavAutoSyncDay: Flow<String?> get() = webDavAutoSyncDayImpl
+    suspend fun setWebDavAutoSyncDay(day: String?) = setWebDavAutoSyncDayImpl(day)
+    val lastSyncAt: Flow<String?> get() = lastSyncAtImpl
+    suspend fun setLastSyncAt(iso: String?) = setLastSyncAtImpl(iso)
+    val lastSyncEtag: Flow<String?> get() = lastSyncEtagImpl
+    suspend fun setLastSyncEtag(etag: String?) = setLastSyncEtagImpl(etag)
+    /** Last magnitude-wheel entry mode: "wheel" or "typed". */
+    val numericPickerEntry: Flow<String> get() = numericPickerEntryImpl
+    suspend fun setNumericPickerEntry(mode: String) = setNumericPickerEntryImpl(mode)
+    suspend fun clearAll() = clearAllImpl()
+}

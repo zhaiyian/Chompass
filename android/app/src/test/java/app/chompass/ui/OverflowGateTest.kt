@@ -1,0 +1,493 @@
+package app.chompass.ui
+
+import android.app.Application
+import app.chompass.models.ActivityLevel
+import app.chompass.ui.components.ChompassDialogActions
+import app.chompass.ui.home.MealSectionHeader
+import app.chompass.ui.settings.ActivityLevelSettingRow
+import app.chompass.ui.home.EntryAnalysisTipStrip
+import app.chompass.ui.home.MealPhotoAddTile
+import app.chompass.ui.settings.SettingRow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.chompass.ui.home.SheetReviewToolbar
+import app.chompass.ui.home.SheetStickyPrimaryBar
+import app.chompass.ui.home.SheetToolbarPill
+import app.chompass.ui.home.ProgressiveMealFooterRow
+import androidx.compose.ui.Modifier
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+/**
+ * Overflow gate for localized sheet chrome: action pills and toolbar labels
+ * must stay visible and single-line at narrow widths, whatever the locale
+ * string lengths are. Two failure shapes from the 4.3.0 device pass
+ * ("Mahlzeit protokollieren" stacking letter-by-letter):
+ *
+ *  - letter stacking: text wraps one glyph per line when squeezed without
+ *    wrap constraints (`lineCount` > 1)
+ *  - collapse: a trailing sibling measures to 0x0 when earlier siblings
+ *    consume the row (bounds width/height == 0, invisible CTA)
+ *
+ * The gate asserts on `lineCount` and node bounds, never absolute pixel
+ * sizes, and never `hasVisualOverflow` (that flag is true for every
+ * well-behaved ellipsized pill).
+ *
+ * Labels are passed as the known-longest German strings as literals:
+ * `stringResource` in Robolectric resolves the default (en) locale, so
+ * resource-based tests would never exercise the long translations.
+ */
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [34], application = Application::class, qualifiers = "w340dp-h720dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class OverflowGateTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    private val deTitle = "Mahlzeit erstellen"
+    private val deSecondary = "Eine weitere hinzufügen"
+    private val dePrimary = "Mahlzeit protokollieren"
+
+    /**
+     * Assert this node's text renders on at most [maxLines] lines inside
+     * non-zero bounds. Requires a text layout (Text/TextButton semantics).
+     */
+    private fun SemanticsNodeInteraction.assertVisibleMaxLines(label: String, maxLines: Int) {
+        val node = fetchSemanticsNode()
+        val bounds = node.boundsInRoot
+        assert(bounds.width > 0f && bounds.height > 0f) {
+            "$label collapsed to ${bounds.width.toInt()}x${bounds.height.toInt()} (invisible)"
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.config.getOrNull(SemanticsActions.GetTextLayoutResult)
+            ?.action
+            ?.invoke(layouts)
+        val lineCount = layouts.firstOrNull()?.lineCount
+        assert(lineCount in 1..maxLines) {
+            "$label rendered on $lineCount lines (bounds=$bounds); chrome text must stay within $maxLines lines"
+        }
+    }
+
+    private fun SemanticsNodeInteraction.assertVisibleSingleLine(label: String) =
+        assertVisibleMaxLines(label, maxLines = 1)
+
+    private fun setContentToolbar(fontScale: Float? = null) {
+        composeRule.setContent {
+            MaterialTheme {
+                val toolbar: @Composable () -> Unit = {
+                    SheetReviewToolbar(
+                        title = deTitle,
+                        onCancel = {},
+                        secondaryLabel = deSecondary,
+                        onSecondary = {},
+                        primaryLabel = dePrimary,
+                        onPrimary = {},
+                    )
+                }
+                if (fontScale != null) {
+                    DeviceConfigurationOverride(
+                        DeviceConfigurationOverride.FontScale(fontScale)
+                    ) { toolbar() }
+                } else {
+                    toolbar()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun sheetReviewToolbar_germanActions_stayVisibleSingleLine() {
+        setContentToolbar()
+        composeRule.onNodeWithText("Cancel").assertVisibleSingleLine("toolbar cancel")
+        composeRule.onNodeWithText(deSecondary).assertVisibleSingleLine("toolbar secondary")
+        composeRule.onNodeWithText(dePrimary).assertVisibleSingleLine("toolbar primary")
+    }
+
+    /**
+     * 1.3x is the large-font repo bar (device-pass checks in
+     * PLAN_UI_STRING_FIT); 2.0x is the stress leg. The title and secondary
+     * pill are designed to yield at large font scale; the primary CTA and
+     * cancel must stay visible and single-line (the 0x0 collapse bug).
+     */
+    @Test
+    fun sheetReviewToolbar_germanActions_fontScale130_primaryStaysVisible() {
+        setContentToolbar(fontScale = 1.3f)
+        composeRule.onNodeWithText("Cancel").assertVisibleSingleLine("toolbar cancel 1.3x")
+        composeRule.onNodeWithText(dePrimary).assertVisibleSingleLine("toolbar primary 1.3x")
+    }
+
+    @Test
+    fun sheetReviewToolbar_germanActions_fontScale200_primaryStaysVisible() {
+        setContentToolbar(fontScale = 2f)
+        composeRule.onNodeWithText("Cancel").assertVisibleSingleLine("toolbar cancel 2.0x")
+        composeRule.onNodeWithText(dePrimary).assertVisibleSingleLine("toolbar primary 2.0x")
+    }
+
+    @Test
+    fun sheetToolbarPill_squeezedBox_staysSingleLine() {
+        // Pins the 4.3.0 fix: maxLines=1 + ellipsis means a hard-squeezed pill
+        // truncates ("M...") instead of stacking one glyph per line.
+        composeRule.setContent {
+            MaterialTheme {
+                Column {
+                    Box(Modifier.width(48.dp)) {
+                        SheetToolbarPill(label = dePrimary, onClick = {})
+                    }
+                    Box(Modifier.width(48.dp)) {
+                        SheetToolbarPill(label = deSecondary, bold = true, onClick = {})
+                    }
+                }
+            }
+        }
+        composeRule.onNodeWithText(dePrimary).assertVisibleSingleLine("pill regular")
+        composeRule.onNodeWithText(deSecondary).assertVisibleSingleLine("pill bold")
+    }
+
+    @Test
+    fun sheetStickyPrimaryBar_germanLabels_stayVisibleSingleLine() {
+        composeRule.setContent {
+            MaterialTheme {
+                SheetStickyPrimaryBar(
+                    primaryLabel = dePrimary,
+                    onPrimary = {},
+                    textActionLabel = deSecondary,
+                    onTextAction = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText(dePrimary).assertVisibleSingleLine("sticky primary")
+        composeRule.onNodeWithText(deSecondary).assertVisibleSingleLine("sticky text action")
+    }
+
+    @Test
+    fun mealPhotoAddTile_germanLabel_staysWithinTwoLines() {
+        // "Beschriftung hinzufügen" (meal_photos_add_label) stacked
+        // letter-by-letter in the 4.3.0 device pass; the tile now wraps to at
+        // most its 2 designed lines and never collapses.
+        composeRule.setContent {
+            MaterialTheme {
+                MealPhotoAddTile(
+                    label = "Beschriftung hinzufügen",
+                    addsFromLibrary = false,
+                    onAddPhoto = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("Beschriftung hinzufügen")
+            .assertVisibleMaxLines("add-photo tile label", maxLines = 2)
+    }
+
+    /**
+     * The result-sheet tip strip's two side-by-side actions (3.19 letter-stack
+     * fix). Both buttons are resource-backed, so this leg runs with the de
+     * qualifier to resolve the real German strings ("Tipp für die KI
+     * hinzufügen (optional)" + "Foto hinzufügen").
+     */
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun entryAnalysisTipStrip_germanActions_stayVisibleSingleLine() {
+        composeRule.setContent {
+            MaterialTheme {
+                EntryAnalysisTipStrip(
+                    expanded = false,
+                    onExpandedChange = {},
+                    note = "",
+                    onNoteChange = {},
+                    weightText = "",
+                    onWeightChange = {},
+                    canOfferTip = true,
+                    canAddPhoto = true,
+                    onApplyTip = {},
+                    onAddPhoto = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("Tipp für die KI hinzufügen (optional)")
+            .assertVisibleSingleLine("tip strip CTA")
+        composeRule.onNodeWithText("Foto hinzufügen")
+            .assertVisibleSingleLine("tip strip add-photo")
+    }
+
+    @Test
+    fun settingRow_germanStressValues_stayVisible() {
+        // Mirrors SettingRowStressPreviewContent's worst row: long label +
+        // very long value. Labels wrap to 2 lines, values ellipsize on one
+        // line; neither may stack or collapse.
+        composeRule.setContent {
+            MaterialTheme {
+                SettingRow(
+                    label = "Sortierung des Ernährungsprotokolls",
+                    value = "Frühstück → Mittagessen → Abendessen (neueste zuletzt)",
+                    onClick = {},
+                )
+                SettingRow(
+                    label = "Kalorienanzeige",
+                    value = "Tipp: Aktiviere Health Connect, um die aktiven Kalorien der Uhr/des Smartphones anstelle der geschätzten Aktivität zu verwenden.",
+                    onClick = {},
+                )
+            }
+        }
+        // Unmerged tree: the row is clickable and merges label+value into one
+        // semantics node, whose first text layout would be the 2-line label.
+        composeRule.onNodeWithText("Sortierung des Ernährungsprotokolls", useUnmergedTree = true)
+            .assertVisibleMaxLines("settings sort label", maxLines = 2)
+        composeRule.onNodeWithText("Frühstück → Mittagessen → Abendessen (neueste zuletzt)", useUnmergedTree = true)
+            .assertVisibleSingleLine("settings sort value")
+        composeRule.onNodeWithText("Tipp: Aktiviere Health Connect, um die aktiven Kalorien der Uhr/des Smartphones anstelle der geschätzten Aktivität zu verwenden.", useUnmergedTree = true)
+            .assertVisibleSingleLine("settings calorie-mode value")
+    }
+
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun progressiveMealFooter_germanLogItems_staysVisible() {
+        composeRule.setContent {
+            MaterialTheme {
+                ProgressiveMealFooterRow(
+                    isSaving = false,
+                    canLog = true,
+                    named = false,
+                    onAddAnother = {},
+                    onLogMeal = {},
+                )
+            }
+        }
+        // Footer pills allow two lines (Codeberg #84). Gate collapse + stacking.
+        composeRule.onNodeWithText("Zutaten loggen")
+            .assertVisibleMaxLines("progressive log-items", maxLines = 2)
+        composeRule.onNodeWithText("Eine weitere hinzufügen")
+            .assertVisibleMaxLines("progressive add-another", maxLines = 2)
+    }
+
+    @Test
+    fun activityLevelSettingRow_germanValue_stayVisible() {
+        // The unweighted value used to consume the row at 2.0x and starve the
+        // weighted label column to 0x0; both sides must stay visible now.
+        composeRule.setContent {
+            MaterialTheme {
+                DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(2f)) {
+                    ActivityLevelSettingRow(
+                        level = ActivityLevel.MODERATE,
+                        value = "Mäßig aktiv (tägliche Bewegung)",
+                        onClick = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Mäßig aktiv (tägliche Bewegung)", useUnmergedTree = true)
+            .assertVisibleSingleLine("activity level value 2.0x")
+        composeRule.onNodeWithText("Activity Level", useUnmergedTree = true)
+            .assertVisibleSingleLine("activity level label 2.0x")
+    }
+
+    @Test
+    fun fudGlassDialogActions_germanLabels_stayVisible() {
+        composeRule.setContent {
+            MaterialTheme {
+                DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(2f)) {
+                    ChompassDialogActions(
+                        primaryText = "Erneut analysieren",
+                        dismissText = "Abbrechen",
+                        onPrimary = {},
+                        onDismiss = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Erneut analysieren")
+            .assertVisibleMaxLines("dialog primary 2.0x", maxLines = 2)
+        composeRule.onNodeWithText("Abbrechen")
+            .assertVisibleMaxLines("dialog dismiss 2.0x", maxLines = 2)
+    }
+
+    @Test
+    fun mealSectionHeader_longCustomName_staySingleLine() {
+        // Free-string custom meal names (#61) must ellipsize instead of
+        // pushing the macro summary off-row.
+        composeRule.setContent {
+            MaterialTheme {
+                MealSectionHeader(
+                    meal = "Zwischenmahlzeit am Nachmittag",
+                    totalCalories = 850,
+                    totalProtein = 12.0,
+                    totalCarbs = 40.0,
+                    totalFat = 9.0,
+                )
+            }
+        }
+        composeRule.onNodeWithText("Zwischenmahlzeit am Nachmittag")
+            .assertVisibleSingleLine("meal header custom name")
+        composeRule.onNodeWithText("850 kcal", substring = true)
+            .assertVisibleSingleLine("meal header kcal summary")
+    }
+
+    /**
+     * The Add Food pill row with all four pills (5.0.0 MUST 1: Trackers is
+     * the fourth). German is the stress locale; "Mehr anzeigen" is the
+     * longest label the row carries. Resource-backed, so these legs run with
+     * the de qualifier like the tip-strip leg above.
+     */
+    private fun setContentQueryRow(fontScale: Float? = null, trackersExpanded: Boolean = false) {
+        composeRule.setContent {
+            MaterialTheme {
+                val row: @Composable () -> Unit = {
+                    app.chompass.ui.home.AddFoodQueryRow(
+                        query = "",
+                        onQueryChange = {},
+                        onPhoto = {},
+                        onVoice = {},
+                        onBarcode = {},
+                        onAnalyze = {},
+                        onNote = {},
+                        onSavedMeals = {},
+                        onManual = {},
+                        onCopyFromDay = {},
+                        onManualActive = {},
+                        onQueue = {},
+                        onGrounded = {},
+                        queuePendingCount = 0,
+                        groundedEnabled = false,
+                        aiFeaturesEnabled = true,
+                        barcodeEnabled = true,
+                        trackersPillVisible = true,
+                        trackersExpanded = trackersExpanded,
+                        onTrackersToggle = {},
+                        trackersContent = {
+                            Text("+1 KaffeeKaffee (95 mg)")
+                            Text("+1 Energydrink (80 mg)")
+                        },
+                    )
+                }
+                if (fontScale != null) {
+                    DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(fontScale)) { row() }
+                } else {
+                    row()
+                }
+            }
+        }
+    }
+
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun addFoodQueryRow_fourPills_german_stayVisibleSingleLine() {
+        setContentQueryRow()
+        composeRule.onNodeWithText("Foto").assertVisibleSingleLine("photo pill")
+        composeRule.onNodeWithText("Mehr anzeigen").assertVisibleSingleLine("more pill")
+        composeRule.onNodeWithText("Barcode").assertVisibleSingleLine("barcode pill")
+        composeRule.onNodeWithText("Tracker").assertVisibleSingleLine("trackers pill")
+    }
+
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun addFoodQueryRow_fourPills_fontScale130_stayVisibleSingleLine() {
+        setContentQueryRow(fontScale = 1.3f)
+        composeRule.onNodeWithText("Foto").assertVisibleSingleLine("photo pill 1.3x")
+        composeRule.onNodeWithText("Mehr anzeigen").assertVisibleSingleLine("more pill 1.3x")
+        composeRule.onNodeWithText("Barcode").assertVisibleSingleLine("barcode pill 1.3x")
+        composeRule.onNodeWithText("Tracker").assertVisibleSingleLine("trackers pill 1.3x")
+    }
+
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun addFoodQueryRow_fourPills_fontScale200_stayVisibleSingleLine() {
+        setContentQueryRow(fontScale = 2f)
+        composeRule.onNodeWithText("Foto").assertVisibleSingleLine("photo pill 2.0x")
+        composeRule.onNodeWithText("Mehr anzeigen").assertVisibleSingleLine("more pill 2.0x")
+        composeRule.onNodeWithText("Barcode").assertVisibleSingleLine("barcode pill 2.0x")
+        composeRule.onNodeWithText("Tracker").assertVisibleSingleLine("trackers pill 2.0x")
+    }
+
+    @Test
+    fun addFoodQueryRow_trackersPill_expandedRevealsQuickLogRows() {
+        setContentQueryRow(trackersExpanded = true)
+        composeRule.onNodeWithText("+1 KaffeeKaffee (95 mg)").assertExists()
+        composeRule.onNodeWithText("+1 Energydrink (80 mg)").assertExists()
+    }
+
+    @Test
+    fun addFoodQueryRow_trackersPill_collapsedHidesQuickLogRows() {
+        setContentQueryRow(trackersExpanded = false)
+        composeRule.onNodeWithText("+1 KaffeeKaffee (95 mg)").assertDoesNotExist()
+    }
+
+    @Test
+    fun addFoodQueryRow_noTrackers_pillHiddenNoEmptyBlock() {
+        // No tracker renders → no pill and no leftover empty block (MUST 1/2).
+        composeRule.setContent {
+            MaterialTheme {
+                app.chompass.ui.home.AddFoodQueryRow(
+                    query = "",
+                    onQueryChange = {},
+                    onPhoto = {},
+                    onVoice = {},
+                    onBarcode = {},
+                    onAnalyze = {},
+                    onNote = {},
+                    onSavedMeals = {},
+                    onManual = {},
+                    onCopyFromDay = {},
+                    onManualActive = {},
+                    onQueue = {},
+                    onGrounded = {},
+                    queuePendingCount = 0,
+                    groundedEnabled = false,
+                    aiFeaturesEnabled = true,
+                    barcodeEnabled = true,
+                )
+            }
+        }
+        composeRule.onNodeWithText("Trackers").assertDoesNotExist()
+    }
+
+    /**
+     * The Open Food Facts on-state chip on the databases heading (5.0.0 MUST 4)
+     * shares the heading line with the section label: it must stay single-line
+     * and never collapse the heading, at the large-font bar and under stress.
+     */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test
+    @Config(sdk = [34], application = Application::class, qualifiers = "de-w340dp-h720dp")
+    fun databasesHeading_offChip_staysVisibleSingleLine() {
+        composeRule.setContent {
+            MaterialTheme {
+                DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(1.3f)) {
+                    Box(Modifier.size(340.dp, 420.dp)) {
+                        app.chompass.ui.home.AddFoodSuggestionList(
+                            suggestions = emptyList(),
+                            networkPending = false,
+                            searching = true,
+                            listIdentity = "test" to true,
+                            packagedSearchEnabled = true,
+                            onPackagedSearchChange = {},
+                            onOpenFoodSettings = {},
+                            onPick = {},
+                            onReview = {},
+                        )
+                    }
+                }
+            }
+        }
+        // de resolves food_search_source_off to "Open Food Facts" — the chip
+        // and the off-hint share the resource.
+        composeRule.onNodeWithText("Open Food Facts")
+            .assertVisibleSingleLine("databases heading OFF chip 1.3x")
+    }
+}

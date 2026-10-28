@@ -1,0 +1,311 @@
+package app.chompass.models
+
+import androidx.annotation.StringRes
+import app.chompass.BuildConfig
+import app.chompass.R
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class AIProvider {
+    @SerialName("Google Gemini") GEMINI,
+    @SerialName("OpenAI") OPENAI,
+    @SerialName("Anthropic Claude") ANTHROPIC,
+    @SerialName("xAI Grok") XAI,
+    @SerialName("OpenRouter") OPENROUTER,
+    @SerialName("Together AI") TOGETHER_AI,
+    @SerialName("Groq") GROQ,
+    @SerialName("Hugging Face") HUGGING_FACE,
+    @SerialName("Fireworks AI") FIREWORKS,
+    @SerialName("DeepInfra") DEEP_INFRA,
+    @SerialName("Mistral") MISTRAL,
+    @SerialName("Ollama (Local)") OLLAMA,
+    @SerialName("Custom (OpenAI-compatible)") CUSTOM_OPENAI,
+    @SerialName("On-Device (Private)") ON_DEVICE;
+
+    @get:StringRes
+    val displayNameRes: Int get() = when (this) {
+        GEMINI -> R.string.ai_provider_gemini
+        OPENAI -> R.string.ai_provider_openai
+        ANTHROPIC -> R.string.ai_provider_anthropic
+        XAI -> R.string.ai_provider_xai
+        OPENROUTER -> R.string.ai_provider_openrouter
+        TOGETHER_AI -> R.string.ai_provider_together
+        GROQ -> R.string.ai_provider_groq
+        HUGGING_FACE -> R.string.ai_provider_huggingface
+        FIREWORKS -> R.string.ai_provider_fireworks
+        DEEP_INFRA -> R.string.ai_provider_deepinfra
+        MISTRAL -> R.string.ai_provider_mistral
+        OLLAMA -> R.string.ai_provider_ollama
+        CUSTOM_OPENAI -> R.string.ai_provider_custom
+        ON_DEVICE -> R.string.ai_provider_on_device
+    }
+
+    val baseUrl: String get() = when (this) {
+        GEMINI -> "https://generativelanguage.googleapis.com/v1beta"
+        OPENAI -> "https://api.openai.com/v1"
+        ANTHROPIC -> "https://api.anthropic.com/v1"
+        XAI -> "https://api.x.ai/v1"
+        OPENROUTER -> "https://openrouter.ai/api/v1"
+        TOGETHER_AI -> "https://api.together.xyz/v1"
+        GROQ -> "https://api.groq.com/openai/v1"
+        HUGGING_FACE -> "https://router.huggingface.co/v1"
+        FIREWORKS -> "https://api.fireworks.ai/inference/v1"
+        DEEP_INFRA -> "https://api.deepinfra.com/v1/openai"
+        MISTRAL -> "https://api.mistral.ai/v1"
+        OLLAMA -> "http://localhost:11434/v1"
+        CUSTOM_OPENAI -> ""
+        // No network call — handled specially in FoodAnalysisService.dispatch().
+        ON_DEVICE -> ""
+    }
+
+    /**
+     * Only models that are currently in service AND accept image input + return structured text.
+     * Lineups verified against provider docs on 2026-09-03 (Gemini 3.8 Flash added 2026-09-02;
+     * 3.5 Flash-Lite is still the newest lite model). Mirrors iOS AIProvider.swift.
+     */
+    val models: List<String> get() = when (this) {
+        GEMINI -> listOf(
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-pro-preview"
+        )
+        OPENAI -> listOf(
+            "gpt-5.4-mini",
+            "gpt-5.4-nano",
+            "gpt-5.5",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4o-mini"
+        )
+        ANTHROPIC -> listOf(
+            "claude-haiku-4-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-sonnet-4-6",
+            "claude-opus-4-7"
+        )
+        XAI -> listOf(
+            "grok-4.3"
+        )
+        OPENROUTER -> listOf(
+            "openrouter/free",
+            "google/gemini-3.1-flash-lite",
+            "openai/gpt-5-mini",
+            "anthropic/claude-sonnet-5",
+            "qwen/qwen3-vl-8b-instruct"
+        )
+        TOGETHER_AI -> listOf(
+            "Qwen/Qwen3.5-9B",
+            "google/gemma-4-31B-it",
+            "MiniMaxAI/MiniMax-M3"
+        )
+        GROQ -> listOf(
+            "qwen/qwen3.6-27b"
+        )
+        HUGGING_FACE -> listOf(
+            "google/gemma-4-31B-it",
+            "google/gemma-3-27b-it",
+            "Qwen/Qwen3.5-9B",
+            "Qwen/Qwen2.5-VL-72B-Instruct"
+        )
+        FIREWORKS -> listOf(
+            "accounts/fireworks/models/qwen3p7-plus",
+            "accounts/fireworks/models/minimax-m3",
+            "accounts/fireworks/models/kimi-k2p6"
+        )
+        DEEP_INFRA -> listOf(
+            "google/gemma-3-27b-it",
+            "google/gemma-4-31B-it",
+            "google/gemma-4-26B-A4B-it"
+        )
+        MISTRAL -> listOf(
+            "mistral-small-2603",
+            "mistral-medium-2604",
+            "ministral-14b-2512"
+        )
+        OLLAMA -> listOf(
+            "qwen3-vl",
+            "gemma4",
+            "llama3.2-vision",
+            "llava",
+            "moondream"
+        )
+        CUSTOM_OPENAI -> emptyList()
+        // Downloadable on-device models — see services/ondevice/ModelCatalog.kt.
+        // The static list stays complete for supportedModelOrDefault resolution;
+        // Settings filters E4B out by device capability (7 GiB usable-RAM floor).
+        ON_DEVICE -> listOf("gemma-4-E2B-it", "gemma-4-E4B-it")
+    }
+
+    /**
+     * BYOK free-tier availability per lineup model; values mirror the parity
+     * fixture strings ("free" = missing). Gemini: Pro models left the API free
+     * tier on 2026-04-01; 3.7 Flash is confirmed on the free tier and 3.8 Flash
+     * is expected to follow, but availability varies by account/region (verify
+     * 3.8 in AI Studio).
+     */
+    val modelTiers: Map<String, String> get() = when (this) {
+        GEMINI -> mapOf(
+            "gemini-3.8-flash" to "varies",
+            "gemini-3.7-flash" to "varies",
+            "gemini-3.1-pro-preview" to "paid",
+        )
+        else -> emptyMap()
+    }
+
+    /**
+     * Debug builds default Gemini to 3.5 Flash-Lite: 3.7 Flash intermittently
+     * returns 503 on the free tier during device testing (2026-09-01), and 3.8
+     * Flash's free-tier behavior is unverified, while Lite is already the
+     * higher-quota fallback. Release keeps the parity-locked 3.8 default.
+     */
+    val defaultModel: String get() = when (this) {
+        GEMINI -> if (BuildConfig.DEBUG) "gemini-3.5-flash-lite" else models.first()
+        else -> models.firstOrNull() ?: ""
+    }
+
+    /** Separate from [defaultModel] so Gemini fallback can use a higher-quota lite model. */
+    val defaultFallbackModel: String get() = when (this) {
+        GEMINI -> "gemini-3.5-flash-lite"
+        else -> models.getOrNull(1) ?: defaultModel
+    }
+
+    fun supportedModelOrDefault(model: String?): String {
+        val normalized = model?.let(::normalizeModelId)
+        return when {
+            normalized.isNullOrBlank() -> defaultModel
+            supportsCustomModelName -> normalized
+            models.contains(normalized) -> normalized
+            // #107/#132: a runtime lineup id picked from a fetched /models list must
+            // survive select, restore, and request routing. OpenAI keeps its id-shape
+            // gate; the multi-vendor providers have no stable id shape, and a stored id
+            // can only enter through the picker, so any stored id survives.
+            this == OPENAI && isOpenAiLineupId(normalized) -> normalized
+            this != OPENAI && supportsRuntimeLineup -> normalized
+            else -> defaultModel
+        }
+    }
+
+    fun supportedFallbackModelOrDefault(model: String?): String {
+        val normalized = model?.let(::normalizeModelId)
+        return when {
+            normalized.isNullOrBlank() -> defaultFallbackModel
+            supportsCustomModelName -> normalized
+            models.contains(normalized) -> normalized
+            // #107/#132: a runtime lineup id picked from a fetched /models list must
+            // survive select, restore, and request routing. OpenAI keeps its id-shape
+            // gate; the multi-vendor providers have no stable id shape, and a stored id
+            // can only enter through the picker, so any stored id survives.
+            this == OPENAI && isOpenAiLineupId(normalized) -> normalized
+            this != OPENAI && supportsRuntimeLineup -> normalized
+            else -> defaultFallbackModel
+        }
+    }
+
+    val requiresApiKey: Boolean get() = this != OLLAMA && this != ON_DEVICE
+    val requiresCustomEndpoint: Boolean get() = this == CUSTOM_OPENAI
+    val requiresCustomModelName: Boolean get() = this == CUSTOM_OPENAI
+    val usesConfigurableRequestTimeout: Boolean get() = this == OLLAMA || this == CUSTOM_OPENAI
+    val supportsCustomModelName: Boolean
+        get() = this == OPENROUTER || this == HUGGING_FACE || this == CUSTOM_OPENAI || this == OLLAMA
+
+    /**
+     * Serves a usable GET /models listing on the built-in [baseUrl] (#107/#132):
+     * the model sheet merges the fetched lineup over the curated list, and the
+     * curated default stays the fallback when no key is saved or the fetch fails.
+     */
+    val supportsRuntimeLineup: Boolean
+        get() = this == OPENAI || this == XAI || this == TOGETHER_AI || this == GROQ ||
+            this == HUGGING_FACE || this == FIREWORKS || this == DEEP_INFRA || this == MISTRAL
+
+    val apiFormat: ApiFormat get() = when (this) {
+        GEMINI -> ApiFormat.GEMINI
+        ANTHROPIC -> ApiFormat.ANTHROPIC
+        OPENAI, XAI, OPENROUTER, TOGETHER_AI, GROQ, HUGGING_FACE,
+        FIREWORKS, DEEP_INFRA, MISTRAL, OLLAMA, CUSTOM_OPENAI -> ApiFormat.OPENAI_COMPATIBLE
+        ON_DEVICE -> ApiFormat.ON_DEVICE
+    }
+
+    @get:StringRes
+    val apiKeyPlaceholderRes: Int get() = when (this) {
+        OLLAMA, ON_DEVICE -> R.string.ai_key_placeholder_ollama
+        CUSTOM_OPENAI -> R.string.ai_key_placeholder_custom
+        else -> R.string.api_key_placeholder
+    }
+    /** Picker grouping; declaration order = display order. */
+    enum class ProviderGroup { RECOMMENDED, CLOUD, LOCAL, DEVICE }
+
+    val group: ProviderGroup get() = when (this) {
+        GEMINI -> ProviderGroup.RECOMMENDED
+        OPENAI, ANTHROPIC, XAI, OPENROUTER, TOGETHER_AI, GROQ, HUGGING_FACE,
+        FIREWORKS, DEEP_INFRA, MISTRAL -> ProviderGroup.CLOUD
+        OLLAMA, CUSTOM_OPENAI -> ProviderGroup.LOCAL
+        ON_DEVICE -> ProviderGroup.DEVICE
+    }
+
+    /** One-line description under the provider name in pickers. */
+    @get:StringRes
+    val subtitleRes: Int get() = when (this) {
+        GEMINI -> R.string.ai_provider_subtitle_gemini
+        OPENAI -> R.string.ai_provider_subtitle_openai
+        ANTHROPIC -> R.string.ai_provider_subtitle_anthropic
+        XAI -> R.string.ai_provider_subtitle_xai
+        OPENROUTER -> R.string.ai_provider_subtitle_openrouter
+        TOGETHER_AI -> R.string.ai_provider_subtitle_together
+        GROQ -> R.string.ai_provider_subtitle_groq
+        HUGGING_FACE -> R.string.ai_provider_subtitle_huggingface
+        FIREWORKS -> R.string.ai_provider_subtitle_fireworks
+        DEEP_INFRA -> R.string.ai_provider_subtitle_deepinfra
+        MISTRAL -> R.string.ai_provider_subtitle_mistral
+        OLLAMA -> R.string.ai_provider_subtitle_ollama
+        CUSTOM_OPENAI -> R.string.ai_provider_subtitle_custom
+        ON_DEVICE -> R.string.ai_provider_on_device_subtitle
+    }
+
+    /** Where to get an API key; null for local / self-hosted / on-device. */
+    val signupUrl: String? get() = when (this) {
+        GEMINI -> "https://aistudio.google.com/apikey"
+        OPENAI -> "https://platform.openai.com/api-keys"
+        ANTHROPIC -> "https://console.anthropic.com/settings/keys"
+        XAI -> "https://console.x.ai"
+        OPENROUTER -> "https://openrouter.ai/keys"
+        TOGETHER_AI -> "https://api.together.ai/settings/api-keys"
+        GROQ -> "https://console.groq.com/keys"
+        HUGGING_FACE -> "https://huggingface.co/settings/tokens"
+        FIREWORKS -> "https://fireworks.ai/api-keys"
+        DEEP_INFRA -> "https://deepinfra.com/dash/keys"
+        MISTRAL -> "https://console.mistral.ai/api-keys"
+        OLLAMA, CUSTOM_OPENAI, ON_DEVICE -> null
+    }
+
+    enum class ApiFormat { GEMINI, OPENAI_COMPATIBLE, ANTHROPIC, ON_DEVICE }
+
+    companion object {
+        fun normalizeModelId(model: String): String =
+            when (model.trim()) {
+                "gemini-3.1-flash-lite-preview" -> "gemini-3.1-flash-lite"
+                else -> model
+            }
+
+        /**
+         * Id shape of the runtime OpenAI lineup (#107): the model picker
+         * merges /v1/models results over the curated list, and a picked
+         * runtime id must survive select, restore, and request routing.
+         * OpenAiModelsClient.filterGptLineup applies the same shape alongside
+         * the owner and shutdown checks, so picker and validation agree.
+         */
+        fun isOpenAiLineupId(id: String): Boolean = OPENAI_LINEUP.containsMatchIn(id)
+
+        private val OPENAI_LINEUP = Regex("^gpt-(4o|4\\.1|[56])")
+    }
+}

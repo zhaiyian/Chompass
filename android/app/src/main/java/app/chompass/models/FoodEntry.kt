@@ -1,0 +1,195 @@
+package app.chompass.models
+
+import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.util.UUID
+
+@Serializable
+data class FoodEntry(
+    @Serializable(with = UuidSerializer::class)
+    val id: UUID = UUID.randomUUID(),
+    val name: String,
+    val calories: Int,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    @Serializable(with = InstantSerializer::class)
+    val timestamp: Instant = Instant.now(),
+    /** Filename (not path) under filesDir/fudai-food-images/ where the JPEG lives. */
+    val imageFilename: String? = null,
+    val emoji: String? = null,
+    val source: FoodSource,
+    val mealType: String = MealType.OTHER.id,
+    val sugar: Double? = null,
+    val addedSugar: Double? = null,
+    val fiber: Double? = null,
+    val saturatedFat: Double? = null,
+    val monounsaturatedFat: Double? = null,
+    val polyunsaturatedFat: Double? = null,
+    val cholesterol: Double? = null,
+    val sodium: Double? = null,
+    val potassium: Double? = null,
+    val transFat: Double? = null,
+    val calcium: Double? = null,
+    val iron: Double? = null,
+    val magnesium: Double? = null,
+    val zinc: Double? = null,
+    val vitaminA: Double? = null,
+    val vitaminC: Double? = null,
+    val vitaminD: Double? = null,
+    val vitaminB12: Double? = null,
+    val vitaminE: Double? = null,
+    val vitaminK: Double? = null,
+    val folate: Double? = null,
+    val omega3: Double? = null,
+    val caffeine: Double? = null,
+    val servingSizeGrams: Double? = null,
+    val servingUnitOptions: List<ServingUnitOption> = emptyList(),
+    val selectedServingUnit: String? = null,
+    val selectedServingQuantity: Double? = null,
+    val customNote: String? = null,
+    /** Shared id across all diary rows produced by one Recipe log; null for non-recipe entries. */
+    @Serializable(with = UuidSerializer::class)
+    val recipeLogId: UUID? = null,
+    /**
+     * Optional grounding provenance. Null for legacy / ungrounded entries.
+     * Defaults keep older DataStore JSON and diary exports decodable.
+     */
+    val grounding: FoodGroundingProvenance? = null,
+    /**
+     * Optional composite-meal breakdown. Empty / absent on legacy records.
+     * When non-empty, grams/macros sum to the meal totals.
+     */
+    val constituents: List<FoodConstituent> = emptyList(),
+    /**
+     * Optional barcode-product enrichment (Open Food Facts photo/metadata card).
+     * Display-only: never serialized into diary export / sync / meal-share.
+     */
+    val productMetadata: FoodProductMetadata? = null,
+    /**
+     * Fingerprint of the constituent mix the meal-level micros were estimated
+     * for. Null on legacy / manual entries — the stale-composition note is
+     * never shown when origin is unknown. Local DataStore only; not a diary
+     * / sync / meal-share field.
+     */
+    val microsCompositionSignature: String? = null,
+    /**
+     * Entry-level fields the fill-missing AI explicitly answered, even when
+     * the answer was zero (macros: "fat") or null (micros: "sodium") —
+     * [FoodEntryGaps.gapReport] stops counting them, so a legit-zero entry
+     * (vodka soda) completes after one fill instead of re-appearing in every
+     * scan. Tokens are [GapMacroField.jsonKey] / [MicronutrientField.jsonKey].
+     * Local DataStore only; never serialized into diary export / sync /
+     * meal-share (microsCompositionSignature precedent). Defaults keep older
+     * bucket JSON decodable.
+     */
+    val gapAnsweredFields: Set<String> = emptySet(),
+    /**
+     * Normalized names (trim + lowercase, the favoriteKey/matching convention)
+     * of constituent rows the fill-missing AI answered without a usable
+     * value: the pass matched no analysis row for them, or the reply schema
+     * carried no constituents at all. [FoodEntryGaps.gapReport] stops
+     * counting their all-zero rows, so a constituents-only entry (cocktails,
+     * Mealie imports the model could not match) completes after one fill
+     * instead of re-appearing in every scan. Local DataStore only; never
+     * serialized into diary export / sync / meal-share (gapAnsweredFields
+     * precedent). Defaults keep older bucket JSON decodable.
+     */
+    val gapAnsweredConstituentNames: Set<String> = emptySet(),
+    /**
+     * True while the entry is a plan (meal planning mode). Local DataStore
+     * only; never serialized into diary export / sync / meal-share
+     * (productMetadata/microsCompositionSignature precedent). Defaults keep
+     * older bucket JSON decodable.
+     */
+    val planned: Boolean = false,
+) {
+    /**
+     * Stable identity for Favorites / Frequent / Recents dedup.
+     *
+     * Keyed by normalized name only — not calories or serving size — so re-logging
+     * the same food at a different grams / piece / unit amount stays one food.
+     * Brand-new scans / manual entries that would collide are renamed via
+     * [disambiguateFoodName] ("Name (2)", …) before save. Diary rows remain
+     * separate; only the Saved Meals pickers collapse by this key.
+     */
+    val favoriteKey: String get() = name.trim().lowercase()
+
+    /**
+     * New entry for the given log date (new id), copying nutrition and media from this entry.
+     * The image filename is carried over; the repository copies the JPEG to the new
+     * entry's own filename on save (see FoodRepository.resolveReloggedImage) so relogs
+     * keep the photo without two entries sharing one file.
+     */
+    fun duplicatedForLogging(
+        logDate: Instant,
+        mealType: String = MealType.currentMealId
+    ): FoodEntry = FoodEntry(
+        id = UUID.randomUUID(),
+        name = name,
+        calories = calories,
+        protein = protein,
+        carbs = carbs,
+        fat = fat,
+        timestamp = logDate,
+        imageFilename = imageFilename, // copied to the new entry's filename on save
+        emoji = emoji,
+        source = source,
+        mealType = mealType,
+        sugar = sugar,
+        addedSugar = addedSugar,
+        fiber = fiber,
+        saturatedFat = saturatedFat,
+        monounsaturatedFat = monounsaturatedFat,
+        polyunsaturatedFat = polyunsaturatedFat,
+        cholesterol = cholesterol,
+        sodium = sodium,
+        potassium = potassium,
+        transFat = transFat,
+        calcium = calcium,
+        iron = iron,
+        magnesium = magnesium,
+        zinc = zinc,
+        vitaminA = vitaminA,
+        vitaminC = vitaminC,
+        vitaminD = vitaminD,
+        vitaminB12 = vitaminB12,
+        vitaminE = vitaminE,
+        vitaminK = vitaminK,
+        folate = folate,
+        omega3 = omega3,
+        caffeine = caffeine,
+        servingSizeGrams = servingSizeGrams,
+        servingUnitOptions = servingUnitOptions,
+        selectedServingUnit = selectedServingUnit,
+        selectedServingQuantity = selectedServingQuantity,
+        customNote = customNote,
+        grounding = grounding,
+        constituents = constituents,
+        productMetadata = productMetadata,
+        microsCompositionSignature = microsCompositionSignature,
+    )
+}
+
+/**
+ * kcal + macro totals over a set of entries, plus fiber/sugar for sites that
+ * need them. One pass at the call site replaces the retyped per-nutrient
+ * `sumOf` blocks; identical arithmetic, so no rounding changes anywhere.
+ */
+data class NutrientTotals(
+    val calories: Int,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    val fiber: Double = 0.0,
+    val sugar: Double = 0.0,
+)
+
+fun Iterable<FoodEntry>.nutritionTotals(): NutrientTotals = NutrientTotals(
+    calories = sumOf { it.calories },
+    protein = sumOf { it.protein },
+    carbs = sumOf { it.carbs },
+    fat = sumOf { it.fat },
+    fiber = sumOf { it.fiber ?: 0.0 },
+    sugar = sumOf { it.sugar ?: 0.0 },
+)

@@ -1,0 +1,376 @@
+package app.chompass.ui.progress
+
+import app.chompass.ui.components.rememberChompassSheetState
+import app.chompass.ui.components.ChompassBottomSheet
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.models.BodyFatEntry
+import app.chompass.models.LocaleFormat
+import app.chompass.models.BodyMeasurement
+import app.chompass.models.Gender
+import app.chompass.ui.components.ChompassDialog
+import app.chompass.ui.components.ChompassDialogActions
+import app.chompass.ui.components.ChompassSurface
+import app.chompass.ui.navigation.BottomNavScrollPadding
+import app.chompass.ui.theme.AppColors
+import java.time.format.DateTimeFormatter
+import app.chompass.ui.theme.AppRadii
+import app.chompass.ui.theme.AppTextOpacity
+import java.util.Locale
+import app.chompass.models.UnitFormat
+
+private val measurementHistoryFmt: DateTimeFormatter =
+    LocaleFormat.mediumDateZoned()
+
+private fun displayLengthCm(context: android.content.Context, cm: Double, useMetric: Boolean): String =
+    if (useMetric) String.format(Locale.getDefault(), "%.1f %s", cm, context.getString(R.string.unit_cm))
+    else String.format(Locale.getDefault(), "%.1f %s", UnitFormat.cmToInches(cm), context.getString(R.string.unit_in))
+
+/** Logged sites in display order, skipping any that weren't entered. */
+private fun measurementSiteList(context: android.content.Context, m: BodyMeasurement): List<Pair<String, Double>> = buildList {
+    m.neckCm?.let { add(context.getString(R.string.measure_neck) to it) }
+    m.waistCm?.let { add(context.getString(R.string.measure_waist) to it) }
+    m.hipsCm?.let { add(context.getString(R.string.measure_hips) to it) }
+    m.chestCm?.let { add(context.getString(R.string.measure_chest) to it) }
+    m.upperArmCm?.let { add(context.getString(R.string.measure_upper_arm) to it) }
+    m.thighCm?.let { add(context.getString(R.string.measure_thigh) to it) }
+    m.calfCm?.let { add(context.getString(R.string.measure_calf) to it) }
+    m.wristCm?.let { add(context.getString(R.string.measure_wrist) to it) }
+}
+
+/** Derived metrics computable from this entry + profile, skipping any missing their inputs. */
+private fun derivedMetricList(context: android.content.Context, m: BodyMeasurement, gender: Gender, heightCm: Double): List<Pair<String, String>> = buildList {
+    m.waistToHipRatio?.let { add(context.getString(R.string.derived_waist_to_hip) to String.format(Locale.getDefault(), "%.2f", it)) }
+    m.waistToHeightRatio(heightCm)?.let { add(context.getString(R.string.derived_waist_to_height) to String.format(Locale.getDefault(), "%.2f", it)) }
+    m.usNavyBodyFatPercent(gender, heightCm)?.let { add(context.getString(R.string.derived_navy_body_fat) to String.format(Locale.getDefault(), "%.0f%%", it)) }
+    m.relativeFatMassPercent(gender, heightCm)?.let { add(context.getString(R.string.derived_rfm_body_fat) to String.format(Locale.getDefault(), "%.0f%%", it)) }
+    m.wristFrame(gender, heightCm)?.let { add(context.getString(R.string.derived_frame) to context.getString(it.labelRes)) }
+}
+
+private fun measurementHistorySummary(context: android.content.Context, m: BodyMeasurement, gender: Gender, heightCm: Double, useMetric: Boolean): String {
+    val sites = measurementSiteList(context, m).map { "${it.first} ${displayLengthCm(context, it.second, useMetric)}" }
+    val navy = m.usNavyBodyFatPercent(gender, heightCm)?.let { "Navy ${String.format(Locale.getDefault(), "%.0f%%", it)}" }
+    val rfm = m.relativeFatMassPercent(gender, heightCm)?.let { "RFM ${String.format(Locale.getDefault(), "%.0f%%", it)}" }
+    val bf = listOfNotNull(navy, rfm).joinToString(" · ").ifEmpty { null }
+    return (sites + listOfNotNull(bf)).joinToString(" · ")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BodyMeasurementsHistorySheet(
+    entries: List<BodyMeasurement>,
+    gender: Gender,
+    heightCm: Double,
+    useMetric: Boolean,
+    onDelete: (java.util.UUID) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val state = rememberChompassSheetState()
+    val sheetSurface = MaterialTheme.colorScheme.surfaceContainerLow
+    ChompassBottomSheet(
+        onDismiss = onDismiss,
+        sheetState = state,
+        containerColor = sheetSurface,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.measurement_history), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done), color = AppColors.Calorie) }
+            }
+            Spacer(Modifier.height(12.dp))
+            ChompassSurface(modifier = Modifier.fillMaxWidth(), cornerRadius = AppRadii.SectionCard, padding = 0.dp) {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(vertical = 4.dp)) {
+                    items(entries, key = { it.id }) { entry ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(measurementHistoryFmt.format(entry.date), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    measurementHistorySummary(LocalContext.current, entry, gender, heightCm, useMetric),
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                                )
+                            }
+                            IconButton(onClick = { onDelete(entry.id) }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = stringResource(R.string.action_delete),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Faint),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * Settings → Personal Info detail screen for body-circumference measurements. Mirrors the Other
+ * Nutrients screen: a tappable row per body part that opens a wheel picker to set its value, plus
+ * the AI-derived metrics and history. Talks to BodyMeasurementRepository directly.
+ */
+/**
+ * Tape-derived body-fat reading dated to the measurement it was computed from
+ * (not "now"), so the history row and the profile stamp line up with the tape.
+ */
+internal fun tapeBodyFatEntry(percent: Double, measurement: BodyMeasurement): BodyFatEntry =
+    BodyFatEntry(bodyFatFraction = percent / 100.0, date = measurement.date)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BodyMeasurementsScreen(container: AppContainer, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val entries by container.bodyMeasurementRepository.entries.collectAsState(initial = emptyList())
+    val profile by container.profileRepository.profile.collectAsState(initial = null)
+    val heightUnit by container.prefs.heightUnit.collectAsState(initial = "cm")
+    val heightMetric = heightUnit == "cm"
+    val gender = profile?.gender ?: Gender.MALE
+    val heightCm = profile?.heightCm ?: 0.0
+    val latest = entries.maxByOrNull { it.date }
+
+    var editing by remember { mutableStateOf<BodyMeasurement.Site?>(null) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showUseAsBodyFat by remember { mutableStateOf(false) }
+    var useNavyEstimate by remember { mutableStateOf(true) }
+    val navyPercent = latest?.usNavyBodyFatPercent(gender, heightCm)
+    val rfmPercent = latest?.relativeFatMassPercent(gender, heightCm)
+
+    val notSet = stringResource(R.string.settings_not_set)
+    val cmUnit = stringResource(R.string.unit_cm)
+    val inUnit = stringResource(R.string.unit_in)
+    fun displayValue(site: BodyMeasurement.Site): String {
+        val cm = latest?.value(site) ?: return notSet
+        return if (heightMetric) String.format(Locale.getDefault(), "%.0f %s", cm, cmUnit) else String.format(Locale.getDefault(), "%.0f %s", UnitFormat.cmToInches(cm), inUnit)
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            app.chompass.ui.settings.SettingsTopBar(
+                title = stringResource(R.string.body_measurements_title),
+                onBack = onBack,
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 14.dp, bottom = BottomNavScrollPadding),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Text(
+                    "Optional. Chompass turns these into waist-to-hip, waist-to-height, body-fat %, and frame size, and reads them when it recalculates your goals and in Coach.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = AppTextOpacity.Muted)
+                )
+            }
+            item {
+                ChompassSurface(modifier = Modifier.fillMaxWidth(), cornerRadius = AppRadii.SectionCard, padding = 0.dp) {
+                    Column {
+                        BodyMeasurement.Site.values().forEachIndexed { index, site ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { editing = site }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(stringResource(site.labelRes), modifier = Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                Text(displayValue(site), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted))
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Disabled), modifier = Modifier.size(18.dp))
+                            }
+                            if (index != BodyMeasurement.Site.values().lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                            }
+                        }
+                    }
+                }
+            }
+            if (latest != null) {
+                val derived = derivedMetricList(context, latest, gender, heightCm)
+                if (derived.isNotEmpty()) {
+                    item {
+                        ChompassSurface(modifier = Modifier.fillMaxWidth(), cornerRadius = AppRadii.SectionCard, padding = 16.dp) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(stringResource(R.string.label_derived), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted))
+                                derived.forEach { (label, value) ->
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(label, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                                        Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AppColors.Calorie)
+                                    }
+                                }
+                                if (navyPercent != null || rfmPercent != null) {
+                                    Text(
+                                        stringResource(R.string.derived_tape_estimate_caption),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            useNavyEstimate = navyPercent != null
+                                            showUseAsBodyFat = true
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.action_use_as_body_fat), color = AppColors.Calorie)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (heightCm <= 0.0) {
+                    // Derived metrics need a height; say so instead of omitting silently.
+                    item {
+                        Text(
+                            stringResource(R.string.body_metrics_height_hint),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        )
+                    }
+                }
+                if (entries.size > 1) {
+                    item {
+                        ChompassSurface(
+                            modifier = Modifier.fillMaxWidth().clickable { showHistory = true },
+                            cornerRadius = 16.dp,
+                            padding = 14.dp
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.measurement_history), modifier = Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                Text("${entries.size}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted))
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Disabled), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editing?.let { site ->
+        BodyMeasurementEntryDialog(
+            site = site,
+            currentCm = latest?.value(site),
+            useMetric = heightMetric,
+            onUnitChange = { metric ->
+                scope.launch { container.prefs.setHeightUnit(if (metric) "cm" else "ftin") }
+            },
+            onSave = { cm ->
+                scope.launch { container.bodyMeasurementRepository.setValue(site, cm) }
+                editing = null
+            },
+            onDismiss = { editing = null },
+        )
+    }
+    if (showUseAsBodyFat && (navyPercent != null || rfmPercent != null)) {
+        val chosen = if (useNavyEstimate && navyPercent != null) navyPercent else rfmPercent ?: navyPercent
+        val chosenLabel = String.format(Locale.getDefault(), "%.0f", chosen)
+        ChompassDialog(onDismissRequest = { showUseAsBodyFat = false }) {
+            Text(
+                stringResource(R.string.confirm_log_tape_body_fat, chosenLabel),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (navyPercent != null && rfmPercent != null) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { useNavyEstimate = true },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = useNavyEstimate, onClick = { useNavyEstimate = true })
+                    Text(stringResource(R.string.confirm_tape_source_navy))
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { useNavyEstimate = false },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = !useNavyEstimate, onClick = { useNavyEstimate = false })
+                    Text(stringResource(R.string.confirm_tape_source_rfm))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.action_ok),
+                onPrimary = {
+                    val pct = if (useNavyEstimate && navyPercent != null) navyPercent else rfmPercent ?: navyPercent
+                    if (pct != null && latest != null) {
+                        scope.launch {
+                            // Explicit user confirmation: dated to the measurement,
+                            // drives the profile row past the import spike guard.
+                            container.bodyFatRepository.addEntry(
+                                tapeBodyFatEntry(pct, latest),
+                                forceProfile = true,
+                            )
+                        }
+                    }
+                    showUseAsBodyFat = false
+                },
+                dismissText = stringResource(R.string.action_cancel),
+                onDismiss = { showUseAsBodyFat = false }
+            )
+        }
+    }
+    if (showHistory) {
+        BodyMeasurementsHistorySheet(
+            entries = entries.sortedByDescending { it.date },
+            gender = gender,
+            heightCm = heightCm,
+            useMetric = heightMetric,
+            onDelete = { id -> scope.launch { container.bodyMeasurementRepository.deleteEntry(id) } },
+            onDismiss = { showHistory = false }
+        )
+    }
+}

@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "source": "docs/CALCULATION_METHODS.md + CalculationGoldenScenariosTest",
+  "scenarios": [
+    {
+      "id": "golden_maleModerateMaintain_mifflinPath",
+      "profile": {
+        "sex": "male",
+        "age": 30,
+        "heightCm": 180,
+        "weightKg": 80,
+        "bodyFatPercentage": null,
+        "activityLevel": "moderate",
+        "goal": "maintain",
+        "weeklyChangeKg": null,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1780.0,
+        "bmrTol": 0.5,
+        "tdee": 2607.7,
+        "tdeeTol": 0.5,
+        "calorieAdjustment": 0,
+        "dailyCalories": 2607,
+        "estimatedDailyActiveCalories": 828,
+        "sedentaryCalorieBudget": 1779,
+        "proteinGoal": 128,
+        "fatGoal": 58
+      }
+    },
+    {
+      "id": "golden_femaleCut_katchPath",
+      "profile": {
+        "sex": "female",
+        "age": 35,
+        "heightCm": 165,
+        "weightKg": 70,
+        "bodyFatPercentage": 0.28,
+        "activityLevel": "light",
+        "goal": "lose",
+        "weeklyChangeKg": 0.5,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1458.64,
+        "bmrTol": 1.0,
+        "calorieAdjustment": -550,
+        "proteinGoal": 98
+      }
+    },
+    {
+      "id": "golden_femaleCut_katchStale_mifflinFallback",
+      "profile": {
+        "sex": "female",
+        "age": 35,
+        "heightCm": 165,
+        "weightKg": 70,
+        "bodyFatPercentage": 0.28,
+        "bodyFatUpdatedAt": "2026-01-01T00:00:00Z",
+        "activityLevel": "light",
+        "goal": "lose",
+        "weeklyChangeKg": 0.5,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1395.25,
+        "bmrTol": 1.0,
+        "calorieAdjustment": -550,
+        "proteinGoal": 98
+      }
+    },
+    {
+      "id": "golden_ketoLose_sedentaryCarbsClamped",
+      "profile": {
+        "sex": "male",
+        "age": 40,
+        "heightCm": 178,
+        "weightKg": 95,
+        "bodyFatPercentage": 0.32,
+        "activityLevel": "sedentary",
+        "goal": "lose",
+        "weeklyChangeKg": 0.8,
+        "ketoMode": true
+      },
+      "expect": {
+        "carbsGoal": 20,
+        "fatGoalMin": 45
+      }
+    },
+    {
+      "id": "golden_gainExtraActive_proteinAndCalories",
+      "profile": {
+        "sex": "male",
+        "age": 25,
+        "heightCm": 185,
+        "weightKg": 75,
+        "bodyFatPercentage": null,
+        "activityLevel": "extra_active",
+        "goal": "gain",
+        "weeklyChangeKg": 0.25,
+        "ketoMode": false
+      },
+     "expect": {
+      "calorieAdjustment": 275,
+      "proteinGoal": 165,
+      "fatGoal": 82
+    }
+  },
+    {
+      "id": "golden_highBf_lbmProteinCap",
+      "profile": {
+        "sex": "male",
+        "age": 40,
+        "heightCm": 180,
+        "weightKg": 120,
+        "bodyFatPercentage": 0.4,
+        "activityLevel": "moderate",
+        "goal": "lose",
+        "weeklyChangeKg": 0.5,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1925.2,
+        "bmrTol": 0.5,
+        "tdee": 2820.42,
+        "tdeeTol": 0.5,
+        "dailyCalories": 2270,
+        "proteinGoal": 172,
+        "fatGoal": 72
+      }
+    },
+    {
+      "id": "golden_smallFemaleSedentaryLose_clampedToFloor",
+      "profile": {
+        "sex": "female",
+        "age": 60,
+        "heightCm": 155,
+        "weightKg": 52,
+        "bodyFatPercentage": null,
+        "activityLevel": "sedentary",
+        "goal": "lose",
+        "weeklyChangeKg": 0.5,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1027.75,
+        "bmrTol": 0.5,
+        "calorieAdjustment": -550,
+        "dailyCalories": 1200
+      }
+    },
+    {
+      "id": "golden_minWeightLoseFast_clampedToFloor",
+      "profile": {
+        "sex": "female",
+        "age": 20,
+        "heightCm": 150,
+        "weightKg": 30,
+        "bodyFatPercentage": null,
+        "activityLevel": "sedentary",
+        "goal": "lose",
+        "weeklyChangeKg": 1.0,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 976.5,
+        "bmrTol": 0.5,
+        "calorieAdjustment": -1100,
+        "dailyCalories": 1200
+      }
+    },
+    {
+      "id": "golden_defaultMaleLoseFast_clampedToBmr",
+      "profile": {
+        "sex": "male",
+        "age": 25,
+        "heightCm": 175,
+        "weightKg": 70,
+        "bodyFatPercentage": null,
+        "activityLevel": "moderate",
+        "goal": "lose",
+        "weeklyChangeKg": 1.0,
+        "ketoMode": false
+      },
+      "expect": {
+        "bmr": 1673.75,
+        "bmrTol": 0.5,
+        "calorieAdjustment": -1100,
+        "dailyCalories": 1674
+      }
+    },
+    {
+      "id": "golden_sparseLogging_calendarDayAverage",
+      "kind": "averageDailyIntake",
+      "input": {
+        "totalCalories": 6000,
+        "loggedDays": 3,
+        "calendarDaysInWindow": 90
+      },
+      "expect": {
+        "avgDailyCalories": 66,
+        "usesCalendarDayAverage": true
+      }
+    },
+    {
+      "id": "golden_denseLogging_loggedDayAverage",
+      "kind": "averageDailyIntake",
+      "input": {
+        "totalCalories": 45000,
+        "loggedDays": 45,
+        "calendarDaysInWindow": 90
+      },
+      "expect": {
+        "avgDailyCalories": 1000,
+        "usesCalendarDayAverage": false
+      }
+    },
+    {
+      "id": "golden_rfm_male_180_80",
+      "kind": "rfm",
+      "input": { "sex": "male", "heightCm": 180, "waistCm": 80 },
+      "expect": { "percent": 19 }
+    },
+    {
+      "id": "golden_rfm_female_180_80",
+      "kind": "rfm",
+      "input": { "sex": "female", "heightCm": 180, "waistCm": 80 },
+      "expect": { "percent": 31 }
+    },
+    {
+      "id": "golden_rfm_other_uses_male",
+      "kind": "rfm",
+      "input": { "sex": "other", "heightCm": 180, "waistCm": 80 },
+      "expect": { "percent": 19 }
+    },
+    {
+      "id": "golden_rfm_reject_zero_waist",
+      "kind": "rfm",
+      "input": { "sex": "male", "heightCm": 180, "waistCm": 0 },
+      "expect": { "percent": null }
+    },
+    {
+      "id": "golden_rfm_reject_zero_height",
+      "kind": "rfm",
+      "input": { "sex": "male", "heightCm": 0, "waistCm": 80 },
+      "expect": { "percent": null }
+    },
+    {
+      "id": "golden_rfm_reject_out_of_range",
+      "kind": "rfm",
+      "input": { "sex": "female", "heightCm": 165, "waistCm": 400 },
+      "expect": { "percent": null }
+    }
+  ]
+}

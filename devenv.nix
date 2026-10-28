@@ -1,0 +1,202 @@
+{ pkgs, ... }:
+
+{
+  devenv.warnOnNewVersion = false;
+
+  android = {
+    enable = true;
+    platforms.version = [
+      "36"
+      "36.1"
+    ];
+    buildTools.version = [ "36.0.0" ];
+    emulator.enable = false;
+    systemImages.enable = false;
+    ndk.enable = false;
+    googleTVAddOns.enable = false;
+  };
+
+  # ktlint is the CLI, not the Gradle plugin: the plugin hooks the standalone
+  # Kotlin Android plugin, which AGP 9 replaced with built-in Kotlin support, so
+  # it never sees app/src. Running the CLI also keeps the linter out of the
+  # F-Droid release build graph.
+  # uv: parity validators and asset scripts (never bare python/pip).
+  packages = [
+    pkgs.android-tools
+    pkgs.hugo
+    pkgs.nodejs
+    pkgs.typescript
+    pkgs.ktlint
+    pkgs.uv
+  ];
+
+  enterShell = ''
+    mkdir -p android
+    printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+    # Avoid hanging adb commands when Windows also runs adb on the shared WSL localhost.
+    export ANDROID_ADB_SERVER_PORT=5038
+    # Reject AI attribution commit trailers (Co-authored-by, Made-with, …).
+    # Pin Codeberg maintainer identity for this clone (do not use global personal identity).
+    if [[ -d .git ]]; then
+      chmod +x scripts/git-hooks/* 2>/dev/null || true
+      git config core.hooksPath scripts/git-hooks
+      git config user.name fitguy
+      git config user.email fit.guy@mailfence.com
+    fi
+  '';
+
+  scripts.build-debug.exec = "cd android && ./gradlew :app:assembleDebug";
+  scripts.install-debug.exec = "./scripts/install_debug.sh";
+  scripts.build-release.exec = "cd android && ./gradlew :app:assembleRelease";
+  scripts.site-serve.exec = "hugo server -D -s website --baseURL http://localhost:1313/Chompass/ -d /tmp/chompass-hugo-public";
+  scripts.site-build.exec = "hugo --minify -s website";
+  scripts.site-deploy.exec = "./scripts/deploy_pages.sh";
+  scripts.pwa-test.exec = "cd web && node --test app/src/lib/chompass-core/__tests__/*.test.js app/src/lib/__tests__/*.test.js";
+  scripts.pwa-typecheck.exec = "cd web && tsc --checkJs --noEmit -p tsconfig.json";
+  scripts.pwa-serve.exec = "node web/serve.mjs";
+  # Rule scope lives in android/.editorconfig. `kotlin-lint-fix` autocorrects.
+  scripts.kotlin-lint.exec = "cd android && ktlint --relative 'app/src/**/*.kt'";
+  scripts.kotlin-lint-fix.exec = "cd android && ktlint --format --relative 'app/src/**/*.kt'";
+
+  tasks."build:debug" = {
+    exec = "cd android && ./gradlew :app:assembleDebug";
+    description = "Assemble the debug APK";
+  };
+
+  tasks."build:release" = {
+    exec = "cd android && ./gradlew :app:assembleRelease";
+    description = "Assemble the signed release APK (F-Droid / Codeberg distribution)";
+  };
+
+  tasks."device:maestro" = {
+    exec = "./scripts/device_pass_maestro.sh";
+    description = "Run Maestro device-pass flows on the phone (adb over Wi-Fi, WSL-native; connect once via scripts/adb_wifi.sh)";
+  };
+
+  tasks."release:package" = {
+    exec = "./scripts/package_release.sh";
+    description = "Run pre-release checks (Android tests + parity), build release APKs, package, and write SHA256SUMS";
+  };
+
+  tasks."lint:kotlin" = {
+    exec = "cd android && ktlint --relative 'app/src/**/*.kt'";
+    description = "ktlint over the Android sources (scope: android/.editorconfig)";
+  };
+
+  tasks."release:check-parity" = {
+    exec = "./scripts/check_parity.sh";
+    description = "PWA tests + typecheck + validate testdata/parity fixtures against contracts/ schemas";
+  };
+
+  tasks."ci:verify" = {
+    exec = ''
+      set -euo pipefail
+      cd android && ./gradlew :app:testDebugUnitTest
+      cd ..
+      ./scripts/check_parity.sh
+    '';
+    description = "PR happy path: Android debug unit tests + release:check-parity";
+  };
+
+  tasks."release:check-metadata" = {
+    exec = "./scripts/check_release_metadata.sh";
+    description = "Verify version consistency across build.gradle.kts, docs/CHANGELOG.md, website/hugo.toml, and docs/fdroid metadata";
+  };
+
+  tasks."release:publish" = {
+    exec = ''
+      set -euo pipefail
+      if [[ -z "''${RELEASE_VERSION:-}" ]]; then
+        echo "Usage: RELEASE_VERSION=1.14.10 devenv tasks run release:publish" >&2
+        echo "Optional flags via PUBLISH_FLAGS, e.g. PUBLISH_FLAGS='--skip-pages'" >&2
+        exit 1
+      fi
+      # shellcheck disable=SC2086
+      ./scripts/publish_release.sh "$RELEASE_VERSION" ''${PUBLISH_FLAGS:-}
+    '';
+    description = "Upload release APKs to Codeberg and redeploy Pages (RELEASE_VERSION=x.y.z)";
+  };
+
+  tasks."release:screenshots" = {
+    exec = "./scripts/export_release_screenshots.sh";
+    description = "Render JVM screenshot previews; export to release-screenshots/ and docs/screenshots/";
+  };
+
+  tasks."release:assets-list" = {
+    exec = "./scripts/manage_release_assets.sh list";
+    description = "List Codeberg release attachments and estimated total size";
+  };
+
+  tasks."triage:status" = {
+    exec = ''
+      set -u
+      for pair in "own-tracker:docs/local/issue-triage-state.json" "upstream:docs/local/upstream-triage-state.json"; do
+        name="''${pair%%:*}"; file="''${pair#*:}"
+        if [[ ! -f "$file" ]]; then
+          echo "$name: no state file ($file) — never run?"
+          continue
+        fi
+        last=$(jq -r '.last_run // "?"' "$file")
+        if [[ -z "$last" || "$last" == "?" ]]; then
+          echo "$name: last run unknown ($file)"
+          continue
+        fi
+        days=$(( ( $(date -d "$last" +%s) - $(date +%s) ) / 86400 ))
+        if (( days < 0 )); then days=$(( -days )); fi
+        echo "$name: last run $last ($days day(s) ago)"
+      done
+    '';
+    description = "Report last issue/upstream triage run from docs/local state files (freshness check); use --show-output";
+  };
+
+  tasks."backup:local-notes" = {
+    exec = ''
+      set -euo pipefail
+      DEST="''${BACKUP_DIR:-$HOME/chompass-backups}"
+      mkdir -p "$DEST"
+      OUT="$DEST/local-notes-$(date +%Y%m%d-%H%M%S).tar.gz"
+      tar -czf "$OUT" \
+        docs/local docs/archive \
+        docs/PERFORMANCE.md docs/WEB_PRESENCE.md docs/DEMO_HERO_FIREFOX.md \
+        docs/SECURITY_HARDENING_PLAN.md docs/FOOD_ACCURACY_BENCHMARK_STATUS.md \
+        docs/UNCERTAINTY_DRIVEN_ENTRY.md \
+        .cursor .claude .opencode \
+        AGENTS.md CLAUDE.md opencode.json \
+        scripts/capture_android_perf_baseline.sh \
+        scripts/capture_entry_perf.sh scripts/capture_entry_perf.ps1 \
+        scripts/summarize_entry_perf.py scripts/perf_entry_benchmark.sh \
+        scripts/capture_ondevice_llm_daily.sh \
+        scripts/prepare_ondevice_llm_fixtures.py \
+        scripts/push_ondevice_model.sh \
+        scripts/device_test_sweep.sh scripts/release_verify_device.sh \
+        scripts/verify_upstream_bugfixes.sh scripts/scan_git_secrets.sh \
+        scripts/generate_blog_accuracy_charts.py \
+        scripts/generate_barcode_fixture.py \
+        scripts/hero_states.sh scripts/_hero_states_check.sh \
+        2>/dev/null || true
+      ls -lh "$OUT"
+      echo "Backup: $OUT (local-only state; never committed)"
+    '';
+    description = "Tar the local-only maintainer state (gitignored config dirs + notes) into ~/chompass-backups; set BACKUP_DIR to override";
+  };
+
+  tasks."benchmark:food-accuracy-smoke" = {
+    exec = "./scripts/check_food_accuracy_smoke.sh";
+    description = "Deterministic food-accuracy smoke (stub eval + grounded metrics + retrieval golden)";
+  };
+
+  tasks."site:serve" = {
+    exec = "hugo server -D -s website --baseURL http://localhost:1313/Chompass/ -d /tmp/chompass-hugo-public";
+    description = "Preview the Codeberg Pages Hugo site locally (publishDir outside the repo so the static-app mount cannot trigger rebuild loops)";
+  };
+
+  tasks."site:build" = {
+    exec = "hugo --minify -s website";
+    description = "Build the static Codeberg Pages site into website/public";
+  };
+
+  tasks."site:deploy" = {
+    exec = "./scripts/deploy_pages.sh";
+    description = "Build site and force-push the orphan pages branch for Codeberg Pages webhook deploy";
+  };
+}

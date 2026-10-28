@@ -1,0 +1,290 @@
+package app.chompass.ui.settings
+
+import androidx.navigation.NavHostController
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.chompass.AppContainer
+import app.chompass.R
+import app.chompass.models.BodyMeasurement
+import app.chompass.models.HomeTopNutrient
+import app.chompass.models.UnitFormat
+import app.chompass.ui.components.ChompassSurface
+import app.chompass.ui.components.ChompassDialog
+import app.chompass.ui.components.ChompassDialogActions
+
+import app.chompass.ui.progress.TimeRange
+import java.util.Locale
+import app.chompass.ui.theme.AppRadii
+import app.chompass.ui.theme.AppTextOpacity
+
+/**
+ * Settings → App & Display → Customize progress. Groups everything that tunes the
+ * Progress tab: the default time range (moved here from App & Display) and the
+ * optional per-site body-measurement trend plots (off by default). Plot data comes
+ * from Personal Info → Body measurements; enabling a site here just renders its
+ * trend card on the Progress tab.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CustomizeProgressScreen(
+    container: AppContainer,
+    nav: NavHostController? = null,
+    onBack: () -> Unit,
+) {
+    val vm: SettingsViewModel = rememberSettingsViewModel(container, nav)
+    val ui by vm.ui.collectAsState()
+    var sheet by remember { mutableStateOf<SettingsSheet?>(null) }
+    var showNutrientAveragesWarning by remember { mutableStateOf(false) }
+
+    val entries by container.bodyMeasurementRepository.entries.collectAsState(initial = emptyList())
+    val heightUnit by container.prefs.heightUnit.collectAsState(initial = "cm")
+    val heightMetric = heightUnit == "cm"
+    val latest = entries.maxByOrNull { it.date }
+    val selectedSites = ui.progressMeasurementSites
+
+    SettingsSubScreen(
+        title = stringResource(R.string.settings_customize_progress),
+        onBack = onBack,
+    ) {
+        ChompassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = AppRadii.SectionCard,
+            padding = 0.dp,
+                    ) {
+            Column {
+                // Moved here from Display: it is a calendar/progress preference.
+                SettingRow(
+                    label = stringResource(R.string.settings_week_starts),
+                    value = stringResource(ui.weekStartDay.displayNameRes),
+                    onClick = { sheet = SettingsSheet.WEEK_START },
+                )
+                HorizontalDivider()
+                SettingRow(
+                    label = stringResource(R.string.settings_progress_default_range),
+                    value = stringResource(TimeRange.fromStorageId(ui.progressDefaultRangeId).labelRes),
+                    onClick = { sheet = SettingsSheet.PROGRESS_DEFAULT_RANGE },
+                )
+                HorizontalDivider()
+                ToggleRow(
+                    label = stringResource(R.string.settings_progress_nutrient_averages),
+                    checked = ui.progressNutrientAverages,
+                    onChange = { on ->
+                        if (on) {
+                            showNutrientAveragesWarning = true
+                        } else {
+                            vm.setProgressNutrientAverages(false)
+                        }
+                    },
+                )
+                Text(
+                    stringResource(R.string.settings_progress_nutrient_averages_subtitle),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                )
+                // #75: pick which nutrients the Progress averages card shows.
+                // Inert while the master toggle is off; rows reuse the
+                // measurement-plot row pattern.
+                HomeTopNutrient.AveragesCandidates.forEachIndexed { index, nutrient ->
+                    NutrientToggleRow(
+                        label = stringResource(nutrient.displayNameRes),
+                        checked = nutrient.storageKey in ui.progressNutrientAveragesSelection,
+                        enabled = ui.progressNutrientAverages,
+                        onChange = { on ->
+                            val current = ui.progressNutrientAveragesSelection
+                            vm.setProgressNutrientAveragesSelection(
+                                if (on) current + nutrient.storageKey else current - nutrient.storageKey
+                            )
+                        },
+                    )
+                    if (index != HomeTopNutrient.AveragesCandidates.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    }
+                }
+
+            }
+        }
+
+        ChompassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = AppRadii.SectionCard,
+            padding = 0.dp,
+                    ) {
+            Column {
+                Text(
+                    stringResource(R.string.settings_progress_plots),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                BodyMeasurement.Site.values().forEachIndexed { index, site ->
+                    val storageId = site.storageId
+                    MeasurementSiteToggleRow(
+                        site = site,
+                        checked = storageId in selectedSites,
+                        subtitle = measurementSiteSubtitle(
+                            context = LocalContext.current,
+                            site = site,
+                            latest = latest,
+                            heightMetric = heightMetric,
+                        ),
+                        onChange = { on ->
+                            vm.setProgressMeasurementSites(
+                                if (on) selectedSites + storageId else selectedSites - storageId
+                            )
+                        },
+                    )
+                    if (index != BodyMeasurement.Site.values().lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    }
+                }
+            }
+        }
+
+        Text(
+            stringResource(R.string.settings_progress_plots_subtitle),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    }
+
+    sheet?.let { s ->
+        SettingsSheets(
+            sheet = s,
+            ui = ui,
+            vm = vm,
+            onDismiss = { sheet = null },
+            onInvalidGoalWeight = {},
+            onRebalanceBlocked = {},
+        )
+    }
+
+    if (showNutrientAveragesWarning) {
+        ChompassDialog(onDismissRequest = { showNutrientAveragesWarning = false }) {
+            Text(
+                stringResource(R.string.settings_progress_nutrient_averages_warning_title),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                stringResource(R.string.settings_progress_nutrient_averages_warning_body),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            )
+            ChompassDialogActions(
+                primaryText = stringResource(R.string.settings_progress_nutrient_averages_confirm),
+                onPrimary = {
+                    vm.setProgressNutrientAverages(true)
+                    showNutrientAveragesWarning = false
+                },
+                dismissText = stringResource(R.string.action_cancel),
+                onDismiss = { showNutrientAveragesWarning = false },
+            )
+        }
+    }
+
+}
+
+@Composable
+private fun MeasurementSiteToggleRow(
+    site: BodyMeasurement.Site,
+    checked: Boolean,
+    subtitle: String,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                stringResource(site.labelRes),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted),
+            )
+        }
+        Spacer(Modifier.padding(start = 8.dp))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+private fun measurementSiteSubtitle(
+    context: android.content.Context,
+    site: BodyMeasurement.Site,
+    latest: BodyMeasurement?,
+    heightMetric: Boolean,
+): String {
+    val cm = latest?.value(site) ?: return context.getString(R.string.settings_progress_plots_no_data)
+    return if (heightMetric) {
+        context.getString(
+            R.string.settings_progress_plots_latest,
+            String.format(Locale.getDefault(), "%.0f", cm),
+            context.getString(R.string.unit_cm),
+        )
+    } else {
+        context.getString(
+            R.string.settings_progress_plots_latest,
+            String.format(Locale.getDefault(), "%.0f", UnitFormat.cmToInches(cm)),
+            context.getString(R.string.unit_in),
+        )
+    }
+}
+
+@Composable
+private fun NutrientToggleRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = AppTextOpacity.Muted)
+            },
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.padding(start = 8.dp))
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+    }
+}

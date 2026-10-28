@@ -1,0 +1,1054 @@
+package app.chompass.data
+
+import app.chompass.debug.DebugTrace
+import app.chompass.models.DailyFoodTotals
+import app.chompass.models.FoodEntry
+import app.chompass.models.FoodSource
+import app.chompass.models.PendingFoodAnalysisDraft
+import app.chompass.services.FoodImageStore
+import app.chompass.services.PerfLog
+import app.chompass.services.ReviewPrompter
+import app.chompass.services.health.HealthConnectManager
+import app.chompass.services.health.NutritionWriteGate
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import java.time.Instant
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+private fun FoodEntry.month(): YearMonth = YearMonth.from(timestamp.atZone(ZoneId.systemDefault()))
+
+/** Inclusive calendar-month span covering [start]..[end]. */
+internal fun yearMonthsOverlapping(start: LocalDate, end: LocalDate): List<YearMonth> {
+    if (start.isAfter(end)) return emptyList()
+    val out = ArrayList<YearMonth>()
+    var month = YearMonth.from(start)
+    val last = YearMonth.from(end)
+    while (!month.isAfter(last)) {
+        out.add(month)
+        month = month.plusMonths(1)
+    }
+    return out
+}
+
+/**
+ * One [DailyFoodTotals] row per calendar day that has at least one entry,
+ * preserving entry order within a day so the sums are bit-identical to the
+ * old per-entry Progress grouping. Builds the aggregates cache (flippidity
+ * C.1) from food month content; also used by the Progress screenshot preview.
+ */
+internal fun aggregateFoodEntriesByDay(
+    entries: List<FoodEntry>,
+    zone: ZoneId = ZoneId.systemDefault(),
+): List<DailyFoodTotals> {
+    val byDay = LinkedHashMap<LocalDate, MutableList<FoodEntry>>()
+    for (entry in entries) {
+        byDay.getOrPut(entry.timestamp.atZone(zone).toLocalDate()) { ArrayList() }.add(entry)
+    }
+    return byDay.map { (day, dayEntries) ->
+        DailyFoodTotals(
+            date = day,
+            calories = dayEntries.sumOf { it.calories },
+            protein = dayEntries.sumOf { it.protein },
+            carbs = dayEntries.sumOf { it.carbs },
+            fat = dayEntries.sumOf { it.fat },
+            fiber = dayEntries.sumOf { it.fiber ?: 0.0 },
+            sugar = dayEntries.sumOf { it.sugar ?: 0.0 },
+            sodium = dayEntries.sumOf { it.sodium ?: 0.0 },
+            addedSugar = dayEntries.sumOf { it.addedSugar ?: 0.0 },
+            saturatedFat = dayEntries.sumOf { it.saturatedFat ?: 0.0 },
+            cholesterol = dayEntries.sumOf { it.cholesterol ?: 0.0 },
+            potassium = dayEntries.sumOf { it.potassium ?: 0.0 },
+            transFat = dayEntries.sumOf { it.transFat ?: 0.0 },
+            calcium = dayEntries.sumOf { it.calcium ?: 0.0 },
+            iron = dayEntries.sumOf { it.iron ?: 0.0 },
+            magnesium = dayEntries.sumOf { it.magnesium ?: 0.0 },
+            zinc = dayEntries.sumOf { it.zinc ?: 0.0 },
+            vitaminA = dayEntries.sumOf { it.vitaminA ?: 0.0 },
+            vitaminC = dayEntries.sumOf { it.vitaminC ?: 0.0 },
+            vitaminD = dayEntries.sumOf { it.vitaminD ?: 0.0 },
+            vitaminB12 = dayEntries.sumOf { it.vitaminB12 ?: 0.0 },
+            vitaminE = dayEntries.sumOf { it.vitaminE ?: 0.0 },
+            vitaminK = dayEntries.sumOf { it.vitaminK ?: 0.0 },
+            folate = dayEntries.sumOf { it.folate ?: 0.0 },
+            omega3 = dayEntries.sumOf { it.omega3 ?: 0.0 },
+            caffeine = dayEntries.sumOf { it.caffeine ?: 0.0 },
+        )
+    }
+}
+
+/** Months that can contain the 90-day frequent window ending at [now]. */
+internal fun yearMonthsForQuickRelog(
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+    frequentDays: Long = 90,
+): List<YearMonth> {
+    val today = now.atZone(zone).toLocalDate()
+    return yearMonthsOverlapping(today.minusDays(frequentDays - 1), today)
+}
+
+/** Months that can contain the suggestion-index window ending at [now]. */
+internal fun yearMonthsForSavedFoodIndex(
+    now: Instant,
+    zone: ZoneId = ZoneId.systemDefault(),
+    days: Long = 365,
+): List<YearMonth> {
+    val today = now.atZone(zone).toLocalDate()
+    return yearMonthsOverlapping(today.minusDays(days - 1), today)
+}
+
+/**
+ * CRUD + reactive reads for food entries. Port of iOS FoodStore.
+ * Backed by [PreferencesStore] (entries + favorites serialized as JSON).
+ */
+class FoodRepository(
+    private val prefs: PreferencesStore,
+    private val health: HealthConnectManager? = null,
+    private val imageStore: FoodImageStore? = null,
+    private val sync: app.chompass.sync.SyncRepository? = null,
+) {
+    /** One-shot gate so concurrent first logs cannot double-fire the review prompt. */
+    private val reviewPromptGate = AtomicBoolean(false)
+
+    /**
+     * One completed migration pass is enough: afterwards favorites only
+     * change through this repository, which always writes both keys. Without
+     * the memo every favorite op paid 2-3 full snapshot reads.
+     */
+    private val favoritesMigrated = AtomicBoolean(false)
+    val entries: Flow<List<FoodEntry>> = prefs.foodEntries
+
+    /**
+     * Favorites are now stored as an ordered list of [FoodEntry] copies (not
+     * a Set of keys), mirroring iOS `FoodStore.favorites`. The list owns its
+     * own copies so a favorite survives deletion of the original log entry
+     * and the user-defined order persists across restarts.
+     *
+     * Reads also trigger a one-time migration from the legacy `favoriteKeys`
+     * Set if the new list is empty but the old set has entries — done via a
+     * suspend [migratedFavorites] helper that the Saved Meals UI calls
+     * directly when the sheet opens. That helper also collapses duplicates
+     * produced by the old name|calories identity key.
+     */
+    val favorites: Flow<List<FoodEntry>> = prefs.favoriteFoodEntries
+
+    /** Run the migration once and return the (possibly newly-seeded) list. */
+    suspend fun migratedFavorites(): List<FoodEntry> {
+        ensureFavoritesMigrated()
+        return prefs.favoriteFoodEntries.first()
+    }
+
+    /**
+     * Derived from [favorites] so existing call sites that read favoriteKeys
+     * (Home list heart icon, Saved Meals heart icon, etc.) keep working
+     * without change.
+     */
+    val favoriteKeys: Flow<Set<String>> = prefs.favoriteFoodEntries.map { list ->
+        list.map { it.favoriteKey }.toSet()
+    }
+
+    fun entriesForDate(date: LocalDate): Flow<List<FoodEntry>> =
+        prefs.foodEntriesForMonth(YearMonth.from(date)).map { monthEntries ->
+            monthEntries.filter { it.timestamp.atZone(ZoneId.systemDefault()).toLocalDate() == date }
+                .sortedByDescending { it.timestamp }
+        }
+
+    /** Entries whose local date is in [start]..[end], decoding only overlapping month buckets. */
+    fun entriesBetween(start: LocalDate, end: LocalDate): Flow<List<FoodEntry>> {
+        val zone = ZoneId.systemDefault()
+        return prefs.foodEntriesForMonths(yearMonthsOverlapping(start, end)).map { monthEntries ->
+            monthEntries.filter { entry ->
+                val day = entry.timestamp.atZone(zone).toLocalDate()
+                !day.isBefore(start) && !day.isAfter(end)
+            }
+        }
+    }
+
+    /**
+     * Per-day calorie/macro totals for the date window, from the daily
+     * aggregates cache (flippidity C.1) instead of the year of [FoodEntry]
+     * rows. Progress reads these, so All-range compute never holds the full
+     * diary in memory and re-emits only when a day's totals actually change.
+     * Same date window as [entriesBetween]; days with no entries are absent.
+     */
+    fun dailyTotalsBetween(start: LocalDate, end: LocalDate): Flow<List<DailyFoodTotals>> {
+        return prefs.dailyFoodTotalsForMonths(yearMonthsOverlapping(start, end)).map { totals ->
+            totals.filter { !it.date.isBefore(start) && !it.date.isAfter(end) }
+        }
+    }
+
+    fun entriesByMealForDate(date: LocalDate): Flow<List<Pair<String, List<FoodEntry>>>> =
+        entriesForDate(date).map { dayEntries ->
+            val catalog = app.chompass.models.CurrentMealCatalog.value
+            val order = catalog.displayOrderIds()
+            val grouped = dayEntries.groupBy { it.mealType }
+            val known = order.mapNotNull { id ->
+                val mealEntries = grouped[id].orEmpty()
+                if (mealEntries.isEmpty()) null else id to mealEntries
+            }
+            val orphans = grouped.keys.filter { it !in order }.sorted().map { id ->
+                id to grouped.getValue(id)
+            }
+            known + orphans
+        }
+
+    suspend fun addEntry(
+        entry: FoodEntry,
+        draft: PendingFoodAnalysisDraft? = null,
+        clearDraft: Boolean = false,
+        writeHealth: Boolean = true,
+    ) {
+        val resolved = resolveReloggedImage(entry)
+        // Persistence commit — only this entry's month bucket is re-serialized
+        // and written, not the whole food log, then the Health Connect IPC insert.
+        // An optional confirming AI-entry draft snapshot (or its removal via
+        // [clearDraft]) commits in the same edit so the save never costs an extra
+        // full-file DataStore write.
+        PerfLog.measure("save", "dataStore", "month=${resolved.month()}") {
+            prefs.applyFoodEntryBucketChanges(
+                upsertsByMonth = mapOf(resolved.month() to listOf(resolved)),
+                draft = draft,
+                clearDraft = clearDraft,
+            )
+        }
+        sync?.touch(resolved.id, "food")
+        if (writeHealth) {
+            PerfLog.measure("save", "healthWrite") { healthRetry.sync(resolved, isUpdate = false) }
+        }
+        // One-time organic review moment: the first successful food log (iOS
+        // parity). The pref read is the cheap fast path for every later save;
+        // the CAS makes the first-fire decision atomic so two concurrent
+        // addEntry/addEntries saves cannot both pass the check.
+        if (!prefs.reviewPromptedAfterFirstLog.first() && reviewPromptGate.compareAndSet(false, true)) {
+            prefs.setReviewPromptedAfterFirstLog(true)
+            ReviewPrompter.requestReview.value = true
+        }
+    }
+
+    /**
+     * Bulk add (progressive-meal Log meal / Copy From Day) in a single DataStore
+     * edit (one full-file write regardless of how many entries share the month)
+     * plus one batched sync-revision edit. Health Connect mirroring is skipped
+     * when [writeHealth] is false — callers then run [mirrorEntryToHealth] in the
+     * background after the UI has already dismissed.
+     */
+    suspend fun addEntries(entries: List<FoodEntry>, writeHealth: Boolean = true) {
+        if (entries.isEmpty()) return
+        val resolved = entries.map { resolveReloggedImage(it) }
+        PerfLog.measure("save", "dataStore", "count=${resolved.size}") {
+            prefs.applyFoodEntryBucketChanges(upsertsByMonth = resolved.groupBy { it.month() })
+        }
+        sync?.touchMany(resolved.map { it.id to "food" })
+        if (writeHealth) {
+            PerfLog.measure("save", "healthWrite", "count=${resolved.size}") {
+                healthRetry.syncAll(resolved, isUpdate = false)
+            }
+        }
+        // One-time organic review moment — same gated first-fire as [addEntry].
+        if (!prefs.reviewPromptedAfterFirstLog.first() && reviewPromptGate.compareAndSet(false, true)) {
+            prefs.setReviewPromptedAfterFirstLog(true)
+            ReviewPrompter.requestReview.value = true
+        }
+    }
+
+    /**
+     * #12: a duplicated-for-logging entry carries the source row's imageFilename.
+     * Copy the JPEG to the new entry's own filename on save — relogs keep the
+     * photo, while later re-picks/deletes of either row stay independent and
+     * pruneUnreferenced() never removes a file the new row still points at.
+     * Entries whose image is already stored under their own id are untouched.
+     */
+    private fun resolveReloggedImage(entry: FoodEntry): FoodEntry {
+        val filename = entry.imageFilename ?: return entry
+        val expected = FoodImageStore.filenameFor(entry.id)
+        if (filename == expected) return entry
+        val copied = imageStore?.copyForEntry(filename, entry.id)
+        return if (copied != null) entry.copy(imageFilename = copied)
+        else entry.copy(imageFilename = null) // stale reference / copy failure -> no image
+    }
+
+    /**
+     * Health Connect mirror write for a row already committed locally, gated on
+     * the user's sync toggle. Safe to run in the background — a write Health
+     * Connect never confirms is queued here and retried on the next sync
+     * instead of being dropped.
+     *
+     * @return false when the write stayed queued (the caller may surface a
+     *   one-time nudge); true when confirmed or nothing was owed.
+     */
+    suspend fun mirrorEntryToHealth(entry: FoodEntry): Boolean {
+        if (!shouldSyncHealth()) return true
+        return PerfLog.measure("save", "healthWrite") { healthRetry.sync(entry, isUpdate = false) }
+    }
+
+    suspend fun updateEntry(original: FoodEntry, updated: FoodEntry) {
+        val oldMonth = original.month()
+        val newMonth = updated.month()
+        // Codeberg #56 repro instrumentation (TEMP, debug-only).
+        PerfLog.event(
+            "op=editEntry phase=updateEntry id=${updated.id.toString().take(8)} " +
+                "meal=${original.mealType}->${updated.mealType} " +
+                "ts=${original.timestamp.epochSecond}->${updated.timestamp.epochSecond} " +
+                "month=$oldMonth->$newMonth",
+        )
+        if (oldMonth == newMonth) {
+            prefs.applyFoodEntryBucketChanges(upsertsByMonth = mapOf(newMonth to listOf(updated)))
+        } else {
+            prefs.applyFoodEntryBucketChanges(
+                upsertsByMonth = mapOf(newMonth to listOf(updated)),
+                removalIdsByMonth = mapOf(oldMonth to setOf(updated.id)),
+            )
+        }
+        PerfLog.event("op=editEntry phase=updateEntryDone id=${updated.id.toString().take(8)}")
+        sync?.touch(updated.id, "food")
+        if (shouldSyncHealth()) {
+            healthRetry.sync(updated, isUpdate = true)
+        } else {
+            // Sync off: still clean up the stale HC record for this entry (iOS
+            // parity, best-effort) so the restore path can't resurrect the
+            // pre-edit version later. The queue key goes first, matching
+            // deleteEntry, so an in-flight retry cannot rewrite the record
+            // after the deliberate delete.
+            healthRetry.forget(updated.id)
+            health?.deleteNutrition(updated.id)
+        }
+    }
+
+    /**
+     * Batch content refresh for existing rows (AI fill-missing apply/undo).
+     * Timestamps never move, so — unlike [updateEntry] — there are no
+     * cross-month removals: every entry lands in its own month bucket in one
+     * atomic DataStore edit regardless of month spread. Updates are not first
+     * logs, so the review prompt stays out, same as [updateEntry].
+     */
+    suspend fun updateEntries(entries: List<FoodEntry>) {
+        if (entries.isEmpty()) return
+        PerfLog.measure("save", "dataStore", "count=${entries.size}") {
+            prefs.applyFoodEntryBucketChanges(upsertsByMonth = entries.groupBy { it.month() })
+        }
+        sync?.touchMany(entries.map { it.id to "food" })
+        if (shouldSyncHealth()) {
+            healthRetry.syncAll(entries, isUpdate = true)
+        } else {
+            // Sync off: same stale-record cleanup as [updateEntry], batched.
+            entries.forEach { healthRetry.forget(it.id); health?.deleteNutrition(it.id) }
+        }
+    }
+
+    suspend fun deleteEntry(entry: FoodEntry) {
+        // Drop the queue key under the retry mutex, before the local row
+        // disappears, so an in-flight retry cannot recreate Health Connect data.
+        healthRetry.forget(entry.id)
+        prefs.applyFoodEntryBucketChanges(removalIdsByMonth = mapOf(entry.month() to setOf(entry.id)))
+        sync?.tombstone(entry.id, "food")
+        pruneOrphanedImages()
+        // Delete even when sync is off (iOS parity, best-effort) — a surviving
+        // fudai-tagged record would resurrect through restoreFromHealthConnect.
+        health?.deleteNutrition(entry.id)
+    }
+
+    suspend fun replaceAll(entries: List<FoodEntry>) {
+        // The whole log is about to be replaced: keep queue keys only for rows
+        // that survive, before the local rows disappear (same ordering rule as
+        // deleteEntry).
+        healthRetry.retainAll(entries.map { it.id })
+        prefs.replaceAllFoodEntries(entries)
+        pruneOrphanedImages()
+    }
+
+    /**
+     * Bulk-import diary entries into the existing log in a single write.
+     * We preserve current rows and dedupe only by id to avoid clobbering
+     * user edits that share similar nutrition values.
+     */
+    suspend fun importEntries(entries: List<FoodEntry>): Int {
+        if (entries.isEmpty()) return 0
+        val existingIds = prefs.foodEntries.first().asSequence().map { it.id }.toHashSet()
+        val incoming = entries.filter { existingIds.add(it.id) }
+        if (incoming.isEmpty()) return 0
+        prefs.applyFoodEntryBucketChanges(upsertsByMonth = incoming.groupBy { it.month() })
+        return incoming.size
+    }
+
+    suspend fun clear() {
+        healthRetry.retainAll(emptyList())
+        prefs.replaceAllFoodEntries(emptyList())
+        pruneOrphanedImages()
+    }
+
+    // -- Favorites --------------------------------------------------------
+
+    suspend fun isFavorite(entry: FoodEntry): Boolean {
+        return prefs.favoriteFoodEntries.first().any { it.favoriteKey == entry.favoriteKey }
+    }
+
+    /**
+     * Toggle favorite status by favoriteKey. Mirrors iOS
+     * FoodStore.toggleFavorite — if a favorite with the same favoriteKey
+     * exists, remove it; otherwise append a *copy* of [entry] to the list.
+     * The legacy `favoriteKeys` Set is also kept in sync for any older code
+     * paths still reading it directly.
+     */
+    suspend fun toggleFavorite(entry: FoodEntry) {
+        ensureFavoritesMigrated()
+        val current = prefs.favoriteFoodEntries.first().toMutableList()
+        val idx = current.indexOfFirst { it.favoriteKey == entry.favoriteKey }
+        if (idx >= 0) {
+            val removed = current.removeAt(idx)
+            prefs.setFavoritesAtomic(current)
+            DebugTrace.event(
+                "op=favorite phase=remove key=${entry.favoriteKey.replace(' ', '_')} count=${current.size}",
+            )
+            sync?.tombstone(removed.id, "favorite")
+            pruneOrphanedImages()
+            return
+        } else {
+            // Drop any other entry with the same id (defensive — should not
+            // normally happen since we matched by favoriteKey above).
+            current.removeAll { it.id == entry.id }
+            current.add(entry)
+        }
+        prefs.setFavoritesAtomic(current)
+        DebugTrace.event(
+            "op=favorite phase=add key=${entry.favoriteKey.replace(' ', '_')} count=${current.size}",
+        )
+        sync?.touch(entry.id, "favorite")
+    }
+
+    /**
+     * Reorder a favorite from index [from] to index [to]. Mirrors iOS
+     * FoodStore.moveFavorite using SwiftUI's `Array.move(fromOffsets:toOffset:)`
+     * semantics — [to] is the *destination* index in the post-removal list.
+     */
+    suspend fun moveFavorite(from: Int, to: Int) {
+        ensureFavoritesMigrated()
+        val list = prefs.favoriteFoodEntries.first().toMutableList()
+        if (from !in list.indices) return
+        val item = list.removeAt(from)
+        val safeTo = to.coerceIn(0, list.size)
+        list.add(safeTo, item)
+        prefs.setFavoriteFoodEntries(list)
+    }
+
+    /**
+     * Identity keys a rename of [favorite] must avoid (Codeberg #66): every
+     * diary + favorite identity except this favorite's own current key, so
+     * renaming to itself stays valid while any other food's name collides.
+     */
+    suspend fun favoriteRenameBlocklist(favorite: FoodEntry): Set<String> =
+        existingFoodIdentityKeys() - favorite.favoriteKey
+
+    /**
+     * Update a stored favorite in place (Codeberg #66) — favorites behave as
+     * a personal saved-foods library, not one-shot diary snapshots. [original]
+     * is matched by id (fallback: favoriteKey, so stale UI snapshots still
+     * hit) and replaced by [updated] at the same position in the list.
+     *
+     * The stored favorite's id is kept even when [updated] carries another:
+     * renames change [FoodEntry.favoriteKey], and the sync revision chain
+     * (LWW by updatedAt, kind "favorite") is keyed by id. recipeLogId is
+     * normalized to null — a favorite is a standalone saved food, never a
+     * recipe member (PWA toggleFavorite parity). The legacy favoriteKeys set
+     * is rewritten alongside, sync touch notifies other devices, and a
+     * replaced photo filename is deleted once nothing else references it.
+     *
+     * @return the stored favorite, or null when no match existed (already
+     *         unfavorited elsewhere / migrated away).
+     */
+    suspend fun updateFavorite(original: FoodEntry, updated: FoodEntry): FoodEntry? {
+        ensureFavoritesMigrated()
+        val current = prefs.favoriteFoodEntries.first().toMutableList()
+        val idx = current.indexOfFirst { it.id == original.id || it.favoriteKey == original.favoriteKey }
+        if (idx < 0) return null
+        val storedId = current[idx].id
+        val stored = updated.copy(id = storedId, recipeLogId = null)
+        current[idx] = stored
+        prefs.setFavoritesAtomic(current)
+        sync?.touch(storedId, "favorite")
+        if (stored.imageFilename != original.imageFilename) {
+            deleteImageIfUnreferenced(original.imageFilename)
+        }
+        return stored
+    }
+
+    /**
+     * Insert-or-replace by [FoodEntry.favoriteKey] without touching the diary
+     * A fresh barcode review can be saved straight to favorites. Same
+     * replace semantics as [updateFavorite] — the stored favorite keeps its id,
+     * recipeLogId is normalized to null, sync is touched, and a replaced photo
+     * is deleted once nothing else references it; a new key appends a copy.
+     * Never removes: callers own removal via [toggleFavorite].
+     */
+    suspend fun upsertFavorite(entry: FoodEntry): FoodEntry {
+        ensureFavoritesMigrated()
+        val current = prefs.favoriteFoodEntries.first().toMutableList()
+        val idx = current.indexOfFirst { it.favoriteKey == entry.favoriteKey }
+        if (idx >= 0) {
+            val storedId = current[idx].id
+            val oldImage = current[idx].imageFilename
+            val stored = entry.copy(id = storedId, recipeLogId = null)
+            current[idx] = stored
+            prefs.setFavoritesAtomic(current)
+            DebugTrace.event(
+                "op=favorite phase=replace key=${entry.favoriteKey.replace(' ', '_')} count=${current.size}",
+            )
+            sync?.touch(storedId, "favorite")
+            if (stored.imageFilename != oldImage) {
+                deleteImageIfUnreferenced(oldImage)
+            }
+            return stored
+        }
+        val stored = entry.copy(recipeLogId = null)
+        current.add(stored)
+        prefs.setFavoritesAtomic(current)
+        DebugTrace.event(
+            "op=favorite phase=add key=${entry.favoriteKey.replace(' ', '_')} count=${current.size}",
+        )
+        sync?.touch(stored.id, "favorite")
+        return stored
+    }
+
+    /**
+     * One-time migration: if the new ordered favoriteFoodEntries list is
+     * empty but the legacy favoriteKeys Set has entries, reconstruct the
+     * ordered list from current food log entries (best-effort — no preserved
+     * order since the old format never tracked one).
+     *
+     * Also collapses duplicate favorites that shared a name under the old
+     * `name|calories` identity (same food, different servings), and rewrites
+     * the legacy key set to the name-only identity.
+     */
+    private suspend fun ensureFavoritesMigrated() {
+        if (favoritesMigrated.get()) return
+        doFavoritesMigration()
+        // Only a completed pass counts: a thrown migration is retried on
+        // the next favorite op rather than permanently skipped.
+        favoritesMigrated.set(true)
+    }
+
+    private suspend fun doFavoritesMigration() {
+        val ordered = prefs.favoriteFoodEntries.first()
+        if (ordered.isEmpty()) {
+            val legacy = prefs.favoriteKeys.first()
+            if (legacy.isEmpty()) return
+            val all = prefs.foodEntries.first()
+            val seeded = legacy.mapNotNull { key ->
+                all.firstOrNull { matchesFavoriteIdentity(it, key) }
+            }.let { dedupeFavoritesByIdentity(it) }
+            if (seeded.isEmpty()) return
+            prefs.setFavoritesAtomic(seeded)
+            return
+        }
+        val deduped = dedupeFavoritesByIdentity(ordered)
+        val newKeys = deduped.map { it.favoriteKey }.toSet()
+        val oldKeys = prefs.favoriteKeys.first()
+        if (deduped.size != ordered.size || newKeys != oldKeys) {
+            prefs.setFavoritesAtomic(deduped)
+        }
+    }
+
+    /** Keep first occurrence per [FoodEntry.favoriteKey] (preserves user order). */
+    private fun dedupeFavoritesByIdentity(entries: List<FoodEntry>): List<FoodEntry> {
+        val seen = mutableSetOf<String>()
+        return entries.filter { it.favoriteKey.isNotEmpty() && seen.add(it.favoriteKey) }
+    }
+
+    /**
+     * Match a stored favorite key against an entry. Accepts the current
+     * name-only identity and the legacy `name|calories` form.
+     */
+    private fun matchesFavoriteIdentity(entry: FoodEntry, storedKey: String): Boolean {
+        if (entry.favoriteKey == storedKey) return true
+        val namePart = storedKey.substringBefore('|').trim().lowercase()
+        return namePart.isNotEmpty() && entry.favoriteKey == namePart
+    }
+
+    /**
+     * Deferred retry for nutrition writes Health Connect never confirmed. The
+     * adapter keeps [HealthConnectManager] out of the retry's own type
+     * signature, so the queue logic is unit-testable without a live Health
+     * Connect service.
+     */
+    private val healthRetry = NutritionHealthRetry(
+        prefs,
+        health?.let { manager ->
+            object : NutritionHealthSync {
+                override suspend fun writeGate() = manager.nutritionWriteGate()
+                override suspend fun write(entry: FoodEntry) = manager.writeNutrition(entry)
+                override suspend fun update(entry: FoodEntry) = manager.updateNutrition(entry)
+                override suspend fun delete(entryId: UUID) = manager.deleteNutrition(entryId)
+            }
+        },
+    )
+
+    /** Re-attempt writes that were never confirmed. Called from the Health Connect read-sync. */
+    suspend fun retryPendingHealthWrites() = healthRetry.retryPending()
+
+    /**
+     * Whether the user has Health Connect sync switched on. Deliberately does not ask
+     * whether the nutrition-write permission is granted: that question is answered inside
+     * [NutritionHealthRetry] via [NutritionWriteGate], because a permission probe that
+     * fails must not be read as "no permission". Doing so silently discarded writes.
+     */
+    private suspend fun shouldSyncHealth(): Boolean {
+        if (health == null) return false
+        return prefs.healthConnectEnabled.first()
+    }
+
+    /** Drop on-disk JPEGs once no log row, favorite, or draft still references them. */
+    suspend fun pruneOrphanedImages() {
+        val store = imageStore ?: return
+        ensureFavoritesMigrated()
+        val referenced = prefs.foodImageReferenceFilenames() ?: return
+        store.pruneUnreferenced(referenced)
+    }
+
+    private suspend fun deleteImageIfUnreferenced(imageFilename: String?) {
+        val filename = imageFilename ?: return
+        val store = imageStore ?: return
+        // One atomic pass over every reference source instead of four full
+        // snapshot reads. Null = a decode failed and cleanup must keep the
+        // file (fail-safe, matching the prune-skip behavior).
+        val referenced = prefs.foodImageReferenceFilenames() ?: return
+        if (filename in referenced) return
+        store.delete(filename)
+    }
+
+    // -- Restore from Health Connect --------------------------------------
+
+    /**
+     * Rebuilds the food log from the NutritionRecords Fud AI itself wrote to
+     * Health Connect — the restore path after a reinstall or new phone, where
+     * Health Connect data survives but app storage doesn't. Only records
+     * carrying our fudai_(uuid) clientRecordId are considered; the original
+     * entry UUID is recovered from the tag so future edits and deletes still
+     * target the matching HC record. Ids already in the log and nameless
+     * records are skipped, and nothing is written back to Health Connect.
+     * Photos, emojis, notes and serving units aren't in HC and don't return.
+     */
+    suspend fun restoreFromHealthConnect(external: List<app.chompass.services.health.ExternalNutrition>) {
+        val manager = health ?: return
+        val current = prefs.foodEntries.first()
+        val existingIds = current.map { it.id }.toSet()
+        val restored = external.mapNotNull { record ->
+            val id = manager.ownRecordId(record.clientRecordId) ?: return@mapNotNull null
+            if (id in existingIds) return@mapNotNull null
+            externalToFoodEntry(record, id)
+        }
+        if (restored.isEmpty()) return
+        prefs.applyFoodEntryBucketChanges(upsertsByMonth = restored.groupBy { it.month() })
+    }
+
+    /**
+     * Live-merge meals other apps wrote to Health Connect (the change-token path;
+     * own fudai_ records are already filtered at the manager level). Same idempotent
+     * upsert scheme as [WeightRepository.importExternalWeights]: a deterministic id
+     * per external record, so re-imports and in-place edits update instead of
+     * duplicating. Nameless records are skipped — they can't be shown in the log.
+     */
+    suspend fun importExternalNutrition(external: List<app.chompass.services.health.ExternalNutrition>) {
+        if (external.isEmpty()) return
+        val incoming = external.mapNotNull { record ->
+            val name = record.name?.trim().orEmpty()
+            if (name.isEmpty()) return@mapNotNull null
+            externalToFoodEntry(record, externalId(record.clientRecordId, record.recordId, record.time))
+        }
+        if (incoming.isEmpty()) return
+        val existingById = prefs.foodEntries.first().associateBy { it.id }
+        val changed = incoming.filter { existingById[it.id] != it }
+        if (changed.isEmpty()) return
+        // A record can carry a new timestamp on re-sync, moving it to a different
+        // month bucket than the one it's currently stored in — remove the stale
+        // copy from its old bucket alongside upserting the new one.
+        val staleRemovals = changed.mapNotNull { entry ->
+            val existingMonth = existingById[entry.id]?.month() ?: return@mapNotNull null
+            existingMonth.takeIf { it != entry.month() }?.let { it to entry.id }
+        }.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+        prefs.applyFoodEntryBucketChanges(
+            upsertsByMonth = changed.groupBy { it.month() },
+            removalIdsByMonth = staleRemovals,
+        )
+    }
+
+    /** Stable id for an external nutrition record — see [WeightRepository.externalId]:
+     *  clientRecordId, then the HC record id, then the timestamp; never the values. */
+    private fun externalId(clientRecordId: String?, recordId: String, time: Instant): UUID {
+        val seed = clientRecordId?.takeIf { it.isNotBlank() }
+            ?: recordId.takeIf { it.isNotBlank() }
+            ?: "hc-nutrition:${time.toEpochMilli()}"
+        return UUID.nameUUIDFromBytes(seed.toByteArray())
+    }
+
+    /** Shared external-record → [FoodEntry] mapping for the HC restore and
+     *  live-import paths; they differ only in id provenance. */
+    private fun externalToFoodEntry(
+        record: app.chompass.services.health.ExternalNutrition,
+        id: UUID,
+    ): FoodEntry? {
+        val name = record.name?.trim().orEmpty()
+        if (name.isEmpty()) return null
+        return FoodEntry(
+            id = id,
+            name = name,
+            calories = (record.calories ?: 0.0).roundToInt(),
+            protein = record.protein ?: 0.0,
+            carbs = record.carbs ?: 0.0,
+            fat = record.fat ?: 0.0,
+            timestamp = record.time,
+            source = FoodSource.MANUAL,
+            mealType = record.mealType.id,
+            sugar = record.sugar,
+            fiber = record.fiber,
+            saturatedFat = record.saturatedFat,
+            monounsaturatedFat = record.monounsaturatedFat,
+            polyunsaturatedFat = record.polyunsaturatedFat,
+            cholesterol = record.cholesterol,
+            sodium = record.sodium,
+            potassium = record.potassium,
+            transFat = record.transFat,
+            calcium = record.calcium,
+            iron = record.iron,
+            magnesium = record.magnesium,
+            zinc = record.zinc,
+            vitaminA = record.vitaminA,
+            vitaminC = record.vitaminC,
+            vitaminD = record.vitaminD,
+            vitaminB12 = record.vitaminB12,
+            vitaminE = record.vitaminE,
+            vitaminK = record.vitaminK,
+            folate = record.folate
+        )
+    }
+
+    // -- Recents / Frequent ---------------------------------------------
+
+    /** Identity keys already taken by diary rows and favorites. */
+    suspend fun existingFoodIdentityKeys(): Set<String> {
+        val diary = prefs.foodEntries.first().mapNotNull { it.favoriteKey.takeIf { k -> k.isNotEmpty() } }
+        val favs = prefs.favoriteFoodEntries.first().mapNotNull { it.favoriteKey.takeIf { k -> k.isNotEmpty() } }
+        return diary.toSet() + favs
+    }
+
+    /**
+     * Scan identity reuse (Codeberg #98): the saved template a fresh scan /
+     * AI-analysis save should merge into, or null for a brand-new food.
+     *
+     * Match priority: (1) [barcode] — the newest saved entry grounded in that
+     * exact product (grounding source id or OFF product metadata); (2) name —
+     * [mergesWithSavedFood]. Candidates are the same newest-per-favoriteKey
+     * diary ∪ favorites collapse every other saved-food surface uses (see
+     * [buildSavedFoodIndex]).
+     */
+    suspend fun savedTemplateFor(rawName: String, barcode: String?): FoodEntry? =
+        savedFoodTemplateFor(
+            templates = savedFoodTemplates(prefs.foodEntries.first(), prefs.favoriteFoodEntries.first()),
+            rawName = rawName,
+            barcode = barcode,
+        )
+
+    /**
+     * Draft-time name for scan / AI-analysis saves (Codeberg #98): keep
+     * [rawName] when it re-encounters a saved food — same barcode, or the name
+     * *is* a saved identity — so the log merges into that identity instead of
+     * forking into "Name (2)". Otherwise disambiguate as before. Manual
+     * entries keep pure disambiguation (different food, same name → suffix).
+     */
+    suspend fun savedOrDisambiguatedName(rawName: String, barcode: String?): String {
+        if (savedTemplateFor(rawName, barcode) != null) {
+            return rawName.trim().ifEmpty { rawName }
+        }
+        return disambiguateFoodName(rawName, existingFoodIdentityKeys())
+    }
+
+    /**
+     * Codeberg #98: after a scan / AI-analysis save merged into an existing
+     * saved identity ([template] from [savedTemplateFor], captured before the
+     * new row landed), bring a *persisted favorite* in step with the newest
+     * serving snapshot — but only when the stored macros are an empty
+     * placeholder (zero calories) or any of calories/protein/carbs/fat
+     * drifted by more than 25 % ([favoriteNeedsRefresh]), so estimation
+     * wobble never churns the saved library. Name and id are kept
+     * ([updateFavorite]). Favorites are the only persisted templates; a
+     * diary-only identity needs no action — the collapse already offers its
+     * newest row.
+     */
+    suspend fun refreshFavoriteOnMerge(template: FoodEntry?, fresh: FoodEntry): Boolean {
+        if (template == null) return false
+        val stored = migratedFavorites().firstOrNull { it.favoriteKey == template.favoriteKey } ?: return false
+        if (!favoriteNeedsRefresh(stored, fresh)) return false
+        updateFavorite(
+            stored,
+            stored.copy(
+                calories = fresh.calories,
+                protein = fresh.protein,
+                carbs = fresh.carbs,
+                fat = fresh.fat,
+            ),
+        )
+        return true
+    }
+
+    /**
+     * Newest diary rows, collapsed by [FoodEntry.favoriteKey] so re-logging
+     * the same food at a new serving does not stack duplicate picker rows.
+     * Template for each food is the most recent log (latest grams/units).
+     */
+    suspend fun recent(days: Int = 30, now: Instant = Instant.now()): List<FoodEntry> {
+        val cutoff = now.minus(days.toLong(), ChronoUnit.DAYS)
+        return recentFoodTemplates(
+            prefs.foodEntries.first().filter { !it.timestamp.isBefore(cutoff) },
+        )
+    }
+
+    /**
+     * Groups diary rows by food identity ([FoodEntry.favoriteKey]). Count is
+     * how often that food was logged; template is the newest serving snapshot
+     * so a re-log with new grams/pieces becomes the amount offered next time.
+     */
+    suspend fun frequent(days: Int = 90, now: Instant = Instant.now()): List<FrequentFoodGroup> {
+        val cutoff = now.minus(days.toLong(), ChronoUnit.DAYS)
+        return frequentFoodGroups(
+            prefs.foodEntries.first().filter { !it.timestamp.isBefore(cutoff) },
+        )
+    }
+
+    /**
+     * All-time diary collapse (newest row per [FoodEntry.favoriteKey]) for
+     * Saved Meals Recents and search. No 30-day cut, no cap. Hub chips stay
+     * windowed via [quickRelogRows].
+     *
+     * The sheet loads it once per Recents/Frequent tab open and filters
+     * in memory — same cost profile as CopyFromDaySheet's all-history load.
+     */
+    suspend fun historyTemplates(): List<FoodEntry> = recentFoodTemplates(
+        prefs.foodEntries.first(),
+        limit = Int.MAX_VALUE,
+    )
+
+    /**
+     * Hub chips for one-tap re-log: a recents row (newest, 30 days) and a
+     * frequent row (by count, 90 days) with no shared [FoodEntry.favoriteKey].
+     * Meal-window ranking stays on Saved Meals tabs, not the hub.
+     *
+     * Reads the diary snapshot once and reuses it for both windows.
+     */
+    /**
+     * Index backing the Add Food suggestion list: every food logged in the last
+     * [days] plus all favorites, collapsed by identity with the ranker's text
+     * work precomputed.
+     *
+     * Reads only the calendar months overlapping the window — the same shape as
+     * [quickRelogRows], and deliberately **not** [historyTemplates], which walks
+     * every month bucket ever written. This runs on sheet open (and is cached by
+     * the caller), never per keystroke.
+     */
+    suspend fun savedFoodIndex(days: Long = 365, now: Instant = Instant.now()): List<SavedFoodIndexEntry> =
+        PerfLog.measure("hubOpen", "savedIndex", "days=$days") {
+            val months = yearMonthsForSavedFoodIndex(now, days = days)
+            val windowed = prefs.foodEntriesForMonths(months).first()
+            val cutoff = now.minus(days, ChronoUnit.DAYS)
+            buildSavedFoodIndex(
+                entries = windowed.filter { !it.timestamp.isBefore(cutoff) },
+                favorites = migratedFavorites(),
+            )
+        }
+
+    suspend fun quickRelogRows(perRow: Int = 10): QuickRelogRows =
+        PerfLog.measure("hubOpen", "quickRelog", "perRow=$perRow") {
+            val now = Instant.now()
+            val months = yearMonthsForQuickRelog(now)
+            val windowed = prefs.foodEntriesForMonths(months).first()
+            val recentStart = now.minus(30, ChronoUnit.DAYS)
+            val frequentStart = now.minus(90, ChronoUnit.DAYS)
+            quickRelogRows(
+                recentWindow = windowed.filter { !it.timestamp.isBefore(recentStart) },
+                frequentWindow = windowed.filter { !it.timestamp.isBefore(frequentStart) },
+                perRow = perRow,
+            )
+        }
+}
+
+/**
+ * Pure Recents collapse used by [FoodRepository.recent] — newest-first,
+ * one row per [FoodEntry.favoriteKey].
+ */
+internal fun recentFoodTemplates(entries: List<FoodEntry>, limit: Int = 50): List<FoodEntry> {
+    val seen = mutableSetOf<String>()
+    return entries
+        .sortedByDescending { it.timestamp }
+        .filter { it.favoriteKey.isNotEmpty() && seen.add(it.favoriteKey) }
+        .take(limit)
+}
+
+/**
+ * Two hub rows from already-windowed diary snapshots. Recents are newest
+ * first and unique by [FoodEntry.favoriteKey]; frequents are count-desc
+ * (then name) and skip keys already shown in recents.
+ */
+internal fun quickRelogRows(
+    recentWindow: List<FoodEntry>,
+    frequentWindow: List<FoodEntry>,
+    perRow: Int = 10,
+): QuickRelogRows {
+    val recents = recentFoodTemplates(recentWindow, limit = perRow)
+    val recentKeys = recents.mapNotNull { it.favoriteKey.takeIf(String::isNotEmpty) }.toSet()
+    val frequents = frequentFoodGroups(frequentWindow)
+        .asSequence()
+        .filter { it.template.favoriteKey.isNotEmpty() && it.template.favoriteKey !in recentKeys }
+        .take(perRow)
+        .map { it.template }
+        .toList()
+    return QuickRelogRows(recents, frequents)
+}
+
+/**
+ * Pure Frequent aggregation used by [FoodRepository.frequent].
+ */
+internal fun frequentFoodGroups(entries: List<FoodEntry>): List<FrequentFoodGroup> {
+    val aggregates = mutableMapOf<String, Pair<Int, FoodEntry>>()
+    for (entry in entries) {
+        val key = entry.favoriteKey
+        if (key.isEmpty()) continue
+        val existing = aggregates[key]
+        if (existing != null) {
+            val (count, template) = existing
+            val newTemplate = if (entry.timestamp > template.timestamp) entry else template
+            aggregates[key] = (count + 1) to newTemplate
+        } else {
+            aggregates[key] = 1 to entry
+        }
+    }
+    return aggregates.map { (_, pair) ->
+        FrequentFoodGroup(template = pair.second, count = pair.first)
+    }.sortedWith(
+        compareByDescending<FrequentFoodGroup> { it.count }.thenBy { it.name.lowercase() }
+    )
+}
+
+/**
+ * Avoid accidental Saved Meals identity collisions for brand-new foods
+ * (scan / AI / manual). If [desired] already exists (case-insensitive),
+ * returns "Name (2)", "Name (3)", … based on the stem without a trailing
+ * numeric suffix. Relogs should keep the original name so servings merge.
+ */
+fun disambiguateFoodName(desired: String, existingKeys: Set<String>): String {
+    val trimmed = desired.trim()
+    if (trimmed.isEmpty()) return desired
+    val key = trimmed.lowercase()
+    if (key !in existingKeys) return trimmed
+
+    val stem = TRAILING_NUMERIC_SUFFIX.replace(trimmed, "").trim().ifEmpty { trimmed }
+    var n = 2
+    while (n <= 10_000) {
+        val candidate = "$stem ($n)"
+        if (candidate.lowercase() !in existingKeys) return candidate
+        n++
+    }
+    return "$stem ($n)"
+}
+
+/**
+ * Whether logging [rawName] should merge into [template] instead of being
+ * disambiguated away from it. True when the name *is* that saved food's
+ * identity — a re-log, or an AI estimate the user adopted a saved source for.
+ *
+ * Getting this wrong is how a food forks: miss the merge and
+ * [disambiguateFoodName] turns the second log of "Oatmeal" into "Oatmeal (2)",
+ * splitting one food's history across two identities for good.
+ */
+fun mergesWithSavedFood(rawName: String, template: FoodEntry?): Boolean {
+    if (template == null) return false
+    return rawName.trim().lowercase(Locale.ROOT) == template.favoriteKey
+}
+
+/**
+ * Newest-per-identity saved templates from diary ∪ favorites — the same
+ * collapse [buildSavedFoodIndex] performs: newest diary row per
+ * [FoodEntry.favoriteKey], then favorites that were never logged.
+ */
+internal fun savedFoodTemplates(entries: List<FoodEntry>, favorites: List<FoodEntry>): List<FoodEntry> {
+    val templates = LinkedHashMap<String, FoodEntry>()
+    for (entry in entries.sortedByDescending { it.timestamp }) {
+        val key = entry.favoriteKey
+        if (key.isEmpty()) continue
+        templates.putIfAbsent(key, entry)
+    }
+    for (favorite in favorites) {
+        val key = favorite.favoriteKey
+        if (key.isEmpty()) continue
+        templates.putIfAbsent(key, favorite)
+    }
+    return templates.values.toList()
+}
+
+/** Barcode match for [savedFoodTemplateFor]: grounding source id or OFF product metadata. */
+internal fun FoodEntry.matchesSavedBarcode(barcode: String): Boolean =
+    grounding?.sourceId == barcode || productMetadata?.barcode == barcode
+
+/**
+ * Pure core of [FoodRepository.savedTemplateFor]: the newest template
+ * grounded in [barcode] wins (a product renamed between scans still reuses
+ * one identity); otherwise the name identity via [mergesWithSavedFood].
+ */
+internal fun savedFoodTemplateFor(templates: List<FoodEntry>, rawName: String, barcode: String?): FoodEntry? {
+    if (!barcode.isNullOrBlank()) {
+        templates.filter { it.matchesSavedBarcode(barcode) }
+            .maxByOrNull { it.timestamp }
+            ?.let { return it }
+    }
+    return templates.firstOrNull { mergesWithSavedFood(rawName, it) }
+}
+
+/**
+ * Whether a merged save should refresh a stored favorite's macros from the
+ * newest serving snapshot (Codeberg #98): the stored values are an empty
+ * placeholder (zero calories) or any of calories/protein/carbs/fat drifted
+ * by more than 25 %. Symmetric relative drift (max of the two magnitudes as
+ * the denominator): zero against a value counts as full drift, both-zero
+ * does not.
+ */
+internal fun favoriteNeedsRefresh(stored: FoodEntry, fresh: FoodEntry): Boolean {
+    if (stored.calories == 0) return true
+    fun drifted(storedValue: Double, freshValue: Double) =
+        abs(storedValue - freshValue) > 0.25 * max(abs(storedValue), abs(freshValue))
+    return drifted(stored.calories.toDouble(), fresh.calories.toDouble()) ||
+        drifted(stored.protein, fresh.protein) ||
+        drifted(stored.carbs, fresh.carbs) ||
+        drifted(stored.fat, fresh.fat)
+}
+
+private val TRAILING_NUMERIC_SUFFIX = Regex("""\s+\((\d+)\)$""")
+
+data class QuickRelogRows(
+    val recents: List<FoodEntry>,
+    val frequents: List<FoodEntry>,
+) {
+    val isEmpty: Boolean get() = recents.isEmpty() && frequents.isEmpty()
+
+    companion object {
+        val Empty = QuickRelogRows(emptyList(), emptyList())
+    }
+}
+
+data class FrequentFoodGroup(
+    val template: FoodEntry,
+    val count: Int
+) {
+    val id: String = template.favoriteKey
+    val name: String = template.name
+    val calories: Int = template.calories
+}
+
+// Helper — converts Instant -> start-of-day in system zone.
+@Suppress("unused")
+internal fun Instant.toLocalDate(): LocalDate =
+    this.atZone(ZoneId.systemDefault()).toLocalDate()

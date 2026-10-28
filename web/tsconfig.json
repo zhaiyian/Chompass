@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["app/src/**/*.js"],
+  "exclude": [
+    "app/src/**/__tests__/**",
+    "app/src/lib/parity-fixtures.js",
+    "app/sw.js",
+    "app/vendor/**"
+  ]
+}

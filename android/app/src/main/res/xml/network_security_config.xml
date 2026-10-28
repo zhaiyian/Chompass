@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Default: HTTPS only for cloud traffic. Cloud provider base URLs are
+         hard-coded HTTPS, so no cloud request ever goes cleartext.
+
+         LAN cleartext is an app-level opt-in (issue #8 follow-up, design doc D2
+         Option B): the platform cannot scope cleartext to user-entered hosts at
+         runtime (no per-host setters), so base-config allows it and the AI layer
+         gates it instead - AiHttp.assertCleartextAllowed() rejects http:// URLs
+         for non-loopback hosts unless the user enables "Allow insecure HTTP"
+         in Settings → AI & Speech. Loopback stays allowed unconditionally for
+         the default Ollama URL (http://localhost:11434).
+
+         Side effect (documented in LOCAL_ENDPOINT_TRUST_DESIGN.md): WebDAV and
+         custom STT endpoints also gain cleartext capability in release builds;
+         both only ever use http when the user configured an http:// URL. -->
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
