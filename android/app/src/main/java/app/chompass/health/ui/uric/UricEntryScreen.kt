@@ -60,7 +60,7 @@ import app.chompass.health.util.TimeUtils
 import app.chompass.ui.components.ChompassDialogActions
 import app.chompass.ui.components.ChompassPrimaryButton
 import app.chompass.ui.components.ChompassSegmentedTabs
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
 import app.chompass.ui.components.ChompassTextField
 import java.time.LocalDateTime
 
@@ -126,9 +126,9 @@ fun UricEntryScreen(
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_entry_value_label),
                     style = MaterialTheme.typography.labelMedium,
@@ -155,7 +155,6 @@ fun UricEntryScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(12.dp))
                 ChompassSegmentedTabs(
                     options = UricInputUnit.entries,
                     selected = ui.unit,
@@ -163,7 +162,6 @@ fun UricEntryScreen(
                     label = { HealthUnits.of(it) },
                 )
                 ui.error?.let { error ->
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         entryErrorText(error),
                         style = MaterialTheme.typography.bodySmall,
@@ -172,7 +170,7 @@ fun UricEntryScreen(
                 }
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 PickerRow(
                     label = stringResource(R.string.health_entry_date),
                     value = TimeUtils.toDateString(ui.measuredAt),
@@ -185,13 +183,12 @@ fun UricEntryScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_entry_method),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 val methods = dict.enabledOf(DictType.URIC_METHOD)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     methods.forEach { entry ->
@@ -204,7 +201,6 @@ fun UricEntryScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(R.string.health_entry_fasting),
@@ -215,7 +211,7 @@ fun UricEntryScreen(
                 }
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 ChompassTextField(
                     value = ui.note,
                     onValueChange = vm::setNote,

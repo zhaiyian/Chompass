@@ -60,6 +60,9 @@ import app.chompass.health.domain.uric.UnitConverter
 import app.chompass.health.domain.uric.UricPeriod
 import app.chompass.health.domain.uric.UricRange
 import app.chompass.health.model.UricLevel
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthLayout
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.health.ui.HealthUnits
 import app.chompass.health.ui.mgdlText
 import app.chompass.health.ui.umolText
@@ -70,7 +73,6 @@ import app.chompass.health.ui.uricRangeLabel
 import app.chompass.health.util.TimeUtils
 import app.chompass.ui.components.ChompassSegmentedTabs
 import app.chompass.ui.components.ChompassSurface
-import app.chompass.ui.components.ChompassSurfaceColumn
 import app.chompass.ui.navigation.BottomNavScrollPadding
 import java.time.LocalDate
 
@@ -105,29 +107,32 @@ fun UricSection(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Period tabs and the range stepper form one control: 4 dp inside the
+        // group, the card gap outside it. At 12 dp between them they read as two
+        // unrelated rows above the data.
         item {
-            ChompassSegmentedTabs(
-                options = UricPeriodTabs,
-                selected = ui.range.period,
-                onSelect = { period ->
-                    if (period == UricPeriod.CUSTOM) {
-                        showRangePicker = true
-                    } else {
-                        vm.selectPeriod(period)
-                    }
-                },
-                label = { uricPeriodLabel(it) },
-            )
-        }
-        item {
-            RangeNavRow(
-                label = uricRangeLabel(ui.range),
-                pageable = ui.range.pageable,
-                canGoNext = ui.canGoNext,
-                onPrevious = vm::goPrevious,
-                onNext = vm::goNext,
-                onPickRange = { showRangePicker = true },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(HealthLayout.TightSpacing)) {
+                ChompassSegmentedTabs(
+                    options = UricPeriodTabs,
+                    selected = ui.range.period,
+                    onSelect = { period ->
+                        if (period == UricPeriod.CUSTOM) {
+                            showRangePicker = true
+                        } else {
+                            vm.selectPeriod(period)
+                        }
+                    },
+                    label = { uricPeriodLabel(it) },
+                )
+                RangeNavRow(
+                    label = uricRangeLabel(ui.range),
+                    pageable = ui.range.pageable,
+                    canGoNext = ui.canGoNext,
+                    onPrevious = vm::goPrevious,
+                    onNext = vm::goNext,
+                    onPickRange = { showRangePicker = true },
+                )
+            }
         }
         item {
             LatestCard(
@@ -139,27 +144,19 @@ fun UricSection(
         item { TrendCard(ui) }
         item { StatsCard(ui) }
         item {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.health_records_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                if (ui.hasRecords) {
-                    Text(
-                        stringResource(R.string.health_records_count, ui.records.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            HealthSectionHeader(
+                title = stringResource(R.string.health_records_title),
+                meta = if (ui.hasRecords) {
+                    stringResource(R.string.health_records_count, ui.records.size)
+                } else {
+                    null
+                },
+            )
         }
         if (ui.hasRecords) {
             item {
-                ChompassSurfaceColumn(padding = 0.dp) {
+                // spacing = 0: each row carries its own 12 dp of vertical padding.
+                HealthCard(padding = 0.dp, spacing = 0.dp) {
                     ui.records.forEachIndexed { index, record ->
                         if (index > 0) HorizontalDivider()
                         ReadingRow(
@@ -270,12 +267,11 @@ private fun LatestCard(
     targetUmol: Int,
     onChangeTarget: () -> Unit,
 ) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.health_latest),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onChangeTarget) {
@@ -327,12 +323,11 @@ private fun LatestCard(
 
 @Composable
 private fun TrendCard(ui: UricTrendUiState) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             stringResource(R.string.health_chart_title),
             style = MaterialTheme.typography.titleSmall,
         )
-        Spacer(Modifier.height(8.dp))
         if (ui.hasRecords) {
             UricTrendChart(
                 points = ui.points,
@@ -351,12 +346,11 @@ private fun TrendCard(ui: UricTrendUiState) {
 @Composable
 private fun StatsCard(ui: UricTrendUiState) {
     if (!ui.hasRecords) return
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             stringResource(R.string.health_stats_title),
             style = MaterialTheme.typography.titleSmall,
         )
-        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth()) {
             StatCell(
                 label = stringResource(R.string.health_stat_average),
@@ -374,7 +368,6 @@ private fun StatsCard(ui: UricTrendUiState) {
                 modifier = Modifier.weight(1f),
             )
         }
-        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth()) {
             StatCell(
                 label = stringResource(R.string.health_stat_in_target),

@@ -92,6 +92,15 @@ fun ChompassSurfaceColumn(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 16.dp,
     padding: Dp = 16.dp,
+    /**
+     * Vertical rhythm between the rows of the card.
+     *
+     * Defaults to 0 so no existing screen changes; a card that stacks a title,
+     * a headline number and two captions passes a real value instead of threading
+     * `Spacer`s between them (which is how the health screens ended up with
+     * 0 dp here, 8 dp there and 10 dp somewhere else).
+     */
+    verticalSpacing: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ChompassSurface(
@@ -99,7 +108,11 @@ fun ChompassSurfaceColumn(
         cornerRadius = cornerRadius,
         padding = 0.dp,
     ) {
-        Column(Modifier.padding(padding), content = content)
+        Column(
+            modifier = Modifier.padding(padding),
+            verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+            content = content,
+        )
     }
 }
 

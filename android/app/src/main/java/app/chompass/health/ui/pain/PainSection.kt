@@ -47,7 +47,9 @@ import app.chompass.R
 import app.chompass.health.domain.DictResolver
 import app.chompass.health.domain.model.PainSide
 import app.chompass.health.model.PainEpisode
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.ui.navigation.BottomNavScrollPadding
 import app.chompass.ui.navigation.BottomOverlayPadding
 import app.chompass.ui.theme.success
@@ -108,27 +110,21 @@ fun PainSection(
                 )
             }
             item {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.health_pain_records_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (!ui.isEmpty) {
-                        Text(
-                            stringResource(R.string.health_pain_records_count, ui.ongoing.size + ui.history.size),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                HealthSectionHeader(
+                    title = stringResource(R.string.health_pain_records_title),
+                    meta = if (ui.isEmpty) {
+                        null
+                    } else {
+                        stringResource(
+                            R.string.health_pain_records_count,
+                            ui.ongoing.size + ui.history.size,
                         )
-                    }
-                }
+                    },
+                )
             }
             if (ui.isEmpty) {
                 item {
-                    ChompassSurfaceColumn {
+                    HealthCard {
                         Text(
                             stringResource(R.string.health_pain_records_empty_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -142,7 +138,9 @@ fun PainSection(
                 }
             } else {
                 item {
-                    ChompassSurfaceColumn(padding = 0.dp) {
+                    // spacing = 0: rows carry their own padding and a divider sits
+                    // between them.
+                    HealthCard(padding = 0.dp, spacing = 0.dp) {
                         ui.ongoing.forEachIndexed { index, episode ->
                             OngoingRow(
                                 episode = episode,
@@ -179,13 +177,12 @@ fun PainSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                item {
-                    Text(
-                        stringResource(R.string.health_pain_disclaimer),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            }
+            // Outside the empty/filled switch: the disclosure is not part of the
+            // record list, and dropping it on the empty state made the promise
+            // "this is not a diagnosis" depend on having data.
+            item {
+                HealthDisclosure(stringResource(R.string.health_pain_disclaimer))
             }
             item { Spacer(Modifier.height(BottomNavScrollPadding)) }
         }
@@ -259,11 +256,10 @@ private data class NrsRequest(val episode: PainEpisode, val presetNrs: Int, val 
 
 @Composable
 private fun StatusCard(ui: PainListUiState, dict: DictResolver) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             stringResource(R.string.health_pain_status_title),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleSmall,
         )
         when {
             ui.ongoing.isEmpty() -> {
@@ -387,7 +383,7 @@ private fun StatusCard(ui: PainListUiState, dict: DictResolver) {
  */
 @Composable
 private fun InsightCard(ui: PainListUiState, dict: DictResolver, onOpen: () -> Unit) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

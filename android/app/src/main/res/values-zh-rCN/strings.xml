@@ -2766,7 +2766,6 @@
     </string-array>
     <!-- Health diary: uric acid, pain, medication (ported from UricDiary) -->
     <string name="nav_health">健康</string>
-    <string name="health_uric_title">尿酸</string>
     <string name="health_uric_add">记录一次</string>
     <string name="health_entry_add_title">记录一次</string>
     <string name="health_entry_edit_title">编辑记录</string>
@@ -2923,7 +2922,6 @@
     <!-- Health diary: pain module -->
     <string name="health_tab_uric">尿酸</string>
     <string name="health_tab_pain">疼痛</string>
-    <string name="health_pain_title">疼痛记录</string>
     <string name="health_pain_add">记一次发作</string>
     <string name="health_pain_status_title">当前状态</string>
     <string name="health_pain_status_none">未在发作</string>
@@ -3100,7 +3098,6 @@
     <!-- Health diary: medication module -->
     <string name="action_confirm">确定</string>
     <string name="health_tab_med">用药</string>
-    <string name="health_med_title">用药</string>
     <string name="health_med_manage">我的药物</string>
     <string name="health_med_add">添加</string>
     <string name="health_med_record_one">记一次</string>

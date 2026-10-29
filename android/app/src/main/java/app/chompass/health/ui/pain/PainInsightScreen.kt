@@ -40,7 +40,8 @@ import app.chompass.AppContainer
 import app.chompass.R
 import app.chompass.health.domain.DictResolver
 import app.chompass.health.domain.model.DictType
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
 import app.chompass.ui.navigation.BottomNavScrollPadding
 
 /**
@@ -99,7 +100,7 @@ fun PainInsightScreen(
         ) {
             OverviewCard(insight)
             if (!insight.hasAnything) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(
                             R.string.health_pain_insight_window_empty,
@@ -115,7 +116,7 @@ fun PainInsightScreen(
                 }
             } else {
                 if (!insight.sampleEnough) {
-                    ChompassSurfaceColumn {
+                    HealthCard {
                         Text(
                             stringResource(R.string.health_pain_insight_sample_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -152,7 +153,7 @@ fun PainInsightScreen(
                     rows = insight.natureRows,
                     labelOf = { row -> dict.label(DictType.PAIN_NATURE, row.code).text },
                 )
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_pain_insight_affect),
                         style = MaterialTheme.typography.labelMedium,
@@ -178,11 +179,7 @@ fun PainInsightScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                stringResource(R.string.health_pain_insight_disclaimer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            HealthDisclosure(stringResource(R.string.health_pain_insight_disclaimer))
             Spacer(Modifier.height(BottomNavScrollPadding))
         }
     }
@@ -190,7 +187,7 @@ fun PainInsightScreen(
 
 @Composable
 private fun OverviewCard(insight: PainInsightUi) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.health_pain_insight_window, insight.windowDays),
@@ -259,7 +256,7 @@ private fun RowBars(
     labelOf: @Composable (InsightRow) -> String,
 ) {
     if (rows.isEmpty()) return
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             title,
             style = MaterialTheme.typography.labelMedium,

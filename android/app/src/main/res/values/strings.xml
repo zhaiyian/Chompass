@@ -2806,7 +2806,6 @@
 
     <!-- Health diary: uric acid, pain, medication (ported from UricDiary) -->
     <string name="nav_health">Health</string>
-    <string name="health_uric_title">Uric acid</string>
     <string name="health_uric_add">Log reading</string>
     <string name="health_entry_add_title">New reading</string>
     <string name="health_entry_edit_title">Edit reading</string>
@@ -2963,7 +2962,6 @@
     <!-- Health diary: pain module -->
     <string name="health_tab_uric">Uric acid</string>
     <string name="health_tab_pain">Pain</string>
-    <string name="health_pain_title">Pain diary</string>
     <string name="health_pain_add">Log a flare</string>
     <string name="health_pain_status_title">Current status</string>
     <string name="health_pain_status_none">Not flaring</string>
@@ -3140,7 +3138,6 @@
     <!-- Health diary: medication module -->
     <string name="action_confirm">Confirm</string>
     <string name="health_tab_med">Medication</string>
-    <string name="health_med_title">Medication</string>
     <string name="health_med_manage">My medications</string>
     <string name="health_med_add">Add</string>
     <string name="health_med_record_one">Record a dose</string>

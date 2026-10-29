@@ -46,7 +46,8 @@ import app.chompass.health.domain.DictResolver
 import app.chompass.health.domain.model.DictType
 import app.chompass.health.model.PainEpisode
 import app.chompass.health.model.PainNrsPoint
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
 
 /**
  * B3 — one flare, in full.
@@ -133,11 +134,7 @@ fun PainDetailScreen(
                     onRemove = vm::removeUpdate,
                 )
                 DetailsCard(episode = episode, dict = dict)
-                Text(
-                    stringResource(R.string.health_pain_detail_disclaimer),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                HealthDisclosure(stringResource(R.string.health_pain_detail_disclaimer))
                 if (episode.ongoing) {
                     TextButton(
                         onClick = {
@@ -215,7 +212,7 @@ fun PainDetailScreen(
 
 @Composable
 private fun HeaderCard(episode: PainEpisode, dict: DictResolver, now: Long) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 painSiteLabel(dict, episode.siteCode, episode.side),
@@ -276,7 +273,7 @@ private fun StatusChip(ongoing: Boolean) {
 
 @Composable
 private fun TimeCard(episode: PainEpisode, now: Long) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             stringResource(R.string.health_pain_detail_time),
             style = MaterialTheme.typography.labelMedium,
@@ -304,7 +301,7 @@ private fun TimelineCard(
     now: Long,
     onRemove: (Long) -> Unit,
 ) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.health_pain_timeline_title),
@@ -395,7 +392,7 @@ private fun TimelineRow(
 
 @Composable
 private fun DetailsCard(episode: PainEpisode, dict: DictResolver) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Text(
             stringResource(R.string.health_pain_detail_records),
             style = MaterialTheme.typography.labelMedium,

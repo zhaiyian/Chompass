@@ -31,8 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.chompass.AppContainer
 import app.chompass.R
-import app.chompass.health.ui.pain.PainSection
 import app.chompass.health.ui.med.MedSection
+import app.chompass.health.ui.pain.PainSection
 import app.chompass.health.ui.uric.UricSection
 import app.chompass.ui.components.ChompassSegmentedTabs
 import app.chompass.ui.navigation.BottomOverlayPadding
@@ -73,7 +73,12 @@ fun HealthScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        stringResource(section.titleRes()),
+                        // Fixed, not the current section: the segmented control one
+                        // line below already names the section, and a title that
+                        // changes under it made the header jump on every switch.
+                        // Reuses the nav label rather than adding a second string
+                        // for the same word.
+                        stringResource(R.string.nav_health),
                         fontWeight = FontWeight.SemiBold,
                     )
                 },
@@ -102,12 +107,19 @@ fun HealthScreen(
                     label = { stringResource(it.labelRes()) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                        .padding(
+                            start = HealthLayout.ScreenPad,
+                            end = HealthLayout.ScreenPad,
+                            top = HealthLayout.TightSpacing,
+                            // Pairs with the content's top inset below: the tabs sit
+                            // one card-gap away from the first card.
+                            bottom = HealthLayout.CardSpacing,
+                        ),
                 )
                 val contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 4.dp,
-                    end = 16.dp,
+                    start = HealthLayout.ScreenPad,
+                    top = HealthLayout.TightSpacing,
+                    end = HealthLayout.ScreenPad,
                     // Room for the FAB: without it the last row ends under it.
                     bottom = 64.dp,
                 )
@@ -151,7 +163,8 @@ fun HealthScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
-                    .padding(end = 24.dp, bottom = BottomOverlayPadding),
+                    // Right-aligned with the cards rather than 8 dp inside them.
+                    .padding(end = HealthLayout.ScreenPad, bottom = BottomOverlayPadding),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
@@ -162,13 +175,6 @@ fun HealthScreen(
             }
         }
     }
-}
-
-@androidx.annotation.StringRes
-private fun HealthSection.titleRes(): Int = when (this) {
-    HealthSection.MED -> R.string.health_med_title
-    HealthSection.URIC -> R.string.health_uric_title
-    HealthSection.PAIN -> R.string.health_pain_title
 }
 
 @androidx.annotation.StringRes

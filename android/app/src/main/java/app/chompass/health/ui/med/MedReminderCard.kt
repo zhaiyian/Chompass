@@ -32,7 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.chompass.R
 import app.chompass.health.HealthContainer
 import app.chompass.health.reminder.HealthReminderCenter
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
 import app.chompass.ui.theme.warning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -125,7 +125,7 @@ fun MedReminderCard(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted -> if (granted) vm.setMaster(true) else vm.refresh() }
 
-    ChompassSurfaceColumn(modifier = modifier) {
+    HealthCard(modifier = modifier) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(

@@ -63,7 +63,9 @@ import app.chompass.health.model.MedCategory
 import app.chompass.health.util.TimeUtils
 import app.chompass.ui.components.ChompassPrimaryButton
 import app.chompass.ui.components.ChompassSegmentedTabs
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.ui.components.ChompassTextField
 import app.chompass.ui.theme.warning
 
@@ -119,7 +121,7 @@ fun MedListScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (ui.isEmpty) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_empty_list_title),
                         style = MaterialTheme.typography.titleMedium,
@@ -129,18 +131,17 @@ fun MedListScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(8.dp))
                     ChompassPrimaryButton(
                         text = stringResource(R.string.health_med_empty_list_action),
                         onClick = onAdd,
                     )
                 }
             } else {
-                SectionHeader(
+                HealthSectionHeader(
                     title = stringResource(R.string.health_med_active_title),
                     meta = stringResource(R.string.health_med_active_count, ui.activeCount),
                 )
-                ChompassSurfaceColumn(padding = 0.dp) {
+                HealthCard(padding = 0.dp, spacing = 0.dp) {
                     if (ui.active.isEmpty()) {
                         Text(
                             stringResource(R.string.health_med_active_empty),
@@ -156,11 +157,11 @@ fun MedListScreen(
                     }
                 }
                 if (ui.stopped.isNotEmpty()) {
-                    SectionHeader(
+                    HealthSectionHeader(
                         title = stringResource(R.string.health_med_stopped_title),
                         meta = stringResource(R.string.health_med_stopped_hint),
                     )
-                    ChompassSurfaceColumn(padding = 0.dp) {
+                    HealthCard(padding = 0.dp, spacing = 0.dp) {
                         ui.stopped.forEachIndexed { index, row ->
                             MedRow(row = row, onOpen = onOpen)
                             if (index != ui.stopped.lastIndex) HorizontalDivider()
@@ -174,28 +175,9 @@ fun MedListScreen(
             if (!ui.isEmpty) {
                 MedReminderCard(container = container.healthDiary)
             }
-            Text(
-                stringResource(R.string.health_med_list_disclaimer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            HealthDisclosure(stringResource(R.string.health_med_list_disclaimer))
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
-    }
-}
-
-@Composable
-private fun SectionHeader(title: String, meta: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        Text(
-            meta,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -366,13 +348,12 @@ fun MedEditScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_med_name),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ChompassTextField(
                     value = ui.name,
                     onValueChange = vm::setName,
@@ -380,26 +361,23 @@ fun MedEditScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_med_category),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ChompassSegmentedTabs(
                     options = MedCategory.entries,
                     selected = ui.category,
                     onSelect = vm::setCategory,
                     label = { medCategoryLabel(it) },
                 )
-                Spacer(Modifier.height(6.dp))
                 Text(
                     stringResource(R.string.health_med_category_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 SwitchRow(
                     label = stringResource(R.string.health_med_prn_switch),
                     hint = stringResource(R.string.health_med_prn_switch_hint),
@@ -408,20 +386,18 @@ fun MedEditScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_med_strength, ui.unitLabel),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ValueWithUnitField(
                     value = ui.strengthValue,
                     onValueChange = vm::setStrengthValue,
                     unit = ui.strengthUnit,
                     placeholder = "40",
                 )
-                Spacer(Modifier.height(8.dp))
                 UnitChips(
                     options = STRENGTH_UNITS,
                     selected = ui.strengthUnit,
@@ -429,20 +405,18 @@ fun MedEditScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_med_intake_per_dose),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ValueWithUnitField(
                     value = ui.intakeUnits,
                     onValueChange = vm::setIntakeUnits,
                     unit = ui.unitLabel,
                     placeholder = "1",
                 )
-                Spacer(Modifier.height(8.dp))
                 UnitChips(
                     options = intakeUnitOptions(),
                     selected = ui.unitLabel,
@@ -451,13 +425,12 @@ fun MedEditScreen(
             }
 
             if (!ui.isPrn) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_times_title),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(8.dp))
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -487,7 +460,6 @@ fun MedEditScreen(
                     // The gap between the stepper and the chips is deliberate:
                     // when they sit flush, aiming for a chip's × hits "+", which
                     // silently changes the daily dose count.
-                    Spacer(Modifier.height(8.dp))
                     FlowRow(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -497,7 +469,6 @@ fun MedEditScreen(
                             TimeChip(text = time, onRemove = { vm.removeTime(time) })
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
                     TextButton(onClick = { timePickerOpen = true }) {
                         Text(stringResource(R.string.health_med_add_time))
                     }
@@ -506,7 +477,6 @@ fun MedEditScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(8.dp))
                     SwitchRow(
                         label = stringResource(R.string.health_med_reminder),
                         hint = stringResource(R.string.health_med_reminder_hint),
@@ -514,13 +484,12 @@ fun MedEditScreen(
                         onChange = vm::setReminder,
                     )
                 }
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_meal),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(8.dp))
                     ChompassSegmentedTabs(
                         options = MealRelation.entries,
                         selected = ui.mealRelation,
@@ -530,13 +499,12 @@ fun MedEditScreen(
                 }
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_med_stock),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ValueWithUnitField(
                     value = ui.stockUnits,
                     onValueChange = vm::setStockUnits,
@@ -544,7 +512,6 @@ fun MedEditScreen(
                     placeholder = stringResource(R.string.health_med_stock_hint),
                 )
                 ui.stockDays?.let { days ->
-                    Spacer(Modifier.height(6.dp))
                     Text(
                         stringResource(
                             R.string.health_med_stock_days_hint,
@@ -557,13 +524,11 @@ fun MedEditScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(10.dp))
                 Text(
                     stringResource(R.string.health_med_alert_days),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
                 ChompassSegmentedTabs(
                     options = listOf(7, 14, 30),
                     selected = ui.stockAlertDays,

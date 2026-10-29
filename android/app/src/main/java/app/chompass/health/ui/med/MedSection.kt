@@ -40,7 +40,9 @@ import app.chompass.AppContainer
 import app.chompass.R
 import app.chompass.health.model.DoseAction
 import app.chompass.health.model.DoseState
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.ui.navigation.BottomNavScrollPadding
 import app.chompass.ui.navigation.BottomOverlayPadding
 import app.chompass.ui.theme.success
@@ -90,33 +92,22 @@ fun MedSection(
             }
             item { AdherenceCard(ui = ui, onOpenLog = onOpenLog) }
             item {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.health_med_list_title),
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            stringResource(R.string.health_med_list_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    // The only permanent way into the medication list: the stock
-                    // banner and the empty card appear only in their own states.
-                    TextButton(onClick = onManageMeds) {
-                        Text(stringResource(R.string.health_med_manage))
-                    }
-                }
+                HealthSectionHeader(
+                    title = stringResource(R.string.health_med_list_title),
+                    hint = stringResource(R.string.health_med_list_hint),
+                    action = {
+                        // The only permanent way into the medication list: the
+                        // stock banner and the empty card appear only in their
+                        // own states.
+                        TextButton(onClick = onManageMeds) {
+                            Text(stringResource(R.string.health_med_manage))
+                        }
+                    },
+                )
             }
             if (ui.rows.isEmpty()) {
                 item {
-                    ChompassSurfaceColumn {
+                    HealthCard {
                         Text(
                             stringResource(R.string.health_med_empty_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -138,7 +129,9 @@ fun MedSection(
                 }
             } else {
                 item {
-                    ChompassSurfaceColumn(padding = 0.dp) {
+                    // spacing = 0: every row carries its own 12 dp and is separated
+                    // by a divider, so the card must not add a second rhythm.
+                    HealthCard(padding = 0.dp, spacing = 0.dp) {
                         ui.rows.forEachIndexed { index, row ->
                             DoseRow(
                                 row = row,
@@ -160,13 +153,17 @@ fun MedSection(
             }
             if (ui.prnMeds.isNotEmpty()) {
                 item {
-                    ChompassSurfaceColumn {
+                    HealthCard {
                         Text(
                             stringResource(R.string.health_med_prn_title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        ui.prnMeds.forEach { prn ->
+                        // One divider per medication: without it the names,
+                        // strengths and buttons of different drugs read as one
+                        // long paragraph.
+                        ui.prnMeds.forEachIndexed { index, prn ->
+                            if (index > 0) HorizontalDivider()
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -200,11 +197,7 @@ fun MedSection(
                 }
             }
             item {
-                Text(
-                    stringResource(R.string.health_med_disclaimer),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                HealthDisclosure(stringResource(R.string.health_med_disclaimer))
             }
             item { Spacer(Modifier.height(BottomNavScrollPadding)) }
         }
@@ -299,12 +292,11 @@ private fun LowStockBanner(low: LowStockUi, onRestock: () -> Unit) {
 
 @Composable
 private fun AdherenceCard(ui: MedTodayUiState, onOpenLog: () -> Unit) {
-    ChompassSurfaceColumn {
+    HealthCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.health_med_adherence_title),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onOpenLog) {

@@ -42,7 +42,8 @@ import app.chompass.R
 import app.chompass.health.ui.pain.PainDateTimeRow
 import app.chompass.health.ui.pain.PainFieldLabel
 import app.chompass.ui.components.ChompassPrimaryButton
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
 import app.chompass.ui.components.ChompassTextField
 
 /**
@@ -116,7 +117,7 @@ fun MedExtraDoseScreen(
             }
 
             if (ui.meds.isEmpty()) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_extra_empty_title),
                         style = MaterialTheme.typography.titleMedium,
@@ -128,7 +129,7 @@ fun MedExtraDoseScreen(
                     )
                 }
             } else {
-                ChompassSurfaceColumn {
+                HealthCard {
                     PainFieldLabel(stringResource(R.string.health_med_extra_pick))
                     ui.meds.forEach { med ->
                         Row(
@@ -156,9 +157,8 @@ fun MedExtraDoseScreen(
                     }
                 }
 
-                ChompassSurfaceColumn {
+                HealthCard {
                     PainFieldLabel(stringResource(R.string.health_med_actual_time))
-                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = false,
@@ -171,20 +171,17 @@ fun MedExtraDoseScreen(
                             label = { Text(stringResource(R.string.health_med_extra_quick_hour)) },
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
                     PainDateTimeRow(at = ui.actualAt, onChange = vm::setActualAt)
                 }
 
-                ChompassSurfaceColumn {
+                HealthCard {
                     PainFieldLabel(stringResource(R.string.health_med_extra_dose))
-                    Spacer(Modifier.height(6.dp))
                     Text(
                         ui.selected?.let {
                             medDoseText(it.strengthValue, it.strengthUnit, it.intakeUnits, it.unitLabel)
                         } ?: "",
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    Spacer(Modifier.height(4.dp))
                     Text(
                         stringResource(R.string.health_med_extra_dose_hint),
                         style = MaterialTheme.typography.bodySmall,
@@ -192,9 +189,8 @@ fun MedExtraDoseScreen(
                     )
                 }
 
-                ChompassSurfaceColumn {
+                HealthCard {
                     PainFieldLabel(stringResource(R.string.health_med_extra_note))
-                    Spacer(Modifier.height(8.dp))
                     ChompassTextField(
                         value = ui.note,
                         onValueChange = vm::setNote,
@@ -228,11 +224,7 @@ fun MedExtraDoseScreen(
                 )
             }
 
-            Text(
-                stringResource(R.string.health_med_extra_disclaimer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            HealthDisclosure(stringResource(R.string.health_med_extra_disclaimer))
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
     }

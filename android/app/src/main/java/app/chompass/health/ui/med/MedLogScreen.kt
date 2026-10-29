@@ -50,7 +50,8 @@ import app.chompass.AppContainer
 import app.chompass.R
 import app.chompass.health.model.DoseState
 import app.chompass.health.util.TimeUtils
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.ui.navigation.BottomNavScrollPadding
 import app.chompass.ui.theme.success
 import app.chompass.ui.theme.warning
@@ -164,7 +165,7 @@ fun MedLogScreen(
             if (ui.plannedCount == 0 && ui.extraCount > 0) {
                 // Four zeros above dozens of rows looks like a arithmetic bug; it
                 // is almost always as-needed doses or imported history.
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_no_plan_title),
                         style = MaterialTheme.typography.bodyMedium,
@@ -176,7 +177,7 @@ fun MedLogScreen(
                     )
                 }
             } else {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Row(Modifier.fillMaxWidth()) {
                         SummaryCell(
                             ui.plannedCount.toString(),
@@ -207,7 +208,7 @@ fun MedLogScreen(
             }
 
             if (ui.isEmpty) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     Text(
                         stringResource(R.string.health_med_log_empty_title),
                         style = MaterialTheme.typography.titleMedium,
@@ -220,28 +221,20 @@ fun MedLogScreen(
                 }
             } else {
                 ui.groups.forEach { group ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            group.date?.let { medDayLabel(it, TimeUtils.toLocalDate(ui.now)) }
-                                ?: stringResource(R.string.health_med_date_unknown),
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            if (group.hasPlan) {
-                                stringResource(
-                                    R.string.health_med_group_plan,
-                                    group.plannedCount,
-                                    group.takenCount,
-                                )
-                            } else {
-                                stringResource(R.string.health_med_group_extra, group.extraCount)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    ChompassSurfaceColumn(padding = 0.dp) {
+                    HealthSectionHeader(
+                        title = group.date?.let { medDayLabel(it, TimeUtils.toLocalDate(ui.now)) }
+                            ?: stringResource(R.string.health_med_date_unknown),
+                        meta = if (group.hasPlan) {
+                            stringResource(
+                                R.string.health_med_group_plan,
+                                group.plannedCount,
+                                group.takenCount,
+                            )
+                        } else {
+                            stringResource(R.string.health_med_group_extra, group.extraCount)
+                        },
+                    )
+                    HealthCard(padding = 0.dp, spacing = 0.dp) {
                         group.entries.forEachIndexed { index, entry ->
                             LogRow(
                                 entry = entry,
@@ -254,7 +247,7 @@ fun MedLogScreen(
                 }
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(
                         R.string.health_med_log_footer,

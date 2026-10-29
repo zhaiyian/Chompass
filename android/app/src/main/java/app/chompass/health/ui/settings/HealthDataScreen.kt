@@ -45,11 +45,13 @@ import app.chompass.BuildConfig
 import app.chompass.R
 import app.chompass.health.domain.uric.LevelResolver
 import app.chompass.health.export.HealthBackupCounts
+import app.chompass.health.ui.HealthCard
+import app.chompass.health.ui.HealthDisclosure
+import app.chompass.health.ui.HealthSectionHeader
 import app.chompass.health.util.TimeUtils
 import app.chompass.ui.components.ChompassDialog
 import app.chompass.ui.components.ChompassDialogActions
 import app.chompass.ui.components.ChompassPrimaryButton
-import app.chompass.ui.components.ChompassSurfaceColumn
 import app.chompass.ui.components.ChompassTextField
 import app.chompass.ui.theme.warning
 
@@ -109,8 +111,8 @@ fun HealthDataScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionHeader(stringResource(R.string.health_data_personal))
-            ChompassSurfaceColumn(padding = 0.dp) {
+            HealthSectionHeader(stringResource(R.string.health_data_personal))
+            HealthCard(padding = 0.dp, spacing = 0.dp) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -160,13 +162,13 @@ fun HealthDataScreen(
                 )
             }
 
-            SectionHeader(
+            HealthSectionHeader(
                 title = stringResource(R.string.health_data_backup),
                 meta = ui.lastExportAt?.let {
                     stringResource(R.string.health_data_last_export, TimeUtils.toMonthDayTime(it))
                 },
             )
-            ChompassSurfaceColumn {
+            HealthCard {
                 Text(
                     stringResource(R.string.health_data_backup_body),
                     style = MaterialTheme.typography.bodySmall,
@@ -249,8 +251,8 @@ fun HealthDataScreen(
                 )
             }
 
-            SectionHeader(stringResource(R.string.health_data_app))
-            ChompassSurfaceColumn(padding = 0.dp) {
+            HealthSectionHeader(stringResource(R.string.health_data_app))
+            HealthCard(padding = 0.dp, spacing = 0.dp) {
                 SettingRow(
                     title = stringResource(R.string.health_data_version),
                     value = BuildConfig.VERSION_NAME,
@@ -262,11 +264,7 @@ fun HealthDataScreen(
                 )
             }
 
-            Text(
-                stringResource(R.string.health_med_disclaimer),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            HealthDisclosure(stringResource(R.string.health_med_disclaimer))
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
     }
@@ -287,23 +285,6 @@ fun HealthDataScreen(
 
     ui.notice?.let { notice ->
         BackupNoticeDialog(notice = notice, onDismiss = vm::dismissNotice)
-    }
-}
-
-@Composable
-private fun SectionHeader(title: String, meta: String? = null) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        if (meta != null) {
-            Text(
-                meta,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

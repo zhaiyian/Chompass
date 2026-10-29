@@ -51,7 +51,7 @@ import app.chompass.health.domain.DictEntry
 import app.chompass.health.domain.DictResolver
 import app.chompass.health.domain.model.DictType
 import app.chompass.ui.components.ChompassPrimaryButton
-import app.chompass.ui.components.ChompassSurfaceColumn
+import app.chompass.health.ui.HealthCard
 import app.chompass.ui.components.ChompassTextField
 import kotlin.math.roundToInt
 
@@ -126,7 +126,7 @@ fun PainEntryScreen(
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ui.error?.let { error ->
                 Text(
@@ -136,11 +136,9 @@ fun PainEntryScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 PainFieldLabel(stringResource(R.string.health_pain_entry_start))
-                Spacer(Modifier.height(8.dp))
                 PainDateTimeRow(at = ui.startedAt, onChange = vm::setStartedAt)
-                Spacer(Modifier.height(6.dp))
                 PainHelper(
                     stringResource(
                         R.string.health_pain_entry_running,
@@ -150,9 +148,8 @@ fun PainEntryScreen(
             }
 
             if (ui.isEditing) {
-                ChompassSurfaceColumn {
+                HealthCard {
                     PainFieldLabel(stringResource(R.string.health_pain_entry_end))
-                    Spacer(Modifier.height(8.dp))
                     val endAt = ui.endedAt
                     if (endAt == null) {
                         Text(
@@ -163,7 +160,6 @@ fun PainEntryScreen(
                     } else {
                         PainDateTimeRow(at = endAt, onChange = vm::setEndedAt)
                         if (endAt <= ui.startedAt) {
-                            Spacer(Modifier.height(6.dp))
                             Text(
                                 stringResource(R.string.health_pain_error_end_before_start),
                                 style = MaterialTheme.typography.bodySmall,
@@ -179,7 +175,7 @@ fun PainEntryScreen(
                 }
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -228,11 +224,10 @@ fun PainEntryScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
                 PainHelper(stringResource(R.string.health_pain_entry_site_hint))
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     PainFieldLabel(
                         stringResource(R.string.health_pain_entry_nrs),
@@ -280,7 +275,7 @@ fun PainEntryScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 SwitchRow(
                     label = stringResource(R.string.health_pain_entry_affect_walk),
                     checked = ui.affectWalk,
@@ -293,9 +288,8 @@ fun PainEntryScreen(
                 )
             }
 
-            ChompassSurfaceColumn {
+            HealthCard {
                 PainFieldLabel(stringResource(R.string.health_pain_entry_note))
-                Spacer(Modifier.height(8.dp))
                 ChompassTextField(
                     value = ui.note,
                     onValueChange = vm::setNote,
