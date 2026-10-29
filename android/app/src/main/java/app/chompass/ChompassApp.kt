@@ -43,6 +43,7 @@ import app.chompass.services.WaterReminderPlanner
 import app.chompass.services.WidgetSnapshotWriter
 import app.chompass.services.ai.ChatService
 import app.chompass.services.ai.FoodAnalysisService
+import app.chompass.services.grounding.ChinaFoodIndex
 import app.chompass.services.grounding.FoodDatabaseSearch
 import app.chompass.services.grounding.GroundedFoodEntryService
 import app.chompass.services.grounding.GroundedEntryFeature
@@ -312,9 +313,10 @@ class AppContainer(app: ChompassApp) {
     val fillGapsEngine = FillGapsEngine(foodRepository, prefs, foodAnalysis, appContext)
     /**
      * Offline food-database indexes + the gated grounded orchestrator.
-     * USDA (CC0) and Swiss (federal open data) SQLite assets ship in all build
-     * types and power the Add Food "Search food" sheet. [groundedFoodEntry]
-     * stays gated behind [GroundedEntryFeature.ENABLED] (false in shipping builds).
+     * USDA (CC0), Swiss (federal open data) and China (《中国食物成分表》)
+     * SQLite assets ship in all build types and power the Add Food "Search food"
+     * sheet. [groundedFoodEntry] stays gated behind [GroundedEntryFeature.ENABLED]
+     * (false in shipping builds).
      */
     val usdaFoodIndex: UsdaFoodIndex by lazy(LazyThreadSafetyMode.NONE) {
         check(UsdaFoodIndex.assetAvailable(appContext)) {
@@ -328,8 +330,14 @@ class AppContainer(app: ChompassApp) {
         }
         SwissFoodIndex(appContext)
     }
+    val chinaFoodIndex: ChinaFoodIndex by lazy(LazyThreadSafetyMode.NONE) {
+        check(ChinaFoodIndex.assetAvailable(appContext)) {
+            "China food SQLite missing from APK assets"
+        }
+        ChinaFoodIndex(appContext)
+    }
     val foodDatabaseSearch: FoodDatabaseSearch by lazy(LazyThreadSafetyMode.NONE) {
-        FoodDatabaseSearch(prefs, usdaFoodIndex, swissFoodIndex)
+        FoodDatabaseSearch(prefs, usdaFoodIndex, swissFoodIndex, chinaFoodIndex)
     }
     val groundedFoodEntry: GroundedFoodEntryService by lazy(LazyThreadSafetyMode.NONE) {
         check(GroundedEntryFeature.ENABLED) {

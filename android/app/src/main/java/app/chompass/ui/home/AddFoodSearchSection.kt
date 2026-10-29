@@ -1109,6 +1109,7 @@ internal fun resultSourceSubtitle(result: DatabaseSearchResult): String {
         NutrientSourceKind.OPEN_FOOD_FACTS -> stringResource(R.string.food_search_source_off)
         NutrientSourceKind.USDA -> stringResource(R.string.food_search_source_usda)
         NutrientSourceKind.SWISS -> stringResource(R.string.food_search_source_swiss)
+        NutrientSourceKind.CHINA -> stringResource(R.string.food_search_source_china)
         else -> result.sourceKind.name
     }
     return listOfNotNull(

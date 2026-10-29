@@ -989,7 +989,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     fun prefetchAddFoodIndex() {
         viewModelScope.launch {
             savedFoodIndexCached()
-            // Both offline indexes are `by lazy` in AppContainer and open their
+            // Every offline index is `by lazy` in AppContainer and opens its
             // bundled SQLite asset on first touch. Doing that here keeps it off
             // the first keystroke, where it would land inside the search's
             // shared offline mutex.
@@ -997,6 +997,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.IO) {
                     container.usdaFoodIndex
                     container.swissFoodIndex
+                    container.chinaFoodIndex
                 }
             }
         }

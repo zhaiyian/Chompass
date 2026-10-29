@@ -1013,6 +1013,7 @@
     <string name="food_search_placeholder">जैसे ग्रीक दही, दूध, पनीर</string>
     <string name="food_search_sheet_title">खाद्य डेटाबेस खोजें</string>
     <string name="food_search_source_swiss">स्विस</string>
+    <string name="food_search_source_china">चीन</string>
     <string name="frame_large">बड़ा</string>
     <string name="frame_medium">मध्यम</string>
     <string name="frame_small">छोटा</string>
@@ -1033,6 +1034,7 @@
     <string name="grounding_badge_label">आधारित · लेबल</string>
     <string name="grounding_badge_off">आधारित · Open Food Facts</string>
     <string name="grounding_badge_swiss">आधारित · स्विस खाद्य डेटाबेस</string>
+    <string name="grounding_badge_china">आधारित · चीन खाद्य संरचना तालिका</string>
     <string name="grounding_badge_usda">आधारित · USDA</string>
     <string name="grounding_confidence_summary">विश्वास: पहचान %1$d%% · सर्विंग %2$d%% · स्रोत %3$d%%</string>
     <string name="grounding_source_estimate">AI अनुमान</string>
@@ -1040,6 +1042,7 @@
     <string name="grounding_source_label">पोषण लेबल</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">स्विस</string>
+    <string name="grounding_source_china">चीन</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">नोट: %1$s</string>
     <string name="home_active_burn_a11y">सक्रिय खर्च %1$d</string>

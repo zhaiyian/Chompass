@@ -119,6 +119,7 @@ internal data class SettingsPrefsHydration(
     val foodSearchOpenFoodFactsEnabled: Boolean,
     val foodSearchUsdaEnabled: Boolean,
     val foodSearchSwissEnabled: Boolean,
+    val foodSearchChinaEnabled: Boolean,
     val skipPhotoNotePrompt: Boolean,
     val optionalNutrientGoals: OptionalNutrientGoals,
     val homeDisplay: HomeDisplayPreferences,
@@ -262,6 +263,7 @@ internal fun Preferences.toSettingsHydration(json: Json): SettingsPrefsHydration
         foodSearchOpenFoodFactsEnabled = this[Keys.FOOD_SEARCH_OFF_ENABLED] ?: true,
         foodSearchUsdaEnabled = this[Keys.FOOD_SEARCH_USDA_ENABLED] ?: true,
         foodSearchSwissEnabled = this[Keys.FOOD_SEARCH_SWISS_ENABLED] ?: true,
+        foodSearchChinaEnabled = this[Keys.FOOD_SEARCH_CHINA_ENABLED] ?: true,
         skipPhotoNotePrompt = this[Keys.SKIP_PHOTO_NOTE_PROMPT] ?: false,
         optionalNutrientGoals = run {
             // WS5: the legacy tracker daily limit (caffeineDailyLimitMg) was an

@@ -283,6 +283,7 @@ class GroundingTools(
                             NutrientSourceKind.HISTORY -> "history"
                             NutrientSourceKind.OPEN_FOOD_FACTS -> "openFoodFacts"
                             NutrientSourceKind.SWISS -> "swiss"
+                            NutrientSourceKind.CHINA -> "china"
                             NutrientSourceKind.NUTRITION_LABEL -> "nutritionLabel"
                             NutrientSourceKind.MODEL_ESTIMATE -> "modelEstimate"
                         })

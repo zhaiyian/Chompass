@@ -1012,6 +1012,7 @@
     <string name="food_search_placeholder">예: 그릭 요거트, 우유, 코티지치즈</string>
     <string name="food_search_sheet_title">음식 데이터베이스 검색</string>
     <string name="food_search_source_swiss">스위스</string>
+    <string name="food_search_source_china">중국</string>
     <string name="frame_large">대</string>
     <string name="frame_medium">중</string>
     <string name="frame_small">소</string>
@@ -1032,6 +1033,7 @@
     <string name="grounding_badge_label">근거 · 라벨</string>
     <string name="grounding_badge_off">근거 · Open Food Facts</string>
     <string name="grounding_badge_swiss">근거 · 스위스 식품 데이터베이스</string>
+    <string name="grounding_badge_china">근거 · 중국 식품성분표</string>
     <string name="grounding_badge_usda">근거 · USDA</string>
     <string name="grounding_confidence_summary">신뢰도: 식별 %1$d%% · 1인분 %2$d%% · 출처 %3$d%%</string>
     <string name="grounding_source_estimate">AI 추정</string>
@@ -1039,6 +1041,7 @@
     <string name="grounding_source_label">영양 라벨</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">스위스</string>
+    <string name="grounding_source_china">중국</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">메모: %1$s</string>
     <string name="home_active_burn_a11y">활동 소비 %1$d</string>

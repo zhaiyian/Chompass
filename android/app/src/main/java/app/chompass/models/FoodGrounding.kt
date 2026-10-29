@@ -6,14 +6,15 @@ import kotlinx.serialization.Serializable
 /**
  * Where nutrient values for a grounded entry (or one of its components) came from.
  * Kept distinct so Open Food Facts (ODbL), USDA (CC0), Swiss Food Composition
- * Database (federal open data), history, and model estimates are never collapsed
- * into one opaque "AI" badge.
+ * Database (federal open data), China Food Composition Tables, history, and model
+ * estimates are never collapsed into one opaque "AI" badge.
  */
 @Serializable
 enum class NutrientSourceKind {
     @SerialName("usda") USDA,
     @SerialName("openFoodFacts") OPEN_FOOD_FACTS,
     @SerialName("swiss") SWISS,
+    @SerialName("china") CHINA,
     @SerialName("history") HISTORY,
     @SerialName("nutritionLabel") NUTRITION_LABEL,
     @SerialName("modelEstimate") MODEL_ESTIMATE,

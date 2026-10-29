@@ -1005,6 +1005,7 @@ bilirsən?</string>
     <string name="food_search_placeholder">məs. yunan qatığı, süd, kəsmik</string>
     <string name="food_search_sheet_title">Qida bazalarında axtar</string>
     <string name="food_search_source_swiss">İsveçrə</string>
+    <string name="food_search_source_china">Çin</string>
     <string name="frame_large">Böyük</string>
     <string name="frame_medium">Orta</string>
     <string name="frame_small">Kiçik</string>
@@ -1025,6 +1026,7 @@ bilirsən?</string>
     <string name="grounding_badge_label">Əsaslı · etiket</string>
     <string name="grounding_badge_off">Əsaslı · Open Food Facts</string>
     <string name="grounding_badge_swiss">Əsaslı · İsveçrə qida bazası</string>
+    <string name="grounding_badge_china">Əsaslı · Çin qida tərkibi cədvəli</string>
     <string name="grounding_badge_usda">Əsaslı · USDA</string>
     <string name="grounding_confidence_summary">Etibar: kimlik %1$d%% · porsiya %2$d%% · mənbə %3$d%%</string>
     <string name="grounding_source_estimate">AI təxmini</string>
@@ -1032,6 +1034,7 @@ bilirsən?</string>
     <string name="grounding_source_label">Qida etiketi</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">İsveçrə</string>
+    <string name="grounding_source_china">Çin</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">Qeydlər: %1$s</string>
     <string name="home_active_burn_a11y">Aktiv yanma %1$d</string>

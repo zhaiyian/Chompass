@@ -811,8 +811,11 @@
     <string name="food_search_sheet_title">Rechercher dans les bases d\'aliments</string>
     <string name="food_search_placeholder">ex. yaourt grec, lait, quark</string>
     <string name="food_search_source_swiss">Suisse</string>
+    <string name="food_search_source_china">Chine</string>
     <string name="grounding_badge_swiss">Ancré · Base suisse de composition des aliments</string>
+    <string name="grounding_badge_china">Ancré · Table chinoise de composition des aliments</string>
     <string name="grounding_source_swiss">Suisse</string>
+    <string name="grounding_source_china">Chine</string>
     <string name="error_search_food_failed">Impossible de charger cet aliment. Réessayez.</string>
 
 

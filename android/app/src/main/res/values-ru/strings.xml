@@ -1450,8 +1450,11 @@
 
 
     <string name="food_search_source_swiss">Швейцарская</string>
+    <string name="food_search_source_china">Китайская</string>
     <string name="grounding_badge_swiss">Проверено · Швейцарская база</string>
+    <string name="grounding_badge_china">Проверено · Китайская таблица состава продуктов</string>
     <string name="grounding_source_swiss">Швейцарская</string>
+    <string name="grounding_source_china">Китайская</string>
     <string name="error_search_food_failed">Не удалось загрузить этот продукт. Попробуй ещё раз.</string>
     <string name="about_donate">Купи мне йогурт</string>
     <string name="action_close">Закрыть</string>

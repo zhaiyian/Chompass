@@ -52,6 +52,24 @@ class FoodSuggestionRankerTest {
         )
     }
 
+    /**
+     * QueryNormalizer drops one-character tokens, so a single-glyph Chinese
+     * query like "鸡" used to normalize to nothing and empty the whole
+     * suggestion list — bundled database rows included. The ranker now falls
+     * back to the CJK reading of the query.
+     */
+    @Test
+    fun singleGlyphChineseQueryStillRanksHits() {
+        val out = FoodSuggestionRanker.rank(
+            query = "鸡",
+            saved = saved(entry("鸡蛋")),
+            recipes = emptyList(),
+            database = listOf(db("鸡胸脯肉", NutrientSourceKind.CHINA, id = "42", score = 0.9)),
+            now = now,
+        )
+        assertEquals(listOf("鸡蛋", "鸡胸脯肉"), out.map { it.name })
+    }
+
     @Test
     fun savedFoodOutranksAStrongerScoringDatabaseHit() {
         val out = FoodSuggestionRanker.rank(

@@ -154,6 +154,13 @@ fun FoodEntrySettingsScreen(
                 icon = Icons.Outlined.Storage,
                 onChange = vm::setFoodSearchSwissEnabled,
             )
+            HorizontalDivider()
+            ToggleRow(
+                stringResource(R.string.food_search_source_china),
+                checked = ui.foodSearchChinaEnabled,
+                icon = Icons.Outlined.Storage,
+                onChange = vm::setFoodSearchChinaEnabled,
+            )
         }
 
         SectionCard(title = stringResource(R.string.settings_food_section_serving)) {

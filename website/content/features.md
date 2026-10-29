@@ -22,7 +22,7 @@ Multi-photo capture (up to 10), share into the Android app, voice, barcode, text
 
 ## Food search (Android)
 
-Live Open Food Facts search plus offline USDA and Swiss Food Composition indexes.
+Live Open Food Facts search plus offline USDA, Swiss Food Composition, and China Food Composition Table indexes.
 
 
 ## Meal components

@@ -8,6 +8,7 @@ Style: entries follow the release-text style guide (maintainer-local, not publis
 
 ### Added
 
+- **Chinese food database in search** (Android): the Add Food search now answers Chinese names from 《中国食物成分表标准版（第6版）》 alongside the USDA and Swiss tables. Type 牛奶, 鸡胸 or 豆腐 and the matching foods appear with calories and macros per 100 g, labelled "China" so the source stays obvious. Partial names work (鸡胸 finds 鸡胸脯肉), and like the other bundled tables it stays entirely on your device. Turn it off under Settings → Food & Entry → food databases. Values come from the printed sixth edition and keep its notation, so a "—" (not measured) stays blank instead of becoming 0.
 - **Full nutrient names on any card layout** (Android): Settings → Home display → "Full nutrient names" now applies to the compact bars band and slim cards alike (classic cards always showed them). Long names yield first on narrow cards, then the unit.
 
 ## [5.11.0] - 2026-10-22

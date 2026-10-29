@@ -1012,6 +1012,7 @@
     <string name="food_search_placeholder">例：ギリシャヨーグルト、牛乳、カッテージチーズ</string>
     <string name="food_search_sheet_title">食品データベースを検索</string>
     <string name="food_search_source_swiss">スイス</string>
+    <string name="food_search_source_china">中国</string>
     <string name="frame_large">大</string>
     <string name="frame_medium">中</string>
     <string name="frame_small">小</string>
@@ -1032,6 +1033,7 @@
     <string name="grounding_badge_label">裏付け · ラベル</string>
     <string name="grounding_badge_off">裏付け · Open Food Facts</string>
     <string name="grounding_badge_swiss">裏付け · スイス食品データベース</string>
+    <string name="grounding_badge_china">裏付け · 中国食品成分表</string>
     <string name="grounding_badge_usda">裏付け · USDA</string>
     <string name="grounding_confidence_summary">信頼度：識別 %1$d%% · 分量 %2$d%% · 出典 %3$d%%</string>
     <string name="grounding_source_estimate">AI 推定</string>
@@ -1039,6 +1041,7 @@
     <string name="grounding_source_label">栄養ラベル</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">スイス</string>
+    <string name="grounding_source_china">中国</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">メモ：%1$s</string>
     <string name="home_active_burn_a11y">活動消費 %1$d</string>

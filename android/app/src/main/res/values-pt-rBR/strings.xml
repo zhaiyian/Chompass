@@ -1004,6 +1004,7 @@
     <string name="food_search_placeholder">ex.: iogurte grego, leite, quark</string>
     <string name="food_search_sheet_title">Buscar em bancos de alimentos</string>
     <string name="food_search_source_swiss">Suíço</string>
+    <string name="food_search_source_china">China</string>
     <string name="frame_large">Grande</string>
     <string name="frame_medium">Médio</string>
     <string name="frame_small">Pequeno</string>
@@ -1024,6 +1025,7 @@
     <string name="grounding_badge_label">Fundamentado · rótulo</string>
     <string name="grounding_badge_off">Fundamentado · Open Food Facts</string>
     <string name="grounding_badge_swiss">Fundamentado · banco suíço de alimentos</string>
+    <string name="grounding_badge_china">Fundamentado · tabela chinesa de composição de alimentos</string>
     <string name="grounding_badge_usda">Fundamentado · USDA</string>
     <string name="grounding_confidence_summary">Confiança: identidade %1$d%% · porção %2$d%% · origem %3$d%%</string>
     <string name="grounding_source_estimate">Estimativa da IA</string>
@@ -1031,6 +1033,7 @@
     <string name="grounding_source_label">Rótulo nutricional</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">Suíço</string>
+    <string name="grounding_source_china">China</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">Notas: %1$s</string>
     <string name="home_active_burn_a11y">Gasto ativo %1$d</string>

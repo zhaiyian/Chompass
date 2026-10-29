@@ -129,12 +129,12 @@ android {
             versionNameSuffix = "-debug2"
         }
     }
-    // Offline food-database assets (USDA ~3.7 MB, Swiss ~1.6 MB) live under
-    // src/main/assets so the Add Food "Search food" feature ships in all build
-    // types. The heavier grounded-entry code (orchestrator, tool loop, candidate
-    // sheets) stays in src/grounded and is compiled for debug/test only; release
-    // gets thin stubs while GroundedEntryFeature.ENABLED stays false. debug2
-    // reuses the debug-only on-device LLM assets from src/debug/assets.
+    // Offline food-database assets (USDA ~3.7 MB, Swiss ~1.6 MB, China ~0.6 MB)
+    // live under src/main/assets so the Add Food "Search food" feature ships in
+    // all build types. The heavier grounded-entry code (orchestrator, tool loop,
+    // candidate sheets) stays in src/grounded and is compiled for debug/test only;
+    // release gets thin stubs while GroundedEntryFeature.ENABLED stays false.
+    // debug2 reuses the debug-only on-device LLM assets from src/debug/assets.
     sourceSets {
         getByName("debug") {
             kotlin.srcDir("src/grounded/java")

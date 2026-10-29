@@ -435,6 +435,7 @@
     <string name="add_food_off_unreachable">Open Food Facts is unreachable right now. Saved and offline results still show.</string>
     <string name="food_search_source_usda">USDA</string>
     <string name="food_search_source_swiss">Swiss</string>
+    <string name="food_search_source_china">China</string>
     <string name="shortcut_camera_short">Camera</string>
     <string name="shortcut_camera_long">Log food with camera</string>
     <string name="shortcut_voice_short">Voice</string>
@@ -687,12 +688,14 @@
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">Swiss</string>
+    <string name="grounding_source_china">China</string>
     <string name="grounding_source_history">Your history</string>
     <string name="grounding_source_label">Nutrition label</string>
     <string name="grounding_source_estimate">AI estimate</string>
     <string name="grounding_badge_usda">Grounded · USDA</string>
     <string name="grounding_badge_off">Grounded · Open Food Facts</string>
     <string name="grounding_badge_swiss">Grounded · Swiss Food Composition DB</string>
+    <string name="grounding_badge_china">Grounded · China Food Composition Table</string>
     <string name="grounding_badge_history">Grounded · Your history</string>
     <string name="grounding_badge_label">Grounded · Label</string>
     <string name="grounding_badge_estimate">Estimate · not database-matched</string>

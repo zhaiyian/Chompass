@@ -97,19 +97,38 @@ data class DatabaseSearchResult(
                 matchScore = matchScore,
             )
         }
+
+        fun fromChina(record: ChinaFoodRecord, matchScore: Double): DatabaseSearchResult {
+            val grams = 100.0
+            return DatabaseSearchResult(
+                sourceKind = NutrientSourceKind.CHINA,
+                sourceId = record.id.toString(),
+                name = record.name,
+                // No lang tag: every row in this index is the book's own Chinese
+                // name, so a "ZH" chip beside the source badge would be noise.
+                servingGrams = grams,
+                caloriesPerServing = record.calories,
+                proteinPerServing = record.protein,
+                carbsPerServing = record.carbs,
+                fatPerServing = record.fat,
+                incompleteEnergy = record.calories == null,
+                matchScore = matchScore,
+            )
+        }
     }
 }
 
 /**
  * Multi-source food database search used by the Add Food "Search food" sheet.
- * Open Food Facts is a live API call (ODbL, query string only); USDA and Swiss
- * are read from the bundled offline SQLite indexes. Results are merged and
- * ranked by their source match score.
+ * Open Food Facts is a live API call (ODbL, query string only); USDA, Swiss and
+ * the China Food Composition Tables are read from the bundled offline SQLite
+ * indexes. Results are merged and ranked by their source match score.
  */
 class FoodDatabaseSearch(
     private val prefs: PreferencesStore,
     private val usda: UsdaFoodIndex,
     private val swiss: SwissFoodIndex,
+    private val china: ChinaFoodIndex,
     /**
      * The Open Food Facts leg, injectable for the same reason [offToAnalysis]
      * is: the Robolectric suite has no network seam, and "OFF is down" is a
@@ -126,7 +145,7 @@ class FoodDatabaseSearch(
     },
 ) {
     /**
-     * Serializes the offline SQLite queries (USDA + Swiss). They run in
+     * Serializes the offline SQLite queries (USDA + Swiss + China). They run in
      * parallel `async` blocks today; a shared mutex bounds concurrent
      * CursorWindow allocations and keeps the offline phase deterministic
      * under fast typing (Codeberg #26). `withLock` is cancellation-safe:
@@ -150,14 +169,15 @@ class FoodDatabaseSearch(
         OPEN_FOOD_FACTS,
         USDA,
         SWISS,
+        CHINA,
     }
 
     /**
      * The sources the user still wants searched (Settings › Food & Entry ›
-     * Food databases). All three default on: USDA and Swiss are bundled
-     * SQLite, so searching them never leaves the phone, and Open Food Facts is
-     * the one source that does. A disabled source is dropped from the
-     * fan-out in [search], so the gate covers every caller of this class at
+     * Food databases). All four default on: USDA, Swiss and the China tables
+     * are bundled SQLite, so searching them never leaves the phone, and Open
+     * Food Facts is the one source that does. A disabled source is dropped from
+     * the fan-out in [search], so the gate covers every caller of this class at
      * once. It gates *search* only — barcode lookups and [toAnalysis] on an
      * already-picked hit stay available, or a disabled source would break rows
      * the user is mid-way through logging.
@@ -170,6 +190,7 @@ class FoodDatabaseSearch(
         if (prefs.foodSearchOpenFoodFactsEnabled.first()) add(Source.OPEN_FOOD_FACTS)
         if (prefs.foodSearchUsdaEnabled.first()) add(Source.USDA)
         if (prefs.foodSearchSwissEnabled.first()) add(Source.SWISS)
+        if (prefs.foodSearchChinaEnabled.first()) add(Source.CHINA)
     }
 
     /** Single-source form of [enabledSources], for callers gating one leg. */
@@ -177,6 +198,7 @@ class FoodDatabaseSearch(
         Source.OPEN_FOOD_FACTS -> prefs.foodSearchOpenFoodFactsEnabled.first()
         Source.USDA -> prefs.foodSearchUsdaEnabled.first()
         Source.SWISS -> prefs.foodSearchSwissEnabled.first()
+        Source.CHINA -> prefs.foodSearchChinaEnabled.first()
     }
 
     /** Max results per source; the merged list is capped at [limit]. */
@@ -239,6 +261,12 @@ class FoodDatabaseSearch(
                         rows.map { (rec, score) -> DatabaseSearchResult.fromSwiss(rec, score) }
                     }
                 }
+                if (Source.CHINA in active) {
+                    launch("cn") {
+                        val rows = offlineMutex.withLock { china.searchScored(q, limit = 6) }
+                        rows.map { (rec, score) -> DatabaseSearchResult.fromChina(rec, score) }
+                    }
+                }
                 val merged = jobs.flatMap { it.await() }
                     .map { it.withNormalizedScore() }
                     .sortedByDescending { it.matchScore }
@@ -250,15 +278,15 @@ class FoodDatabaseSearch(
     }
 
     /**
-     * Offline-only leg (bundled USDA + Swiss SQLite). Split out from [search]
-     * because that one fans every selected source into one `coroutineScope`
-     * and awaits them together: with Open Food Facts in the set, local rows
-     * are gated on the network leg finishing its retry chain, so an offline
-     * device waited on a request that could never succeed. The Add Food
-     * suggestion list paints these first, then merges the online leg.
+     * Offline-only leg (bundled USDA + Swiss + China SQLite). Split out from
+     * [search] because that one fans every selected source into one
+     * `coroutineScope` and awaits them together: with Open Food Facts in the
+     * set, local rows are gated on the network leg finishing its retry chain,
+     * so an offline device waited on a request that could never succeed. The Add
+     * Food suggestion list paints these first, then merges the online leg.
      */
     suspend fun searchOffline(query: String, limit: Int = 12): List<DatabaseSearchResult> =
-        search(query, setOf(Source.USDA, Source.SWISS), limit)
+        search(query, setOf(Source.USDA, Source.SWISS, Source.CHINA), limit)
 
     /**
      * Network-only leg (Open Food Facts). See [searchOffline]. Returns the
@@ -292,7 +320,8 @@ class FoodDatabaseSearch(
 
     /**
      * Resolve a selected hit into a reviewable [FoodAnalysis] (full micronutrients):
-     * OFF does a cached barcode lookup, USDA/Swiss scale the offline per-100g row.
+     * OFF does a cached barcode lookup, USDA/Swiss/China scale the offline
+     * per-100g row.
      */
     suspend fun toAnalysis(result: DatabaseSearchResult): FoodAnalysis = when (result.sourceKind) {
         NutrientSourceKind.OPEN_FOOD_FACTS ->
@@ -316,6 +345,15 @@ class FoodDatabaseSearch(
                 datasetVersion = swiss.version(),
             )
         }
+        NutrientSourceKind.CHINA -> {
+            val record = result.sourceId.toLongOrNull()
+                ?.let { china.getById(it) }
+                ?: return error("China food ${result.sourceId} not found in offline index")
+            record.toFoodAnalysis(
+                grams = result.servingGrams ?: 100.0,
+                datasetVersion = china.version(),
+            )
+        }
         NutrientSourceKind.HISTORY,
         NutrientSourceKind.NUTRITION_LABEL,
         NutrientSourceKind.MODEL_ESTIMATE,
@@ -325,9 +363,10 @@ class FoodDatabaseSearch(
     companion object {
         /**
          * Per-source ceilings used to normalize raw match scores onto a shared
-         * 0..1 scale before merging. The three sources use different score
+         * 0..1 scale before merging. The four sources use different score
          * formulas (OFF: overlap*2 + length/energy bonus; USDA: base + overlap
-         * + category/form adjustments; Swiss: base + overlap + language bonus),
+         * + category/form adjustments; Swiss: base + overlap + language bonus;
+         * China: base + coverage + bigram overlap + position/short-name bonus),
          * so raw scores are not directly comparable. Values are the approximate
          * top raw score each source can produce for a typical multi-token query.
          */
@@ -335,6 +374,7 @@ class FoodDatabaseSearch(
             NutrientSourceKind.OPEN_FOOD_FACTS to 20.0,
             NutrientSourceKind.USDA to 28.0,
             NutrientSourceKind.SWISS to 20.0,
+            NutrientSourceKind.CHINA to 24.0,
         )
 
         /** Normalize one source's raw match score onto the shared 0..1 scale. */

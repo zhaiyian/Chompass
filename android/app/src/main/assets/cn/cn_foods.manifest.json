@@ -1,0 +1,9 @@
+{
+  "dataset_version": "cn-fct-6th-ed-20260825-fixed-en",
+  "food_count": 1661,
+  "langs": [
+    "zh"
+  ],
+  "source": "China Food Composition Tables, Standard Edition (6th ed.) \u2014 Sanotsu mirror",
+  "sha256": "23d4b52d54955c92680c0d5d7a764276613dc2ba24b40f11224070b7c4a72af8"
+}

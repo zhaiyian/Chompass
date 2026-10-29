@@ -1130,6 +1130,7 @@ object SyncDocument {
                 NutrientSourceKind.USDA -> "usda"
                 NutrientSourceKind.OPEN_FOOD_FACTS -> "openFoodFacts"
                 NutrientSourceKind.SWISS -> "swiss"
+                NutrientSourceKind.CHINA -> "china"
                 NutrientSourceKind.HISTORY -> "history"
                 NutrientSourceKind.NUTRITION_LABEL -> "nutritionLabel"
                 NutrientSourceKind.MODEL_ESTIMATE -> "modelEstimate"
@@ -1152,6 +1153,7 @@ object SyncDocument {
             "usda" -> NutrientSourceKind.USDA
             "openFoodFacts" -> NutrientSourceKind.OPEN_FOOD_FACTS
             "swiss" -> NutrientSourceKind.SWISS
+            "china" -> NutrientSourceKind.CHINA
             "history" -> NutrientSourceKind.HISTORY
             "nutritionLabel" -> NutrientSourceKind.NUTRITION_LABEL
             else -> NutrientSourceKind.MODEL_ESTIMATE

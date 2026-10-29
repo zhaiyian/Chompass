@@ -1,22 +1,74 @@
 """Shared helpers for the offline food-index SQLite builders.
 
-Both ``build_usda_food_index.py`` and ``build_swiss_food_index.py`` emit a compact
-read-only SQLite with a ``foods`` table (per-100g nutrient columns plus a ``tokens``
-search column), a ``meta`` table, and an external-content FTS5 virtual table over
-``foods``. This module holds the parts the two builders share: tokenization, the
-foods/meta/FTS5 schema DDL, FTS rebuild, sha256, manifest writing, and meta rows.
+``build_usda_food_index.py``, ``build_swiss_food_index.py`` and
+``build_cn_food_index.py`` each emit a compact read-only SQLite with a ``foods``
+table (per-100g nutrient columns plus a ``tokens`` search column), a ``meta``
+table, and an external-content FTS5 virtual table over ``foods``. This module
+holds the parts the builders share: tokenization, the foods/meta/FTS5 schema
+DDL, FTS rebuild, sha256, manifest writing, and meta rows.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from pathlib import Path
+
+# CJK ideographs + compatibility ideographs. Each one is its own word for the
+# indexers below: FTS5's unicode61 tokenizer would otherwise swallow a whole run.
+_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 
 def tokenize(text: str) -> str:
     return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in text).split())
+
+
+def tokenize_cjk(text: str) -> str:
+    """Tokenize for the bundled Chinese index: Latin words plus CJK n-grams.
+
+    FTS5's unicode61 tokenizer treats a whole CJK run as one token, so a query
+    for "鸡胸" would never match the indexed name "鸡胸肉（生）". Every glyph
+    and every adjacent pair of a run is therefore indexed on its own:
+
+      "鸡胸肉（生）" -> "鸡 胸 肉 生 鸡胸 胸肉 肉生"
+
+    Single characters keep one-character queries reachable; bigrams keep
+    partial words rankable. Latin words are indexed whole, as in [tokenize].
+    """
+    tokens: list[str] = []
+    run: list[str] = []
+    latin: list[str] = []
+
+    def flush_run() -> None:
+        if not run:
+            return
+        joined = "".join(run)
+        tokens.extend(joined)  # unigrams
+        tokens.extend(joined[i : i + 2] for i in range(len(joined) - 1))  # bigrams
+        run.clear()
+
+    def flush_latin() -> None:
+        if latin:
+            word = "".join(latin).lower()
+            if len(word) >= 2:
+                tokens.append(word)
+            latin.clear()
+
+    for ch in text:
+        if _CJK.match(ch):
+            flush_latin()
+            run.append(ch)
+        elif ch.isalnum():
+            flush_run()
+            latin.append(ch)
+        else:
+            flush_run()
+            flush_latin()
+    flush_run()
+    flush_latin()
+    return " ".join(dict.fromkeys(tokens))
 
 
 def create_schema(

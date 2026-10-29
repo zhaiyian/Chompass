@@ -716,6 +716,7 @@ für dich ein</string>
     <string name="food_search_source_usda">USDA</string>
 
     <string name="food_search_source_swiss">Schweiz</string>
+    <string name="food_search_source_china">China</string>
 
     <string name="shortcut_camera_short">Kamera</string>
 
@@ -903,6 +904,7 @@ für dich ein</string>
     <string name="grounding_source_off">Open Food Facts</string>
 
     <string name="grounding_source_swiss">Schweiz</string>
+    <string name="grounding_source_china">China</string>
 
     <string name="grounding_source_history">Dein Verlauf</string>
 
@@ -915,6 +917,7 @@ für dich ein</string>
     <string name="grounding_badge_off">Verifiziert · Open Food Facts</string>
 
     <string name="grounding_badge_swiss">Verifiziert · Schweizer Lebensmittelzusammensetzungsdatenbank</string>
+    <string name="grounding_badge_china">Verifiziert · Chinesische Nährwerttabelle</string>
 
     <string name="grounding_badge_history">Verifiziert · dein Verlauf</string>
 

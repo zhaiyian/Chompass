@@ -1008,6 +1008,7 @@
     <string name="food_search_placeholder">ex.: iaurt grecesc, lapte, quark</string>
     <string name="food_search_sheet_title">Caută în bazele de date alimentare</string>
     <string name="food_search_source_swiss">Elvețian</string>
+    <string name="food_search_source_china">China</string>
     <string name="frame_large">Mare</string>
     <string name="frame_medium">Mediu</string>
     <string name="frame_small">Mic</string>
@@ -1028,6 +1029,7 @@
     <string name="grounding_badge_label">Fundamentat · etichetă</string>
     <string name="grounding_badge_off">Fundamentat · Open Food Facts</string>
     <string name="grounding_badge_swiss">Fundamentat · bază elvețiană de alimente</string>
+    <string name="grounding_badge_china">Fundamentat · tabel de compoziție a alimentelor din China</string>
     <string name="grounding_badge_usda">Fundamentat · USDA</string>
     <string name="grounding_confidence_summary">Încredere: identitate %1$d%% · porție %2$d%% · sursă %3$d%%</string>
     <string name="grounding_source_estimate">Estimare IA</string>
@@ -1035,6 +1037,7 @@
     <string name="grounding_source_label">Etichetă nutrițională</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">Elvețian</string>
+    <string name="grounding_source_china">China</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">Note: %1$s</string>
     <string name="home_active_burn_a11y">Ars activ %1$d</string>

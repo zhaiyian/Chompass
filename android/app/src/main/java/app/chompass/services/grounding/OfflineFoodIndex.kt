@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import java.io.File
 
 /**
- * Read-only base for the compact offline food SQLite assets (USDA, Swiss).
+ * Read-only base for the compact offline food SQLite assets (USDA, Swiss, China).
  * Owns the copy-on-first-run of the asset (refreshed via its sha256 manifest, with
  * a size fallback), the read-only [SQLiteDatabase] handle, meta/version/count
  * helpers, close, availability probing, and the shared three-stage search
@@ -57,6 +57,11 @@ abstract class OfflineFoodIndex(
      * Stage order: FTS multi-token MATCH → multi-token LIKE on name/tokens →
      * loose single-token LIKE. FTS is skipped when the packaged DB omits
      * `foods_fts`.
+     *
+     * [tokenizer] is the query-side counterpart of the index's `tokens` column:
+     * the Latin indexes split on whitespace/non-alphanumerics (the default),
+     * while the Chinese index reads each CJK glyph as its own token (see
+     * [ChinaFoodIndex]).
      */
     protected fun <T> searchRows(
         query: String,
@@ -65,8 +70,9 @@ abstract class OfflineFoodIndex(
         tokensColumn: String,
         rowReader: (Cursor) -> T,
         maxRows: Int = 80,
+        tokenizer: (String) -> List<String> = QueryNormalizer::normalizeTokens,
     ): List<T> {
-        val tokens = QueryNormalizer.normalizeTokens(query)
+        val tokens = tokenizer(query)
         if (tokens.isEmpty()) return emptyList()
 
         val rows = mutableListOf<T>()

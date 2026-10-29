@@ -264,6 +264,7 @@ data class SettingsUiState(
     val foodSearchOpenFoodFactsEnabled: Boolean = true,
     val foodSearchUsdaEnabled: Boolean = true,
     val foodSearchSwissEnabled: Boolean = true,
+    val foodSearchChinaEnabled: Boolean = true,
     /** Inverted in UI: “Ask for a photo note” = !skipPhotoNotePrompt. */
     val skipPhotoNotePrompt: Boolean = false,
     val optionalNutrientGoals: OptionalNutrientGoals = OptionalNutrientGoals.Default,
@@ -637,6 +638,7 @@ class SettingsViewModel(val container: AppContainer) : ViewModel() {
                     foodSearchOpenFoodFactsEnabled = snap.foodSearchOpenFoodFactsEnabled,
                     foodSearchUsdaEnabled = snap.foodSearchUsdaEnabled,
                     foodSearchSwissEnabled = snap.foodSearchSwissEnabled,
+                    foodSearchChinaEnabled = snap.foodSearchChinaEnabled,
                     skipPhotoNotePrompt = snap.skipPhotoNotePrompt,
                     optionalNutrientGoals = snap.optionalNutrientGoals,
                     homeDisplay = snap.homeDisplay,
@@ -963,6 +965,11 @@ class SettingsViewModel(val container: AppContainer) : ViewModel() {
     fun setFoodSearchSwissEnabled(v: Boolean) = updateUiPref(
         { container.prefs.setFoodSearchSwissEnabled(v) },
         { copy(foodSearchSwissEnabled = v) },
+    )
+
+    fun setFoodSearchChinaEnabled(v: Boolean) = updateUiPref(
+        { container.prefs.setFoodSearchChinaEnabled(v) },
+        { copy(foodSearchChinaEnabled = v) },
     )
 
     fun setServingUnitInferenceMode(mode: ServingUnitInferenceMode) = updateUiPref(

@@ -45,11 +45,12 @@ class SettingsPrefsHydrationTest {
         assertFalse(snap.homeDisplay.showSteps)
         assertTrue(snap.mealConstituentsEnabled)
         assertTrue(snap.mealTimesEnabled)
-        // All three search sources ship on; OFF is the one that also has a
+        // All four search sources ship on; OFF is the one that also has a
         // switch on the Add Food heading.
         assertTrue(snap.foodSearchOpenFoodFactsEnabled)
         assertTrue(snap.foodSearchUsdaEnabled)
         assertTrue(snap.foodSearchSwissEnabled)
+        assertTrue(snap.foodSearchChinaEnabled)
         // Fasting ships ready: popular 16:8 windows + both reminders + auto cycle.
         assertEquals(16, snap.fastingGoalHours)
         assertEquals(8, snap.fastingEatHours)

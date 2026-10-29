@@ -106,7 +106,7 @@ On both the [PWA](https://chompass.app/app/) and the Android app unless noted:
 
 - **Food logging**: photo (up to 10), voice, barcode, text, manual entry, meal components, recipes, saved meals, draft recovery. Android also accepts a share into the app.
 - **Barcode**: [Open Food Facts](https://world.openfoodfacts.org/) lookup (4.6M+ products, cached offline). Reads EAN, QR, and Data Matrix. FOSS [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) on Android; browser scanner on the PWA.
-- **Food search** (Android): live Open Food Facts search plus offline USDA and Swiss Food Composition indexes.
+- **Food search** (Android): live Open Food Facts search plus offline USDA, Swiss Food Composition, and China Food Composition Table indexes.
 
 ### AI
 

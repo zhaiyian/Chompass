@@ -54,8 +54,13 @@ object FoodSuggestionRanker {
         maxDatabase: Int = 8,
         minLexical: Double = MIN_LEXICAL,
     ): List<FoodSuggestion> {
-        val q = QueryNormalizer.normalizeQuery(query)
-        val tokens = QueryNormalizer.normalizeTokens(query)
+        // QueryNormalizer drops tokens shorter than two characters, which for a
+        // Chinese query means a single-glyph query ("鸡") normalizes to nothing —
+        // and an early return here would hide the whole suggestion list, bundled
+        // database rows included. Fall back to the CJK reading of the query, the
+        // same one [ChinaFoodIndex] searches with.
+        val q = QueryNormalizer.normalizeQuery(query).ifEmpty { ChinaFoodIndex.flatten(query) }
+        val tokens = QueryNormalizer.normalizeTokens(query).ifEmpty { ChinaFoodIndex.queryTokens(query) }
         if (q.isEmpty() || tokens.isEmpty()) return emptyList()
 
         val savedHits = saved.mapNotNull { entry ->

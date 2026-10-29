@@ -1014,6 +1014,7 @@
     <string name="food_search_placeholder">例如 希腊酸奶、牛奶、夸克奶酪</string>
     <string name="food_search_sheet_title">搜索食物数据库</string>
     <string name="food_search_source_swiss">瑞士</string>
+    <string name="food_search_source_china">中国</string>
     <string name="frame_large">大</string>
     <string name="frame_medium">中</string>
     <string name="frame_small">小</string>
@@ -1034,6 +1035,7 @@
     <string name="grounding_badge_label">有据 · 营养标签</string>
     <string name="grounding_badge_off">有据 · Open Food Facts</string>
     <string name="grounding_badge_swiss">有据 · 瑞士食物数据库</string>
+    <string name="grounding_badge_china">有据 · 中国食物成分表</string>
     <string name="grounding_badge_usda">有据 · USDA</string>
     <string name="grounding_confidence_summary">置信度：识别 %1$d%% · 份量 %2$d%% · 来源 %3$d%%</string>
     <string name="grounding_source_estimate">AI 估算</string>
@@ -1041,6 +1043,7 @@
     <string name="grounding_source_label">营养标签</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">瑞士</string>
+    <string name="grounding_source_china">中国</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">备注：%1$s</string>
     <string name="home_active_burn_a11y">主动消耗 %1$d</string>

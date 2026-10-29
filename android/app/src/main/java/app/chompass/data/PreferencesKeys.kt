@@ -264,7 +264,7 @@ internal object Keys {
         /** Opt-in meal ingredient breakdown from AI (off for on-device / weak models). */
         val MEAL_CONSTITUENTS_ENABLED = booleanPreferencesKey("mealConstituentsEnabled")
         /**
-         * Per-source switches for the Add Food database search. All three
+         * Per-source switches for the Add Food database search. All four
          * default on: Open Food Facts is the one source a keystroke can put on
          * the network, and switching it off is one tap on the databases
          * heading. They gate searching only — a scanned barcode still resolves
@@ -274,6 +274,7 @@ internal object Keys {
         val FOOD_SEARCH_OFF_ENABLED = booleanPreferencesKey("foodSearchOpenFoodFactsEnabled")
         val FOOD_SEARCH_USDA_ENABLED = booleanPreferencesKey("foodSearchUsdaEnabled")
         val FOOD_SEARCH_SWISS_ENABLED = booleanPreferencesKey("foodSearchSwissEnabled")
+        val FOOD_SEARCH_CHINA_ENABLED = booleanPreferencesKey("foodSearchChinaEnabled")
         val SELECTED_SPEECH_PROVIDER = stringPreferencesKey("selectedSpeechProvider")
         fun selectedSpeechLanguage(provider: SpeechProvider) =
             stringPreferencesKey("selectedSpeechLanguage_${provider.name}")

@@ -220,6 +220,7 @@ class UsdaFoodIndex(
                 NutrientSourceKind.NUTRITION_LABEL -> 10.0
                 NutrientSourceKind.USDA -> 4.0
                 NutrientSourceKind.SWISS -> 4.0
+                NutrientSourceKind.CHINA -> 4.0
                 NutrientSourceKind.HISTORY -> 2.5
                 NutrientSourceKind.MODEL_ESTIMATE -> 0.0
             }

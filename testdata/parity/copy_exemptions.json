@@ -213,6 +213,16 @@
       ]
     },
     {
+      "key": "food_search_source_china",
+      "locales": [
+        "de",
+        "es",
+        "nl",
+        "pt-BR",
+        "ro"
+      ]
+    },
+    {
       "key": "food_search_source_off",
       "locales": [
         "*"
@@ -228,6 +238,16 @@
       "key": "goal_tier_auto",
       "locales": [
         "it",
+        "nl",
+        "pt-BR",
+        "ro"
+      ]
+    },
+    {
+      "key": "grounding_source_china",
+      "locales": [
+        "de",
+        "es",
         "nl",
         "pt-BR",
         "ro"

@@ -421,6 +421,7 @@
     <string name="add_food_off_unreachable">Open Food Facts şu anda erişilemiyor. Kayıtlı ve çevrimdışı sonuçlar yine de görünüyor.</string>
     <string name="food_search_source_usda">USDA</string>
     <string name="food_search_source_swiss">İsviçre</string>
+    <string name="food_search_source_china">Çin</string>
     <string name="shortcut_camera_short">Kamera</string>
     <string name="shortcut_camera_long">Kamerayla yemek kaydet</string>
     <string name="shortcut_voice_short">Ses</string>
@@ -518,12 +519,14 @@
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">İsviçre</string>
+    <string name="grounding_source_china">Çin</string>
     <string name="grounding_source_history">Geçmişin</string>
     <string name="grounding_source_label">Besin etiketi</string>
     <string name="grounding_source_estimate">AI tahmini</string>
     <string name="grounding_badge_usda">Doğrulanmış · USDA</string>
     <string name="grounding_badge_off">Doğrulanmış · Open Food Facts</string>
     <string name="grounding_badge_swiss">Doğrulanmış · İsviçre Gıda Bileşimi Veritabanı</string>
+    <string name="grounding_badge_china">Doğrulanmış · Çin Gıda Bileşimi Tablosu</string>
     <string name="grounding_badge_history">Doğrulanmış · Geçmişin</string>
     <string name="grounding_badge_label">Doğrulanmış · Etiket</string>
     <string name="grounding_badge_estimate">Tahmin · veritabanı eşleşmesi yok</string>

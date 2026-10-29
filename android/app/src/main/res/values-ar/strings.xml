@@ -1021,6 +1021,7 @@
     <string name="food_search_placeholder">مثال: زبادي يوناني، حليب، جبن قريش</string>
     <string name="food_search_sheet_title">البحث في قواعد بيانات الأطعمة</string>
     <string name="food_search_source_swiss">سويسري</string>
+    <string name="food_search_source_china">الصين</string>
     <string name="frame_large">كبير</string>
     <string name="frame_medium">متوسط</string>
     <string name="frame_small">صغير</string>
@@ -1041,6 +1042,7 @@
     <string name="grounding_badge_label">موثّق · ملصق</string>
     <string name="grounding_badge_off">موثّق · Open Food Facts</string>
     <string name="grounding_badge_swiss">موثّق · قاعدة البيانات السويسرية للأطعمة</string>
+    <string name="grounding_badge_china">موثّق · جدول التركيب الغذائي الصيني</string>
     <string name="grounding_badge_usda">موثّق · USDA</string>
     <string name="grounding_confidence_summary">الثقة: التعريف %1$d%% · الحصة %2$d%% · المصدر %3$d%%</string>
     <string name="grounding_source_estimate">تقدير الذكاء الاصطناعي</string>
@@ -1048,6 +1050,7 @@
     <string name="grounding_source_label">الملصق الغذائي</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">سويسري</string>
+    <string name="grounding_source_china">الصين</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">ملاحظات: %1$s</string>
     <string name="home_active_burn_a11y">الحرق النشط %1$d</string>

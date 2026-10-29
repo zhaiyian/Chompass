@@ -252,6 +252,7 @@
     <string name="food_search_sheet_title">Пошук у базах продуктів</string>
     <string name="food_search_placeholder">напр. грецький йогурт, Milch, quark</string>
     <string name="food_search_source_swiss">Швейцарська</string>
+    <string name="food_search_source_china">Китайська</string>
     <string name="shortcut_camera_short">Камера</string>
     <string name="shortcut_camera_long">Внести їжу з камери</string>
     <string name="shortcut_voice_short">Голос</string>
@@ -306,12 +307,14 @@
     <string name="grounded_review_grams">Грами</string>
     <string name="grounded_review_continue">До перегляду</string>
     <string name="grounding_source_swiss">Швейцарська</string>
+    <string name="grounding_source_china">Китайська</string>
     <string name="grounding_source_history">Твоя історія</string>
     <string name="grounding_source_label">Етикетка</string>
     <string name="grounding_source_estimate">Оцінка ШІ</string>
     <string name="grounding_badge_usda">Перевірено · USDA</string>
     <string name="grounding_badge_off">Перевірено · Open Food Facts</string>
     <string name="grounding_badge_swiss">Перевірено · Швейцарська база</string>
+    <string name="grounding_badge_china">Перевірено · Китайська таблиця складу харчових продуктів</string>
     <string name="grounding_badge_history">Перевірено · Твоя історія</string>
     <string name="grounding_badge_label">Перевірено · Етикетка</string>
     <string name="grounding_badge_estimate">Оцінка · не зіставлено з базою</string>

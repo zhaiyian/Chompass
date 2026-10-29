@@ -14,9 +14,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
- * End-to-end offline search over the real bundled USDA + Swiss SQLite assets
- * (no network). Pins [FoodDatabaseSearch] merged/ranked behavior after the
- * Codeberg #26 hardening: both offline sources resolve through the shared
+ * End-to-end offline search over the real bundled USDA + Swiss + China SQLite
+ * assets (no network). Pins [FoodDatabaseSearch] merged/ranked behavior after the
+ * Codeberg #26 hardening: every offline source resolves through the shared
  * [Mutex] (serialized) and hits land on one normalized score scale. The
  * network source is exercised only through the injected [FoodDatabaseSearch]
  * seam — the real OFF client has its own MockWebServer suite
@@ -37,6 +37,7 @@ class FoodDatabaseSearchTest {
             prefs = prefs,
             usda = UsdaFoodIndex(context),
             swiss = SwissFoodIndex(context),
+            china = ChinaFoodIndex(context),
             offSearch = offSearch,
         )
 
@@ -71,6 +72,58 @@ class FoodDatabaseSearchTest {
         )
         assertTrue("expected Swiss hits for 'pork', got ${results.size}", results.isNotEmpty())
         assertTrue(results.all { it.sourceKind == NutrientSourceKind.SWISS })
+    }
+
+    @Test
+    fun search_findsChineseFoodsBySubstring() = runBlocking {
+        // The China index is the one source whose script FTS5 cannot split on its
+        // own: the asset stores unigrams + bigrams and the query leg reads the
+        // typed characters the same way, so a partial word still matches the
+        // book's longer name.
+        val results = newSearch().search(
+            "鸡胸",
+            sources = setOf(FoodDatabaseSearch.Source.CHINA),
+        )
+        assertTrue("expected China hits for '鸡胸', got ${results.size}", results.isNotEmpty())
+        assertTrue(results.all { it.sourceKind == NutrientSourceKind.CHINA })
+        assertTrue(results.all { it.name.contains("鸡") })
+        // Ranked on the shared scale like every other source.
+        val scores = results.map { it.matchScore }
+        assertEquals(scores.sortedDescending(), scores)
+    }
+
+    @Test
+    fun search_dropsChinaWhenSwitchedOff() = runBlocking {
+        val prefs = PreferencesStore(context)
+        val search = newSearch(prefs = prefs)
+        val everySource = setOf(
+            FoodDatabaseSearch.Source.USDA,
+            FoodDatabaseSearch.Source.SWISS,
+            FoodDatabaseSearch.Source.CHINA,
+        )
+        assertTrue(FoodDatabaseSearch.Source.CHINA in search.enabledSources())
+
+        prefs.setFoodSearchChinaEnabled(false)
+        try {
+            val results = search.search("牛奶", sources = everySource)
+            assertTrue(results.none { it.sourceKind == NutrientSourceKind.CHINA })
+        } finally {
+            prefs.setFoodSearchChinaEnabled(true)
+        }
+    }
+
+    @Test
+    fun toAnalysis_chinaRow_scalesPer100g() = runBlocking {
+        val search = newSearch()
+        val hit = search.search("牛奶", sources = setOf(FoodDatabaseSearch.Source.CHINA)).first()
+
+        val per100 = search.toAnalysis(hit)
+        assertEquals(NutrientSourceKind.CHINA, per100.grounding?.sourceKind)
+        assertEquals(100.0, per100.servingSizeGrams ?: -1.0, 0.001)
+
+        val halved = search.toAnalysis(hit.copy(servingGrams = 50.0))
+        assertEquals(50.0, halved.servingSizeGrams ?: -1.0, 0.001)
+        assertEquals(per100.calories / 2.0, halved.calories.toDouble(), 1.0)
     }
 
     @Test
@@ -122,7 +175,11 @@ class FoodDatabaseSearchTest {
         prefs.setFoodSearchOpenFoodFactsEnabled(false)
         try {
             assertEquals(
-                setOf(FoodDatabaseSearch.Source.USDA, FoodDatabaseSearch.Source.SWISS),
+                setOf(
+                    FoodDatabaseSearch.Source.USDA,
+                    FoodDatabaseSearch.Source.SWISS,
+                    FoodDatabaseSearch.Source.CHINA,
+                ),
                 search.enabledSources(),
             )
             val results = search.search("pork ground", sources = sources)

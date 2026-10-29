@@ -547,6 +547,8 @@ class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
     suspend fun setFoodSearchUsdaEnabled(v: Boolean) = setFoodSearchUsdaEnabledImpl(v)
     val foodSearchSwissEnabled: Flow<Boolean> get() = foodSearchSwissEnabledImpl
     suspend fun setFoodSearchSwissEnabled(v: Boolean) = setFoodSearchSwissEnabledImpl(v)
+    val foodSearchChinaEnabled: Flow<Boolean> get() = foodSearchChinaEnabledImpl
+    suspend fun setFoodSearchChinaEnabled(v: Boolean) = setFoodSearchChinaEnabledImpl(v)
     val selectedSpeechProvider: Flow<SpeechProvider> get() = selectedSpeechProviderImpl
     suspend fun setSelectedSpeechProvider(p: SpeechProvider) = setSelectedSpeechProviderImpl(p)
     fun selectedSpeechLanguage(provider: SpeechProvider): Flow<SpeechLanguage> = selectedSpeechLanguageImpl(provider)

@@ -212,6 +212,7 @@ object DiaryImporter {
             "usda" -> NutrientSourceKind.USDA
             "openFoodFacts" -> NutrientSourceKind.OPEN_FOOD_FACTS
             "swiss" -> NutrientSourceKind.SWISS
+            "china" -> NutrientSourceKind.CHINA
             "history" -> NutrientSourceKind.HISTORY
             "nutritionLabel" -> NutrientSourceKind.NUTRITION_LABEL
             else -> NutrientSourceKind.MODEL_ESTIMATE

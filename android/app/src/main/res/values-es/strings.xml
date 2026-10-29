@@ -819,8 +819,11 @@
     <string name="food_search_sheet_title">Buscar en bases de datos de alimentos</string>
     <string name="food_search_placeholder">p. ej. yogur griego, leche, quark</string>
     <string name="food_search_source_swiss">Suiza</string>
+    <string name="food_search_source_china">China</string>
     <string name="grounding_badge_swiss">Contrastado · Base suiza de composición de alimentos</string>
+    <string name="grounding_badge_china">Contrastado · Tabla china de composición de alimentos</string>
     <string name="grounding_source_swiss">Suiza</string>
+    <string name="grounding_source_china">China</string>
     <string name="error_search_food_failed">No se pudo cargar este alimento. Inténtalo de nuevo.</string>
 
 

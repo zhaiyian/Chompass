@@ -263,17 +263,17 @@ internal suspend fun PreferencesStore.foodImageReferenceFilenamesImpl(): Set<Str
 
 // -- Food database search sources -------------------------------------
 //
-// Three independent switches for the Add Food search sources. Turning one off
+// Four independent switches for the Add Food search sources. Turning one off
 // only removes it from the search fan-out (see FoodDatabaseSearch.enabledSources)
 // — barcode lookups and already-logged entries are untouched.
 //
-// All three default on. The two bundled indexes are on-device SQLite, so
-// searching them costs a query nothing but milliseconds. Open Food Facts is the
-// one source that leaves the phone, and it ships on too (maintainer call
-// 2026-09-15), so the unified search answers with the packaged products people
-// type by brand; the Settings switch and the sheet's heading chip switch it
-// back off. Both write this one preference, so either control moves the other
-// and the choice survives the sheet, the screen and the process.
+// All four default on. The three bundled indexes (USDA, Swiss, China) are
+// on-device SQLite, so searching them costs a query nothing but milliseconds.
+// Open Food Facts is the one source that leaves the phone, and it ships on too
+// (maintainer call 2026-09-15), so the unified search answers with the packaged
+// products people type by brand; the Settings switch and the sheet's heading chip
+// switch it back off. Both write this one preference, so either control moves the
+// other and the choice survives the sheet, the screen and the process.
 internal val PreferencesStore.foodSearchOpenFoodFactsEnabledImpl: Flow<Boolean>
     get() = dataStore.data.map { it[Keys.FOOD_SEARCH_OFF_ENABLED] ?: true }
 
@@ -293,4 +293,11 @@ internal val PreferencesStore.foodSearchSwissEnabledImpl: Flow<Boolean>
 
 internal suspend fun PreferencesStore.setFoodSearchSwissEnabledImpl(v: Boolean) {
     dataStore.edit { it[Keys.FOOD_SEARCH_SWISS_ENABLED] = v }
+}
+
+internal val PreferencesStore.foodSearchChinaEnabledImpl: Flow<Boolean>
+    get() = dataStore.data.map { it[Keys.FOOD_SEARCH_CHINA_ENABLED] ?: true }
+
+internal suspend fun PreferencesStore.setFoodSearchChinaEnabledImpl(v: Boolean) {
+    dataStore.edit { it[Keys.FOOD_SEARCH_CHINA_ENABLED] = v }
 }

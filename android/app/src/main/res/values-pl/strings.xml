@@ -421,6 +421,7 @@
     <string name="add_food_off_unreachable">Open Food Facts jest teraz niedostępny. Zapisane i offline wyniki nadal się wyświetlają.</string>
     <string name="food_search_source_usda">USDA</string>
     <string name="food_search_source_swiss">Szwajcarska</string>
+    <string name="food_search_source_china">Chińska</string>
     <string name="shortcut_camera_short">Aparat</string>
     <string name="shortcut_camera_long">Dodaj jedzenie aparatem</string>
     <string name="shortcut_voice_short">Głos</string>
@@ -518,12 +519,14 @@
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">Szwajcarska</string>
+    <string name="grounding_source_china">Chińska</string>
     <string name="grounding_source_history">Twoja historia</string>
     <string name="grounding_source_label">Etykieta wartości odżywczych</string>
     <string name="grounding_source_estimate">Szacunek AI</string>
     <string name="grounding_badge_usda">Potwierdzone · USDA</string>
     <string name="grounding_badge_off">Potwierdzone · Open Food Facts</string>
     <string name="grounding_badge_swiss">Potwierdzone · Szwajcarska baza składu żywności</string>
+    <string name="grounding_badge_china">Potwierdzone · Chińska tabela składu żywności</string>
     <string name="grounding_badge_history">Potwierdzone · Twoja historia</string>
     <string name="grounding_badge_label">Potwierdzone · Etykieta</string>
     <string name="grounding_badge_estimate">Szacunek · bez dopasowania do bazy</string>

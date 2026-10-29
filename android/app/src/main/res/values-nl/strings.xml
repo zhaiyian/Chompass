@@ -984,6 +984,7 @@
     <string name="food_search_placeholder">bijv. Griekse yoghurt, melk, kwark</string>
     <string name="food_search_sheet_title">Voedingsdatabases doorzoeken</string>
     <string name="food_search_source_swiss">Zwitsers</string>
+    <string name="food_search_source_china">China</string>
     <string name="frame_large">Groot</string>
     <string name="frame_medium">Middel</string>
     <string name="frame_small">Klein</string>
@@ -1004,6 +1005,7 @@
     <string name="grounding_badge_label">Gefundeerd · etiket</string>
     <string name="grounding_badge_off">Gefundeerd · Open Food Facts</string>
     <string name="grounding_badge_swiss">Gefundeerd · Zwitserse voedingsmiddelendatabase</string>
+    <string name="grounding_badge_china">Gefundeerd · Chinese voedingsmiddelentabel</string>
     <string name="grounding_badge_usda">Gefundeerd · USDA</string>
     <string name="grounding_confidence_summary">Vertrouwen: identiteit %1$d%% · portie %2$d%% · bron %3$d%%</string>
     <string name="grounding_source_estimate">AI-schatting</string>
@@ -1011,6 +1013,7 @@
     <string name="grounding_source_label">Voedingsetiket</string>
     <string name="grounding_source_off">Open Food Facts</string>
     <string name="grounding_source_swiss">Zwitsers</string>
+    <string name="grounding_source_china">China</string>
     <string name="grounding_source_usda">USDA</string>
     <string name="grounding_validation_notes">Notities: %1$s</string>
     <string name="home_active_burn_a11y">Actief verbruik %1$d</string>
