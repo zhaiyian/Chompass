@@ -333,6 +333,10 @@
     <string name="sheet_micro_cholesterol">胆固醇</string>
     <string name="sheet_micro_sodium">钠</string>
     <string name="sheet_micro_potassium">钾</string>
+    <string name="purine_label">嘌呤</string>
+    <string name="purine_level_low">低嘌呤</string>
+    <string name="purine_level_medium">中嘌呤</string>
+    <string name="purine_level_high">高嘌呤</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">查看照片</string>

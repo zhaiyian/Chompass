@@ -613,6 +613,10 @@
     <string name="sheet_micro_cholesterol">Cholesterol</string>
     <string name="sheet_micro_sodium">Sód</string>
     <string name="sheet_micro_potassium">Potas</string>
+    <string name="purine_label">Puryny</string>
+    <string name="purine_level_low">Mało puryn</string>
+    <string name="purine_level_medium">Średnio puryn</string>
+    <string name="purine_level_high">Dużo puryn</string>
 
     <!-- Context note sheet -->
     <string name="context_note_title">Przejrzyj zdjęcie</string>

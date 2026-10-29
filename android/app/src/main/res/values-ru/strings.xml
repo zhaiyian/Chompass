@@ -427,6 +427,10 @@
     <string name="sheet_micro_cholesterol">Холестерин</string>
     <string name="sheet_micro_sodium">Натрий</string>
     <string name="sheet_micro_potassium">Калий</string>
+    <string name="purine_label">Пурины</string>
+    <string name="purine_level_low">Мало пуринов</string>
+    <string name="purine_level_medium">Средне пуринов</string>
+    <string name="purine_level_high">Много пуринов</string>
 
     
         <string name="context_note_title">Проверить фото</string>

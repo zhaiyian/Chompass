@@ -1,0 +1,8 @@
+{
+  "dataset_version": "purine-table-2026-10",
+  "food_count": 240,
+  "low_max_mg": 50.0,
+  "medium_max_mg": 150.0,
+  "source": "Maintainer purine table (\u560c\u5464\u8868.xlsx)",
+  "sha256": "e9cf057761022d5b77a2d5e1916fa031022776dfff57aa24a10d5c725b93272b"
+}

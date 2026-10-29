@@ -438,6 +438,22 @@ One cup per reminder, capped by the goal remainder; a next-day fire starts fresh
 
 **Call sites:** `WaterReminderPlanner`, reminder-plan sheet preview, Home water row (`HomeUiState.waterNextPlan`), water notification text.
 
+### PURINE-BAND: Low / medium / high purine badge (display)
+
+```
+level = low    when mgPer100g < 50
+      = medium when 50 <= mgPer100g <= 150
+      = high   when mgPer100g > 150
+```
+
+Values come from the bundled purine table (`assets/purine/`, 240 foods, mg of total purine per 100 g) and are never recomputed or scaled: the badge states the table's own band, and the sheet row prints the table value as `mg/100 g`. No entry field, no daily total, no goal — display only.
+
+**Name matching** (in order, first hit wins): exact name → name with preparation asides removed (`鸡胸肉(熟)` ↔ `鸡胸肉`) → the more specific name containing a known food (`凉拌牛肉` → `牛肉`), longest known food wins → a shorter name inside a longer table name, accepted only when the table name is at most two characters longer (`鸡胸` → `鸡胸肉`, but `鸡蛋` never picks up `韭菜鸡蛋饺子`). Several rows sharing a base name (`羊腿肉(生)` / `羊腿肉(熟)`) resolve to the **higher** value: cooking lowers measured purine per 100 g, and under-warning is the harmful direction. No convincing match → no badge at all.
+
+**Evidence / rationale:** the 50 / 150 mg cut-offs are the conventional dietary-guideline bands for purine-restricted (gout / hyperuricemia) diets, and they are the bands the source sheet itself uses. The values are third-party measurements reproduced as given, so the badge is a reference aid rather than medical advice (see `docs/ASSET_CREDITS.md`).
+
+**Call sites:** `PurineFoodIndex.findFor`; Add Food suggestion rows (`PurineLevelChipFor`), review and edit sheets (`PurineInfoRow`).
+
 ### Body composition (tape measures)
 
 **US Navy (metric coefficients):**
@@ -484,6 +500,7 @@ Rejected if result not finite or ∉ [2, 65]% (same guard as Navy). Gender OTHER
 | Water activity table 1.0–1.5     | **Keep (heuristic)**            | AIs assume sedentary/PAL 1.6; ACSM exercise sweat 0.5–2.0 L/h            |
 | Food water 60 % of grams, cap 1 L | **Keep (heuristic)**           | Food moisture 19–30 % of total water intake; cap ≈ agency food-water range |
 | Reminder interval 30–240 min     | **Keep**                        | Pacing heuristic; clamps prevent degenerate cadences                     |
+| Purine bands <50 / 50–150 / >150 mg | **Keep (display, table-owned)** | Conventional purine-restriction bands; values reproduced from the source sheet, never recomputed or scaled |
 
 ---
 

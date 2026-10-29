@@ -613,6 +613,10 @@
     <string name="sheet_micro_cholesterol">Kolesterol</string>
     <string name="sheet_micro_sodium">Sodyum</string>
     <string name="sheet_micro_potassium">Potasyum</string>
+    <string name="purine_label">Pürin</string>
+    <string name="purine_level_low">Az pürin</string>
+    <string name="purine_level_medium">Orta pürin</string>
+    <string name="purine_level_high">Yüksek pürin</string>
 
     <!-- Context note sheet -->
     <string name="context_note_title">Fotoğrafı incele</string>

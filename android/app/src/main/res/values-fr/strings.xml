@@ -1735,6 +1735,10 @@
     <string name="sheet_macro_label_format">%1$s (%2$s)</string>
     <string name="sheet_macros">Macros</string>
     <string name="sheet_micro_potassium">Potassium</string>
+    <string name="purine_label">Purines</string>
+    <string name="purine_level_low">Pauvre en purines</string>
+    <string name="purine_level_medium">Purines modérées</string>
+    <string name="purine_level_high">Riche en purines</string>
     <string name="sheet_micro_sodium">Sodium</string>
     <string name="sheet_nutrition">Nutrition</string>
     <string name="sheet_serving_custom_grams">Grammes par unité</string>

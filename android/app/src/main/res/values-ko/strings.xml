@@ -332,6 +332,10 @@
     <string name="sheet_micro_cholesterol">콜레스테롤</string>
     <string name="sheet_micro_sodium">나트륨</string>
     <string name="sheet_micro_potassium">칼륨</string>
+    <string name="purine_label">퓨린</string>
+    <string name="purine_level_low">퓨린 낮음</string>
+    <string name="purine_level_medium">퓨린 보통</string>
+    <string name="purine_level_high">퓨린 높음</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">사진 확인</string>

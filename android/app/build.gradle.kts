@@ -129,8 +129,9 @@ android {
             versionNameSuffix = "-debug2"
         }
     }
-    // Offline food-database assets (USDA ~3.7 MB, Swiss ~1.6 MB, China ~0.6 MB)
-    // live under src/main/assets so the Add Food "Search food" feature ships in
+    // Offline food-database assets (USDA ~3.7 MB, Swiss ~1.6 MB, China ~0.6 MB,
+    // purine table ~0.1 MB) live under src/main/assets so the Add Food "Search food"
+    // feature and the purine badges ship in
     // all build types. The heavier grounded-entry code (orchestrator, tool loop,
     // candidate sheets) stays in src/grounded and is compiled for debug/test only;
     // release gets thin stubs while GroundedEntryFeature.ENABLED stays false.

@@ -332,6 +332,10 @@
     <string name="sheet_micro_cholesterol">कोलेस्ट्रॉल</string>
     <string name="sheet_micro_sodium">सोडियम</string>
     <string name="sheet_micro_potassium">पोटैशियम</string>
+    <string name="purine_label">प्यूरीन</string>
+    <string name="purine_level_low">कम प्यूरीन</string>
+    <string name="purine_level_medium">मध्यम प्यूरीन</string>
+    <string name="purine_level_high">उच्च प्यूरीन</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">फ़ोटो देखें</string>

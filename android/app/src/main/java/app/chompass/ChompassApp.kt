@@ -47,6 +47,7 @@ import app.chompass.services.grounding.ChinaFoodIndex
 import app.chompass.services.grounding.FoodDatabaseSearch
 import app.chompass.services.grounding.GroundedFoodEntryService
 import app.chompass.services.grounding.GroundedEntryFeature
+import app.chompass.services.grounding.PurineFoodIndex
 import app.chompass.services.grounding.SwissFoodIndex
 import app.chompass.services.grounding.UsdaFoodIndex
 import app.chompass.services.health.HealthConnectManager
@@ -338,6 +339,17 @@ class AppContainer(app: ChompassApp) {
     }
     val foodDatabaseSearch: FoodDatabaseSearch by lazy(LazyThreadSafetyMode.NONE) {
         FoodDatabaseSearch(prefs, usdaFoodIndex, swissFoodIndex, chinaFoodIndex)
+    }
+    /**
+     * Name lookup that badges a food low / medium / high purine in the Add Food
+     * list and the food sheets. Not a search source of its own — the table has
+     * purine only, no macros — so it never contributes result rows.
+     */
+    val purineFoodIndex: PurineFoodIndex by lazy(LazyThreadSafetyMode.NONE) {
+        check(PurineFoodIndex.assetAvailable(appContext)) {
+            "Purine SQLite missing from APK assets"
+        }
+        PurineFoodIndex(appContext)
     }
     val groundedFoodEntry: GroundedFoodEntryService by lazy(LazyThreadSafetyMode.NONE) {
         check(GroundedEntryFeature.ENABLED) {

@@ -331,6 +331,10 @@
     <string name="sheet_micro_cholesterol">コレステロール</string>
     <string name="sheet_micro_sodium">ナトリウム</string>
     <string name="sheet_micro_potassium">カリウム</string>
+    <string name="purine_label">プリン体</string>
+    <string name="purine_level_low">低プリン体</string>
+    <string name="purine_level_medium">中プリン体</string>
+    <string name="purine_level_high">高プリン体</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">写真を確認</string>

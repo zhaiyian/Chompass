@@ -914,6 +914,10 @@ fun EditFoodEntrySheet(
                 }
             }
 
+            // Purine band from the bundled table (name match only), above the
+            // expandable micros — see FoodResultSheet.
+            item { PurineInfoRow(name.ifBlank { currentBaseEntry.name }) }
+
             // "More Nutrition" — own pill row with chevron-right that flips to
             // chevron-down when expanded; matches iOS DisclosureGroup behavior.
             if (MicronutrientField.MoreNutrition.any { editableMicros[it] != null }) {

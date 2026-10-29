@@ -332,6 +332,10 @@
     <string name="sheet_micro_cholesterol">الكوليسترول</string>
     <string name="sheet_micro_sodium">الصوديوم</string>
     <string name="sheet_micro_potassium">البوتاسيوم</string>
+    <string name="purine_label">البيورين</string>
+    <string name="purine_level_low">بيورين منخفض</string>
+    <string name="purine_level_medium">بيورين متوسط</string>
+    <string name="purine_level_high">بيورين مرتفع</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">مراجعة الصورة</string>

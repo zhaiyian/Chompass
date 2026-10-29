@@ -1074,6 +1074,11 @@ fun FoodResultSheet(
                 )
             }
 
+            // Purine band from the bundled table (name match only). Sits above
+            // the expandable micros: for a gout user this is the one line that
+            // decides whether the food is worth logging at all.
+            item { PurineInfoRow(name.ifBlank { effectiveAnalysis.name }) }
+
             item {
                 SheetPillRow(onClick = { if (analysisReady) moreNutritionExpanded = !moreNutritionExpanded }) {
                     Text(stringResource(R.string.sheet_more_nutrition), fontSize = 16.sp, modifier = Modifier.weight(1f))

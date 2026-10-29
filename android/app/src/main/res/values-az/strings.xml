@@ -327,6 +327,10 @@ bilirsən?</string>
     <string name="sheet_micro_cholesterol">Xolesterin</string>
     <string name="sheet_micro_sodium">Natrium</string>
     <string name="sheet_micro_potassium">Kalium</string>
+    <string name="purine_label">Purin</string>
+    <string name="purine_level_low">Az purin</string>
+    <string name="purine_level_medium">Orta purin</string>
+    <string name="purine_level_high">Yüksək purin</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">Fotonu yoxla</string>

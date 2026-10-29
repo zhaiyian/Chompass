@@ -646,6 +646,14 @@
       ]
     },
     {
+      "key": "purine_label",
+      "locales": [
+        "it",
+        "nl",
+        "ro"
+      ]
+    },
+    {
       "key": "section_source",
       "locales": [
         "fr"

@@ -315,6 +315,10 @@
     <string name="sheet_micro_poly_fat">Meerv. onverz. vet</string>
     <string name="sheet_micro_sodium">Natrium</string>
     <string name="sheet_micro_potassium">Kalium</string>
+    <string name="purine_label">Purine</string>
+    <string name="purine_level_low">Weinig purine</string>
+    <string name="purine_level_medium">Matig purine</string>
+    <string name="purine_level_high">Veel purine</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">Foto bekijken</string>

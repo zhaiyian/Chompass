@@ -327,6 +327,10 @@
     <string name="sheet_micro_cholesterol">Colesterol</string>
     <string name="sheet_micro_sodium">Sódio</string>
     <string name="sheet_micro_potassium">Potássio</string>
+    <string name="purine_label">Purinas</string>
+    <string name="purine_level_low">Purina baixa</string>
+    <string name="purine_level_medium">Purina média</string>
+    <string name="purine_level_high">Purina alta</string>
 
     <!-- Context note sheet -->
         <string name="context_note_title">Revisar foto</string>

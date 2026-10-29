@@ -998,6 +998,9 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
                     container.usdaFoodIndex
                     container.swissFoodIndex
                     container.chinaFoodIndex
+                    // Loaded whole into memory on first touch; warming it here
+                    // keeps that off the first row render.
+                    container.purineFoodIndex
                 }
             }
         }

@@ -374,6 +374,10 @@
     <string name="sheet_micro_cholesterol">Холестерин</string>
     <string name="sheet_micro_sodium">Натрій</string>
     <string name="sheet_micro_potassium">Калій</string>
+    <string name="purine_label">Пурини</string>
+    <string name="purine_level_low">Мало пуринів</string>
+    <string name="purine_level_medium">Середньо пуринів</string>
+    <string name="purine_level_high">Багато пуринів</string>
     <string name="context_note_title">Перегляд фото</string>
     <string name="context_note_section">Підкажи ШІ, що це (необов\'язково)</string>
     <string name="context_note_placeholder">напр. 2 яйця, смажені на вершковому маслі, чаша з куркою з додатковою олією, курка-гриль без соусу</string>

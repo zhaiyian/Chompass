@@ -1089,6 +1089,10 @@ für dich ein</string>
     <string name="sheet_micro_sodium">Natrium</string>
 
     <string name="sheet_micro_potassium">Kalium</string>
+    <string name="purine_label">Purin</string>
+    <string name="purine_level_low">Wenig Purin</string>
+    <string name="purine_level_medium">Mittel Purin</string>
+    <string name="purine_level_high">Viel Purin</string>
 
     <string name="context_note_title">Foto überprüfen</string>
 

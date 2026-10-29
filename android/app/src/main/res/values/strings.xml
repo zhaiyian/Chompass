@@ -784,6 +784,13 @@
     <string name="sheet_micro_sodium">Sodium</string>
     <string name="sheet_micro_potassium">Potassium</string>
 
+    <!-- Purine band from the bundled purine table (低/中/高嘌呤) -->
+    <string name="purine_label">Purine</string>
+    <string name="purine_level_low">Low purine</string>
+    <string name="purine_level_medium">Medium purine</string>
+    <string name="purine_level_high">High purine</string>
+    <string name="purine_per_100g">%1$s mg/100 g</string>
+
     <!-- Context note sheet -->
     <string name="context_note_title">Review photo</string>
     <string name="context_note_section">Tell AI what this is (optional)</string>
