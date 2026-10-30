@@ -32,6 +32,8 @@ internal object Keys {
         val FIRST_LAUNCH_AT = longPreferencesKey("firstLaunchAt")
         /** Dismissed settings-suggestion ids ("water_tracking", "adaptive_goals", ...). */
         val DISMISSED_SUGGESTIONS = stringSetPreferencesKey("dismissedSuggestionIds")
+        /** Hidden saved-food identity keys — dropped from Add Food suggestions, diary history kept (Codeberg #142). */
+        val HIDDEN_FOOD_KEYS = stringSetPreferencesKey("hiddenFoodKeys")
         /** Epoch day the AI fill-missing Home banner was last shown (at most once per day). */
         val FILL_MISSING_BANNER_LAST_SHOWN_DAY = longPreferencesKey("fillMissingBannerLastShownDay")
         /** Dismissed fill-missing scan signatures (sticky per scan shape). */
@@ -236,7 +238,6 @@ internal object Keys {
         /** Fallback-slot URL; separate from [customBaseUrl] so same-provider primary + fallback keep distinct endpoints. */
         fun fallbackCustomBaseUrl(provider: AIProvider): Preferences.Key<String> =
             stringPreferencesKey("customBaseURL_fallback_${provider.name}")
-        val MAX_RESPONSE_TOKENS = intPreferencesKey("maxResponseTokens")
         val AI_READ_TIMEOUT_SECONDS = intPreferencesKey("aiReadTimeoutSeconds")
         /** Goal-recalc prompt tier override (#123); missing = AUTO. */
         val GOAL_RECALC_TIER = stringPreferencesKey("goalRecalcTier")
@@ -313,6 +314,8 @@ internal object Keys {
         val DEBUG_DEMO_ANALYSIS_FAIL = booleanPreferencesKey("debugDemoAnalysisFail")
         /** Debug-only: first demo entry leg truncates, retry answers macros (#97 demo_ai_truncate extra). */
         val DEBUG_DEMO_ANALYSIS_TRUNCATE = booleanPreferencesKey("debugDemoAnalysisTruncate")
+        /** Debug-only: hold the demo analysis overlay this many ms (demo_ai_hold_ms; screenshot capture). */
+        val DEBUG_DEMO_ANALYSIS_HOLD_MS = intPreferencesKey("debugDemoAnalysisHoldMs")
         val BARCODE_CACHE = stringPreferencesKey("barcodeLookupCache")
         val ON_DEVICE_MODEL_DOWNLOADED_VERSION = stringPreferencesKey("onDeviceModelDownloadedVersion")
         val ON_DEVICE_DOWNLOAD_OVER_WIFI_ONLY = booleanPreferencesKey("onDeviceDownloadOverWifiOnly")
@@ -327,6 +330,14 @@ internal object Keys {
         val WEBDAV_ENABLED = booleanPreferencesKey("webDavEnabled")
         /** Local calendar day (yyyy-MM-dd) of the last auto-sync attempt. */
         val WEBDAV_AUTO_SYNC_DAY = stringPreferencesKey("webDavAutoSyncDay")
+        /** #122: opt-in meal-photo sync over WebDAV (bytes as siblings of the sync doc). */
+        val WEBDAV_PHOTOS_ENABLED = booleanPreferencesKey("webDavPhotosEnabled")
+        /** #122: photo upload/download only on unmetered networks. */
+        val WEBDAV_PHOTOS_WIFI_ONLY = booleanPreferencesKey("webDavPhotosWifiOnly")
+        /** #122: content-addressed refs known to be on the server (cache; unbounded but tiny). */
+        val WEBDAV_SYNCED_PHOTOS = stringSetPreferencesKey("webDavSyncedPhotos")
+        /** #122: normalized WebDAV URL the uploaded-ref cache belongs to. */
+        val WEBDAV_SYNCED_PHOTOS_URL = stringPreferencesKey("webDavSyncedPhotosUrl")
         val LAST_SYNC_AT = stringPreferencesKey("lastSyncAt")
         val LAST_SYNC_ETAG = stringPreferencesKey("lastSyncEtag")
         /** Serialized [app.chompass.services.ai.RecalcSheetData] of the latest goal change (AI Recalculate or Adaptive). */

@@ -125,25 +125,37 @@ internal fun <T> ListSheet(
     subtitle: (@Composable (T) -> String?)? = null,
     /** Group label for an item; rendered above the first item of each distinct group. */
     sectionHeader: (@Composable (T) -> String?)? = null,
-    /** Renders a search field above the list; queries match [filterText] (default toString). */
+    /** Renders a search field above the list. When [onQueryChange] is null, queries match [filterText] (default toString). */
     searchable: Boolean = false,
     filterText: ((T) -> String)? = null,
     footer: String? = null,
     customField: ((String) -> Unit)? = null,
     /** Composable leading slot (e.g. a color swatch) rendered before the label; overrides [icon]. */
     leading: (@Composable (T) -> Unit)? = null,
+    /** Drawn after the label column and before the check icon. */
+    trailing: (@Composable (T) -> Unit)? = null,
+    /** Null keeps the model-search hint. */
+    searchPlaceholder: String? = null,
+    /** Controlled query. Used only when [onQueryChange] is non-null, in which case this sheet does not filter. */
+    query: String? = null,
+    onQueryChange: ((String) -> Unit)? = null,
     /** When non-null, the custom-field footer gains a Cancel beside its Save. */
     onDismiss: (() -> Unit)? = null
 ) {
     val isDark = isDarkTheme()
     Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(12.dp))
-    var query by remember { mutableStateOf("") }
+    var internalQuery by remember { mutableStateOf("") }
+    val controlled = onQueryChange != null
+    val queryText = if (controlled) query.orEmpty() else internalQuery
+    val setQuery: (String) -> Unit = { next ->
+        if (onQueryChange != null) onQueryChange(next) else internalQuery = next
+    }
     if (searchable) {
         ChompassTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = stringResource(R.string.sheet_model_search_hint),
+            value = queryText,
+            onValueChange = setQuery,
+            placeholder = searchPlaceholder ?: stringResource(R.string.sheet_model_search_hint),
             modifier = Modifier.fillMaxWidth(),
             leadingIcon = {
                 Icon(
@@ -153,9 +165,9 @@ internal fun <T> ListSheet(
                     modifier = Modifier.size(18.dp),
                 )
             },
-            trailingIcon = if (query.isNotEmpty()) {
+            trailingIcon = if (queryText.isNotEmpty()) {
                 {
-                    IconButton(onClick = { query = "" }) {
+                    IconButton(onClick = { setQuery("") }) {
                         Icon(
                             Icons.Filled.Close,
                             contentDescription = stringResource(R.string.action_clear),
@@ -168,8 +180,8 @@ internal fun <T> ListSheet(
         )
         Spacer(Modifier.height(12.dp))
     }
-    val needle = query.trim()
-    val visible = if (!searchable || needle.isEmpty()) items else items.filter {
+    val needle = queryText.trim()
+    val visible = if (!searchable || controlled || needle.isEmpty()) items else items.filter {
         (filterText?.invoke(it) ?: it.toString()).contains(needle, ignoreCase = true)
     }
     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -235,7 +247,12 @@ internal fun <T> ListSheet(
                         )
                     }
                 }
+                if (trailing != null) {
+                    Spacer(Modifier.width(8.dp))
+                    trailing(item)
+                }
                 if (isSel) {
+                    if (trailing != null) Spacer(Modifier.width(8.dp))
                     Icon(
                         Icons.Filled.Check,
                         contentDescription = stringResource(R.string.sheet_selected_a11y),
@@ -390,6 +407,32 @@ internal fun TextFieldSheet(
         placeholder = placeholder,
         singleLine = true,
         keyboardOptions = keyboardOptions,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    CancelSaveRow(onDismiss) { onSave(value.trim()) }
+}
+
+/**
+ * Typed base URL. Directory hosts are rows in the provider sheet; this sheet
+ * is only the text field.
+ */
+@Composable
+internal fun CustomBaseUrlSheet(
+    title: String,
+    initial: String,
+    placeholder: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember(initial) { mutableStateOf(initial) }
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    ChompassTextField(
+        value = value,
+        onValueChange = { value = it },
+        placeholder = placeholder,
+        singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
     Spacer(Modifier.height(12.dp))

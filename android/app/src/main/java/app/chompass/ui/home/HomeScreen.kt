@@ -1879,6 +1879,7 @@ fun HomeScreen(
                 vm.dismissQueue()
                 returnToAddFoodGrid()
             },
+            providerDirectory = container.providerDirectory,
         )
     }
     if (showFillGapsSheet) {
@@ -2164,11 +2165,40 @@ fun HomeScreen(
             } else {
                 null
             },
+            // Codeberg #142: a reviewed saved template can fix the library
+            // copy in place instead of logging a row; hide drops it from
+            // suggestions (reversible in Settings → Saved foods).
+            onSaveToLibrary = ui.pendingReviewSource?.let { template ->
+                { name, grams, scale, mealType, selectedServingUnit, selectedServingQuantity, editedAnalysis, logTime ->
+                    vm.saveAnalysisToLibrary(
+                        template = template,
+                        name = name,
+                        servingGrams = grams,
+                        scale = scale,
+                        mealType = mealType,
+                        selectedServingUnit = selectedServingUnit,
+                        selectedServingQuantity = selectedServingQuantity,
+                        editedAnalysis = editedAnalysis,
+                        logTime = logTime,
+                    )
+                }
+            },
+            onHideFromSuggestions = ui.pendingReviewSource?.let { template ->
+                { vm.hideSavedFood(template.favoriteKey); vm.dismissPending() }
+            },
             // Fresh barcode reviews give the text slot to Save to favorites;
             // with a progressive draft in progress "add next" keeps the slot.
+            // A saved-template review without an open draft gives the slot to
+            // Save to library instead (Codeberg #142) — "add next" only makes
+            // sense when there is a draft to add to.
             onAddToProgressiveMeal = if (
                 ui.pendingFoodSource == FoodSource.BARCODE &&
                 ui.pendingReviewSource == null &&
+                ui.progressiveMeal?.items?.isNotEmpty() != true
+            ) {
+                null
+            } else if (
+                ui.pendingReviewSource != null &&
                 ui.progressiveMeal?.items?.isNotEmpty() != true
             ) {
                 null

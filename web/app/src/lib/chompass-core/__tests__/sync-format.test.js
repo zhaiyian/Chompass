@@ -5,6 +5,7 @@ import { loadParityFixture } from "../../parity-fixtures.js";
 import {
   exportSyncDocument,
   parseSyncDocument,
+  foodEntryFromSyncWire,
   SYNC_FORMAT_VERSION,
   SYNC_IMPORT_VERSIONS,
   liveFoodEntriesFromSync,
@@ -21,7 +22,7 @@ const sample = loadParityFixture("sync-sample.json");
 test("parity sync-sample parses", () => {
   const doc = parseSyncDocument(sample);
   assert.equal(doc.export.kind, "sync");
-  assert.equal(doc.export.format_version, "1.3");
+  assert.equal(doc.export.format_version, "1.4");
   const foods = liveFoodEntriesFromSync(doc.food_entries);
   assert.equal(foods.length, 2);
   assert.equal(foods[0].id, "11111111-1111-4111-8111-111111111111");
@@ -29,6 +30,9 @@ test("parity sync-sample parses", () => {
   assert.equal(foods[0].source, "manual");
   assert.equal(foods[0].selectedServingUnit, "bowl");
   assert.equal(foods[0].constituents?.length, 2);
+  // sync 1.4 photo refs (Codeberg #122) round-trip into the record.
+  assert.deepEqual(foods[0].photos, ["photos/0123456789abcdef.jpg"]);
+  assert.deepEqual(foods[1].photos, []);
   assert.equal(foods[0].constituents?.[0].selectedServingUnit, "piece");
   assert.equal(foods[0].constituents?.[0].servingUnitOptions?.[0].gramsPerUnit, 90);
   // sync 1.3: constituent micros parse from the fixture.
@@ -147,13 +151,71 @@ test("exportSyncDocument round-trips food id", () => {
   assert.equal(live[0].constituents[0].caffeineMg, null);
 });
 
-test("sync 1.3 accepted, newer rejected", () => {
+test("sync 1.4 accepted, newer rejected", () => {
   assert.equal(SYNC_FORMAT_VERSION, "1.3");
-  for (const v of ["1.0", "1.1", "1.2", "1.3"]) {
+  for (const v of ["1.0", "1.1", "1.2", "1.3", "1.4"]) {
     assert.ok(SYNC_IMPORT_VERSIONS.has(v), v);
   }
-  const doc = { export: { app: "Chompass", kind: "sync", format_version: "1.4" } };
+  const doc = { export: { app: "Chompass", kind: "sync", format_version: "1.5" } };
   assert.throws(() => parseSyncDocument(doc), UnsupportedSyncFormatError);
+});
+
+test("exportSyncDocument stamps 1.4 iff photo refs present, round-trips them", () => {
+  const base = { date: "2026-07-24", time: "12:30", mealType: "lunch", name: "Salad", calories: 100, proteinG: 5, carbsG: 8, fatG: 4 };
+  const photoRow = { ...base, id: "p1", photos: ["photos/0123456789abcdef.jpg"] };
+  const plainRow = { ...base, id: "p2" };
+
+  const withPhotos = exportSyncDocument({ foodEntries: [photoRow, plainRow] });
+  assert.equal(withPhotos.export.format_version, "1.4");
+  assert.deepEqual(withPhotos.food_entries[0].photos, ["photos/0123456789abcdef.jpg"]);
+  assert.equal(withPhotos.food_entries[1].photos, undefined);
+  const parsed = liveFoodEntriesFromSync(parseSyncDocument(withPhotos).food_entries);
+  assert.deepEqual(parsed[0].photos, ["photos/0123456789abcdef.jpg"]);
+
+  const withoutPhotos = exportSyncDocument({ foodEntries: [plainRow] });
+  assert.equal(withoutPhotos.export.format_version, SYNC_FORMAT_VERSION);
+  assert.equal(withoutPhotos.food_entries[0].photos, undefined);
+
+  // Favorites carry refs too and can trigger the 1.4 stamp.
+  const favPhotos = exportSyncDocument({ favorites: [{ ...base, id: "f1", photos: ["photos/ffffffffffffffff.jpg"] }] });
+  assert.equal(favPhotos.export.format_version, "1.4");
+});
+
+test("food rows carry an additive timestamp instant, parse prefers it (#122)", () => {
+  // Write side: wall clock in the reading zone → UTC instant beside date/time.
+  const doc = exportSyncDocument({
+    foodEntries: [
+      {
+        id: "t1", name: "Egg", calories: 70, proteinG: 6, carbsG: 0.5, fatG: 5,
+        mealType: "breakfast", date: "2026-07-24", time: "08:00", source: "manual",
+      },
+    ],
+  });
+  assert.equal(doc.food_entries[0].timestamp, new Date("2026-07-24T08:00:00").toISOString());
+  assert.equal(doc.food_entries[0].date, "2026-07-24");
+  assert.equal(doc.food_entries[0].time, "08:00");
+
+  // Parse side: the instant wins over a stale wall clock and is re-rendered in
+  // the reading device's zone (the traveler case: no zone-dependent shifting).
+  const hostile = foodEntryFromSyncWire({
+    ...doc.food_entries[0],
+    date: "2026-10-30",
+    time: "12:00",
+    timestamp: "2026-10-31T00:00:00Z",
+  });
+  const instant = new Date("2026-10-31T00:00:00Z");
+  const p = (n) => String(n).padStart(2, "0");
+  assert.equal(hostile.date, `${instant.getFullYear()}-${p(instant.getMonth() + 1)}-${p(instant.getDate())}`);
+  assert.equal(hostile.time, `${p(instant.getHours())}:${p(instant.getMinutes())}`);
+
+  // Legacy rows without the instant keep wall-clock placement.
+  const legacy = foodEntryFromSyncWire({ ...doc.food_entries[0], date: "2026-10-30", time: "12:00", timestamp: undefined });
+  assert.equal(legacy.date, "2026-10-30");
+  assert.equal(legacy.time, "12:00");
+
+  // Round-trip: parse → re-emit preserves the instant (wall clock re-interpreted in-zone).
+  const reexported = exportSyncDocument({ foodEntries: [hostile] });
+  assert.equal(reexported.food_entries[0].timestamp, new Date("2026-10-31T00:00:00Z").toISOString());
 });
 
 test("exportSyncDocument round-trips nicotine entries", () => {

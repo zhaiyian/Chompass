@@ -179,6 +179,9 @@ class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
     suspend fun readColdStartPrefs(): ColdStartPrefs = readColdStartPrefsImpl()
     val dismissedSuggestionIds: Flow<Set<String>> get() = dismissedSuggestionIdsImpl
     suspend fun setSuggestionDismissed(id: String, dismissed: Boolean = true) = setSuggestionDismissedImpl(id, dismissed)
+    /** Saved-food identity keys hidden from Add Food suggestions; diary history stays intact (Codeberg #142). */
+    val hiddenFoodKeys: Flow<Set<String>> get() = hiddenFoodKeysImpl
+    suspend fun setFoodHidden(favoriteKey: String, hidden: Boolean = true) = setFoodHiddenImpl(favoriteKey, hidden)
     /** AI fill-missing Home banner: last-shown epoch day + sticky scan-signature dismissals. */
     val fillMissingBannerLastShownDay: Flow<Long> get() = fillMissingBannerLastShownDayImpl
     suspend fun setFillMissingBannerShown(epochDay: Long) = setFillMissingBannerShownImpl(epochDay)
@@ -502,8 +505,6 @@ class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
     suspend fun setCustomBaseUrl(provider: AIProvider, url: String?) = setCustomBaseUrlCompatImpl(provider, url)
     fun fallbackCustomBaseUrl(provider: AIProvider): Flow<String?> = fallbackProfileBaseUrlImpl(provider)
     suspend fun setFallbackCustomBaseUrl(provider: AIProvider, url: String?) = setFallbackCustomBaseUrlCompatImpl(provider, url)
-    val maxResponseTokens: Flow<Int> get() = maxResponseTokensImpl
-    suspend fun setMaxResponseTokens(v: Int) = setMaxResponseTokensImpl(v)
     val aiReadTimeoutSeconds: Flow<Int> get() = aiReadTimeoutSecondsImpl
     suspend fun setAiReadTimeoutSeconds(v: Int) = setAiReadTimeoutSecondsImpl(v)
     val servingUnitInferenceMode: Flow<ServingUnitInferenceMode> get() = servingUnitInferenceModeImpl
@@ -637,6 +638,8 @@ class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
     suspend fun setDebugDemoAnalysisFail(enabled: Boolean) = setDebugDemoAnalysisFailImpl(enabled)
     val debugDemoAnalysisTruncate: Flow<Boolean> get() = debugDemoAnalysisTruncateImpl
     suspend fun setDebugDemoAnalysisTruncate(enabled: Boolean) = setDebugDemoAnalysisTruncateImpl(enabled)
+    val debugDemoAnalysisHoldMs: Flow<Int> get() = debugDemoAnalysisHoldMsImpl
+    suspend fun setDebugDemoAnalysisHoldMs(ms: Int) = setDebugDemoAnalysisHoldMsImpl(ms)
     val syncRevisions: Flow<Map<String, SyncRevision>> get() = syncRevisionsImpl
     suspend fun setSyncRevisions(revisions: Map<String, SyncRevision>) = setSyncRevisionsImpl(revisions)
     val webDavUrl: Flow<String> get() = webDavUrlImpl
@@ -649,6 +652,13 @@ class PreferencesStore(private val appContext: Context) : NutritionSyncStore {
     suspend fun setWebDavEnabled(enabled: Boolean) = setWebDavEnabledImpl(enabled)
     val webDavAutoSyncDay: Flow<String?> get() = webDavAutoSyncDayImpl
     suspend fun setWebDavAutoSyncDay(day: String?) = setWebDavAutoSyncDayImpl(day)
+    val webDavPhotosEnabled: Flow<Boolean> get() = webDavPhotosEnabledImpl
+    suspend fun setWebDavPhotosEnabled(enabled: Boolean) = setWebDavPhotosEnabledImpl(enabled)
+    val webDavPhotosWifiOnly: Flow<Boolean> get() = webDavPhotosWifiOnlyImpl
+    suspend fun setWebDavPhotosWifiOnly(wifiOnly: Boolean) = setWebDavPhotosWifiOnlyImpl(wifiOnly)
+    val webDavSyncedPhotos: Flow<Set<String>> get() = webDavSyncedPhotosImpl
+    val webDavSyncedPhotosUrl: Flow<String?> get() = webDavSyncedPhotosUrlImpl
+    suspend fun setWebDavSyncedPhotos(refs: Set<String>, ownerUrl: String) = setWebDavSyncedPhotosImpl(refs, ownerUrl)
     val lastSyncAt: Flow<String?> get() = lastSyncAtImpl
     suspend fun setLastSyncAt(iso: String?) = setLastSyncAtImpl(iso)
     val lastSyncEtag: Flow<String?> get() = lastSyncEtagImpl

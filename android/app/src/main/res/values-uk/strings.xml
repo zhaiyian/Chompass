@@ -67,7 +67,23 @@
     <string name="autobalance_carbs">Вуглеводи</string>
     <string name="autobalance_fat">Жири</string>
     <string name="ai_provider_ollama">Ollama (локально)</string>
-    <string name="ai_provider_custom">Власний (сумісний з OpenAI)</string>
+    <string name="ai_provider_ollama_cloud">Ollama Cloud</string>
+    <string name="ai_provider_custom">Інша URL</string>
+    <string name="ai_provider_subtitle_custom">Введи базову URL</string>
+    <string name="ai_provider_search_hint">Ім\'я або хост</string>
+    <string name="ai_provider_section_shortcuts">Ярлики</string>
+    <string name="ai_provider_section_phone">На цьому телефоні</string>
+    <string name="ai_provider_section_server">Твій сервер</string>
+    <string name="ai_provider_section_cloud">Хмара</string>
+    <string name="ai_provider_chip_on_phone">На телефоні</string>
+    <string name="ai_provider_chip_your_server">Твій сервер</string>
+    <string name="ai_provider_chip_native">Власний API</string>
+    <string name="ai_provider_chip_cloud">Хмара</string>
+    <string name="ai_provider_row_gemini">Ключ · перемикач Google Search</string>
+    <string name="ai_provider_row_anthropic">Ключ · окремий API</string>
+    <string name="ai_provider_row_ollama">Ця мережа · без ключа</string>
+    <string name="ai_provider_row_host_key">%1$s · ключ</string>
+    <string name="ai_provider_directory_footer">Хости зі списку йдуть із цією версією. Ключ іде лише на обраний хост.</string>
     <string name="ai_provider_on_device_subtitle">Приватно та офлайн. Менш точний за хмарний ШІ; завантаження ~2–4 ГБ</string>
     <string name="ai_provider_subtitle_gemini">Безкоштовний ключ API · працює одразу</string>
     <string name="ai_provider_subtitle_openai">Моделі GPT</string>
@@ -81,11 +97,7 @@
     <string name="ai_provider_subtitle_deepinfra">Хостовані відкриті моделі</string>
     <string name="ai_provider_subtitle_mistral">Моделі Mistral</string>
     <string name="ai_provider_subtitle_ollama">Твій комп\'ютер, без хмари</string>
-    <string name="ai_provider_subtitle_custom">LM Studio, vLLM, llama.cpp тощо</string>
-    <string name="ai_provider_group_recommended">Рекомендований</string>
-    <string name="ai_provider_group_cloud">Хмарні провайдери</string>
-    <string name="ai_provider_group_local">Локально та self-hosted</string>
-    <string name="ai_provider_group_device">На пристрої</string>
+    <string name="ai_provider_subtitle_ollama_cloud">Хмарні моделі Ollama</string>
     <string name="settings_section_ai_profile">Профіль</string>
     <string name="settings_section_ai_connection">З\'єднання</string>
     <string name="settings_section_ai_advanced">Додатково</string>
@@ -94,7 +106,6 @@
     <string name="settings_ai_key_remove_title">Видалити ключ API?</string>
     <string name="settings_ai_key_remove_body">Збереження порожнього ключа видаляє збережений ключ цього профілю.</string>
     <string name="settings_ai_get_key">Отримати ключ API</string>
-    <string name="settings_ai_value_default">%1$,d (за замовчуванням)</string>
     <string name="settings_ai_timeout_default">%1$,ds (за замовчуванням)</string>
     <string name="api_key_placeholder">Вставте API-ключ</string>
     <string name="ai_key_placeholder_ollama">Ключ не потрібен</string>
@@ -563,6 +574,8 @@
     <string name="settings_tap_to_edit">Натисни, щоб змінити</string>
     <string name="settings_custom_url_placeholder">https://your-endpoint.com/v1</string>
     <string name="settings_custom_url_title">Власний базовий URL</string>
+    <string name="settings_custom_directory_docs">Документація</string>
+    <string name="ai_model_accepts_images">Підтримує зображення (заявлено)</string>
     <string name="settings_ai_allow_insecure_http">Дозволити незахищений HTTP</string>
     <string name="settings_ai_allow_insecure_http_footer">Власні та Ollama-адреси зможуть використовувати http://, наприклад у домашній мережі. Хмарні провайдери використовують https. Тримай вимкненим, якщо на сервері є TLS.</string>
     <string name="settings_clear_key">Очистити ключ</string>
@@ -726,20 +739,22 @@
     <string name="ai_error_network_format">Помилка мережі: %1$s</string>
     <string name="ai_error_invalid_response">Не вдалося зрозуміти відповідь ШІ. Спробуй ще раз.</string>
     <string name="ai_error_invalid_url">Недійсний API URL. Перевір налаштування провайдера.</string>
-    <string name="ai_error_insecure_http_blocked">Незахищений HTTP заблоковано. Увімкни «Дозволити незахищений HTTP» у Налаштування → ШІ та мова або використай URL https://.</string>
     <string name="ai_error_on_device_model_not_downloaded">Пристроєву модель ще не завантажено. Відкрий Налаштування → ШІ-провайдер → Модель, щоб завантажити.</string>
     <string name="ai_error_on_device_unsupported_device">Цей пристрій не відповідає вимогам пристроєвого ШІ. Обери хмарного провайдера в Налаштуваннях → ШІ-провайдер.</string>
     <string name="ai_error_on_device_low_memory">Зараз недостатньо вільної пам\'яті для пристроєвого ШІ. Спробуй меншу модель E2B, закрий інші застосунки або зміни провайдера в Налаштуваннях → ШІ-провайдер.</string>
     <string name="ai_error_on_device_engine_init">Не вдалося запустити механізм моделі на цьому пристрої. Спробуй ще раз, вивантаж модель у Налаштуваннях → ШІ-провайдер → Модель або перемкнися на хмарного провайдера.</string>
     <string name="ai_error_key_rejected">Твій API-ключ відхилено. Відкрий Налаштування → ШІ-провайдер і встав дійсний ключ.</string>
+    <string name="ai_error_timeout">ШІ-провайдер відповідав задовго. Спробуй ще раз; для власного сервера збільш тайм-аут у Налаштування → ШІ-провайдер.</string>
+    <string name="ai_error_disabled">Функції ШІ вимкнено в Налаштування → ШІ-провайдер.</string>
+    <string name="ai_error_insecure_http_blocked">Незахищений HTTP заблоковано. Увімкни «Дозволити незахищений HTTP» у Налаштування → ШІ-провайдер або використай адресу https://.</string>
+    <string name="ai_error_truncated_twice">Відповідь двічі вперлася в ліміт виводу моделі — міркування також враховуються. Встанови Рівень міркувань на Низький або Вимк. у Налаштування → ШІ-провайдер або постав коротше запитання.</string>
+    <string name="ai_error_truncated_twice_description">У моделі закінчилося місце для виводу до завершення; токени міркувань входять у ліміт. Встанови Рівень міркувань на Низький або Вимк. у Налаштування → ШІ-провайдер і спробуй ще раз.</string>
+    <string name="ai_error_truncated">Відповідь вперлася в ліміт виводу моделі, не встигнувши завершитися, — міркування також враховуються. Встанови Рівень міркувань на Низький або Вимк. у Налаштування → ШІ-провайдер або постав коротше запитання.</string>
     <string name="ai_error_location_unsupported">Gemini недоступний з цієї мережі (країна/IP). Якщо ти користуєшся VPN, вимкни його або обери домашній вихід. IP дата-центрів часто заблоковані. Або увімкни оплату в проєкті Google AI Studio, спробуй іншу мережу чи зміни провайдера в Налаштуваннях → ШІ-провайдер.</string>
     <string name="ai_error_provider_overloaded">ШІ-провайдер зараз перевантажений. Ми повторили кілька разів. Спробуй за хвилину або зміни провайдера/модель у Налаштуваннях → ШІ-провайдер.</string>
     <string name="ai_error_rate_limit">Досягнуто ліміту запитів для твого API-ключа. Зачекай хвилину або зміни провайдера в Налаштуваннях → ШІ-провайдер. На безкоштовному тарифі модель Flash-Lite має найбільшу квоту.</string>
     <string name="ai_error_coach_on_device">Коуч поки недоступний з пристроєвим провайдером. Перемкнися на хмарного провайдера в Налаштуваннях → ШІ-провайдер.</string>
     <string name="ai_error_coach_round_limit">Коуч перевищив ліміт циклів викликів інструментів. Спробуй переформулювати запитання.</string>
-    <string name="ai_error_truncated_twice">Відповідь ШІ двічі обрізалася на ліміті довжини відповіді. Збільш максимальну довжину відповіді в Налаштуваннях → ШІ та мова або спробуй коротше запитання.</string>
-    <string name="ai_error_truncated_twice_description">Модель досягла ліміту довжини відповіді, не закінчивши її, і роздуми також входять у цей ліміт. Збільш максимальну довжину відповіді в Налаштуваннях → ШІ та мова або обмеж роздуми моделі, потім спробуй ще раз.</string>
-    <string name="ai_error_truncated">Відповідь ШІ обрізалася на ліміті довжини відповіді. Збільш максимальну довжину відповіді в Налаштуваннях → ШІ та мова або спробуй коротше запитання.</string>
     <string name="ai_error_provider_error">ШІ-провайдер повернув помилку.</string>
     <string name="ai_error_grounded_requires_provider">Режим «Перевірене внесення» потребує активного ШІ-провайдера.</string>
     <string name="ai_error_grounded_on_device">Режим «Перевірене внесення» недоступний для пристроєвих моделей.</string>
@@ -838,12 +853,28 @@
     <string name="action_show">Показати</string>
     <string name="action_undo">Скасувати</string>
     <string name="action_save_to_favorites">Зберегти в обране</string>
+    <string name="action_save_to_library">Зберегти до бібліотеки</string>
+    <string name="action_hide_from_suggestions">Сховати з пропозицій</string>
+    <string name="action_unhide">Показати</string>
+    <string name="settings_saved_foods">Збережені продукти</string>
+    <string name="library_hidden_section">Приховані</string>
+    <string name="library_empty">Збережених продуктів ще немає</string>
+    <string name="library_never_logged">Не записувався</string>
+    <string name="library_row_summary">записів: %1$d · останній %2$s</string>
+    <string name="library_delete_rows_title">Видалити записи з дневника?</string>
+    <string name="library_delete_rows_message">Видалити всі записи (%1$d) для «%2$s»? Дні буде перераховано. Збережений продукт залишиться тут; видалиться лише його історія дневника.</string>
+    <string name="library_merge_section">Можливі дублікати</string>
+    <string name="library_merge_title">Об\'єднати дублікати</string>
+    <string name="library_merge_intro">Схоже, це один і той самий продукт. Виберіть ім\'я, яке залишиться; решта об\'єднаються в нього.</string>
+    <string name="library_merge_rows_message">%1$d записів буде перейменовано на «%2$s». Нічого не видаляється; дні буде перераховано.</string>
+    <string name="library_merge_action">Об\'єднати</string>
+    <string name="library_sort_last_logged">За останнім записом</string>
+    <string name="library_sort_name">Назва</string>
+    <string name="library_sort_logs">Записи</string>
     <string name="saved_to_favorites">Збережено в обраному</string>
     <string name="action_what_if">Що як?</string>
     <string name="add_food_relog_kcal">%1$d %2$s</string>
-    <string name="ai_error_disabled">ШІ-функції вимкнено в Налаштуваннях → ШІ та мова.</string>
     <string name="ai_error_model_unavailable">Провайдер не знайшов цю модель. Вона може бути платною на безкоштовному тарифі, недоступною у твоєму регіоні або ж endpoint неправильний. Перемкнися на стандартну модель Flash у Налаштуваннях → ШІ-провайдер або ввімкни білінг у проєкті AI Studio.</string>
-    <string name="ai_error_timeout">ШІ-провайдер відповідав надто довго. Спробуй ще раз або збільш таймаут у Налаштуваннях → ШІ та мова.</string>
     <string name="ai_model_tier_paid">Тільки платна модель (безкоштовний тариф більше не включає Pro)</string>
     <string name="ai_model_tier_varies">Доступність на безкоштовному тарифі залежить від облікового запису та регіону</string>
     <string name="ai_provider_on_device">На пристрої (приватно)</string>
@@ -973,6 +1004,12 @@
     <string name="export_format">Формат</string>
     <string name="export_from">З</string>
     <string name="export_no_meals">У вибраному періоді немає записаних страв.</string>
+    <string name="export_include_photos">Включити фотографії</string>
+    <string name="sync_photos">Синхронізувати фото</string>
+    <string name="sync_photos_caption">Якщо увімкнено, фото страв завантажуються на ваш сервер WebDAV</string>
+    <string name="sync_photos_wifi_only">Фото лише через Wi-Fi</string>
+    <string name="sync_photos_syncing">Синхронізація фото…</string>
+    <string name="sync_photos_failed">Не вдалося синхронізувати фото</string>
     <string name="export_range">Період</string>
     <string name="export_range_all">За весь час</string>
     <string name="export_range_custom">Власний</string>
@@ -1441,8 +1478,6 @@ LBM = вага × (1 − %жиру)</string>
     <string name="settings_macro_pinned_label_format">%1$s (закріплено)</string>
     <string name="settings_macro_unlocked">Розблоковано</string>
     <string name="settings_manage_health_access">Керування доступом Health Connect</string>
-    <string name="settings_max_tokens">Максимальна довжина відповіді</string>
-    <string name="settings_max_tokens_unit">токенів</string>
     <string name="settings_meal_constituents">Розбивка страви на інгредієнти</string>
     <string name="settings_meal_constituents_footer">Коли ввімкнено, ШІ може розділяти складні страви на редаговані інгредієнти з грамами й одиницями. Мікронутрієнти для кожного інгредієнта запитують лише у сильніших хмарних моделях; менші моделі все одно повертають список інгредієнтів із макросами.</string>
     <string name="settings_meal_time_edit_format">%1$s</string>
@@ -2624,11 +2659,6 @@ LBM = вага × (1 − %жиру)</string>
         <item>завантажити</item>
         <item>локальна</item>
         <item>офлайн</item>
-    </string-array>
-    <string-array name="settings_search_kw_max_tokens">
-        <item>токени</item>
-        <item>довжина</item>
-        <item>ліміт</item>
     </string-array>
     <string-array name="settings_search_kw_ai_read_timeout">
         <item>час очікування</item>

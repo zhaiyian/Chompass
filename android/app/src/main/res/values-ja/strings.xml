@@ -78,7 +78,23 @@
 
     <!-- AI Provider names -->
     <string name="ai_provider_ollama">Ollama (ローカル)</string>
-    <string name="ai_provider_custom">カスタム (OpenAI互換)</string>
+    <string name="ai_provider_ollama_cloud">Ollama Cloud</string>
+    <string name="ai_provider_custom">別のURL</string>
+    <string name="ai_provider_subtitle_custom">ベースURLを入力</string>
+    <string name="ai_provider_search_hint">名前かホストを検索</string>
+    <string name="ai_provider_section_shortcuts">ショートカット</string>
+    <string name="ai_provider_section_phone">この端末</string>
+    <string name="ai_provider_section_server">自分のサーバー</string>
+    <string name="ai_provider_section_cloud">クラウド</string>
+    <string name="ai_provider_chip_on_phone">端末内</string>
+    <string name="ai_provider_chip_your_server">自分のサーバー</string>
+    <string name="ai_provider_chip_native">専用API</string>
+    <string name="ai_provider_chip_cloud">クラウド</string>
+    <string name="ai_provider_row_gemini">キー · Google検索の切替</string>
+    <string name="ai_provider_row_anthropic">キー · 別API</string>
+    <string name="ai_provider_row_ollama">このネットワーク · キー不要</string>
+    <string name="ai_provider_row_host_key">%1$s · キー</string>
+    <string name="ai_provider_directory_footer">掲載ホストはこの版に含まれます。キーは選んだホストにだけ送られます。</string>
 
     <!-- AI Provider API key placeholders -->
     <string name="api_key_placeholder">APIキーを貼り付け</string>
@@ -516,6 +532,8 @@
     <string name="settings_server_url">サーバーURL</string>
     <string name="settings_tap_to_edit">タップして編集</string>
     <string name="settings_custom_url_title">カスタム ベースURL</string>
+    <string name="settings_custom_directory_docs">ドキュメント</string>
+    <string name="ai_model_accepts_images">画像対応（宣言済み）</string>
     <string name="settings_ai_allow_insecure_http">安全でない HTTP を許可</string>
     <string name="settings_ai_allow_insecure_http_footer">カスタムおよび Ollama のエンドポイントで http:// URL を使えます。自宅ネットワークなど。クラウド提供元は https を使います。サーバーに TLS があるときはオフのままにしてください。</string>
     <string name="settings_clear_key">キーを消去</string>
@@ -700,11 +718,7 @@
     <string name="ai_provider_subtitle_deepinfra">ホスト型オープンモデル</string>
     <string name="ai_provider_subtitle_mistral">Mistralモデル</string>
     <string name="ai_provider_subtitle_ollama">自分のPCで、クラウド不要</string>
-    <string name="ai_provider_subtitle_custom">LM Studio、vLLM、llama.cpp など</string>
-    <string name="ai_provider_group_recommended">おすすめ</string>
-    <string name="ai_provider_group_cloud">クラウドプロバイダ</string>
-    <string name="ai_provider_group_local">ローカル・セルフホスト</string>
-    <string name="ai_provider_group_device">端末上</string>
+    <string name="ai_provider_subtitle_ollama_cloud">Ollama のクラウドモデル</string>
     <string name="settings_section_ai_profile">プロファイル</string>
     <string name="settings_section_ai_connection">接続</string>
     <string name="settings_section_ai_advanced">詳細設定</string>
@@ -713,7 +727,6 @@
     <string name="settings_ai_key_remove_title">APIキーを削除しますか？</string>
     <string name="settings_ai_key_remove_body">空のキーを保存すると、このプロファイルの保存済みキーが削除されます。</string>
     <string name="settings_ai_get_key">APIキーを取得</string>
-    <string name="settings_ai_value_default">%1$,d（デフォルト）</string>
     <string name="settings_ai_timeout_default">%1$,ds（デフォルト）</string>
     <string name="camera_scale_tip_message">ヒント: フォーク、手、またはコインを食べ物の横に入れてください。分量の推定に役立ちます。</string>
     <string name="cd_relog_meal">%1$sを再ログ</string>
@@ -835,19 +848,41 @@
     <string name="action_show">表示</string>
     <string name="action_undo">戻す</string>
     <string name="action_save_to_favorites">お気に入りに保存</string>
+    <string name="action_save_to_library">ライブラリに保存</string>
+    <string name="action_hide_from_suggestions">提案から非表示</string>
+    <string name="action_unhide">表示に戻す</string>
+    <string name="settings_saved_foods">保存した食品</string>
+    <string name="library_hidden_section">非表示</string>
+    <string name="library_empty">保存した食品はまだありません</string>
+    <string name="library_never_logged">記録なし</string>
+    <string name="library_row_summary">%1$d回の記録 · 最終 %2$s</string>
+    <string name="library_delete_rows_title">記録を削除しますか？</string>
+    <string name="library_delete_rows_message">「%2$s」の記録%1$d件をすべて削除しますか？ 日ごとの合計は再計算されます。保存した食品はここに残り、日誌の履歴のみ削除されます。</string>
+    <string name="library_merge_section">重複の可能性</string>
+    <string name="library_merge_title">重複を統合</string>
+    <string name="library_merge_intro">同じ食品の可能性があります。残す名前を選ぶと、ほかはその名前に統合されます。</string>
+    <string name="library_merge_rows_message">記録%1$d件の名前が「%2$s」に変わります。削除はされず、日ごとの合計は再計算されます。</string>
+    <string name="library_merge_action">統合</string>
+    <string name="library_sort_last_logged">最終記録</string>
+    <string name="library_sort_name">名前</string>
+    <string name="library_sort_logs">記録数</string>
     <string name="saved_to_favorites">お気に入りに保存しました</string>
     <string name="action_what_if">どうなる？</string>
     <string name="add_food_relog_kcal">%1$d %2$s</string>
     <string name="ai_error_coach_on_device">コーチはまだオンデバイスプロバイダーに対応していません。設定 → AI プロバイダーでクラウドプロバイダーに切り替えてください。</string>
     <string name="ai_error_coach_round_limit">コーチは回答できませんでした。質問の言い方を変えてみてください。</string>
-    <string name="ai_error_disabled">AI 機能は設定 → AI と音声でオフになっています。</string>
     <string name="ai_error_grounded_on_device">Grounded モードはオンデバイスモデルでは利用できません。</string>
     <string name="ai_error_grounded_requires_provider">Grounded モードには有効な AI プロバイダーが必要です。</string>
     <string name="ai_error_image_conversion_failed">画像を処理できませんでした。</string>
     <string name="ai_error_invalid_response">AI の応答を理解できませんでした。もう一度お試しください。</string>
     <string name="ai_error_invalid_url">API URL が無効です。プロバイダー設定を確認してください。</string>
-    <string name="ai_error_insecure_http_blocked">安全でない HTTP はブロックされています。設定 → AI と音声で「安全でない HTTP を許可」をオンにするか、https:// URL を使ってください。</string>
     <string name="ai_error_key_rejected">API キーが拒否されました。設定 → AI プロバイダーを開き、有効なキーを貼り直してください。</string>
+    <string name="ai_error_timeout">AI プロバイダーの応答に時間がかかりすぎました。もう一度お試しください。セルフホストのエンドポイントをお使いの場合は、設定 → AI プロバイダーでタイムアウトを長くしてください。</string>
+    <string name="ai_error_disabled">AI 機能が設定 → AI プロバイダーでオフになっています。</string>
+    <string name="ai_error_insecure_http_blocked">安全でない HTTP はブロックされています。設定 → AI プロバイダーで「安全でない HTTP を許可」をオンにするか、https:// の URL をお使いください。</string>
+    <string name="ai_error_truncated_twice">返信が 2 回、モデルの出力上限に達しました — 思考も上限に含まれます。設定 → AI プロバイダーで推論の深さを「低」または「オフ」にするか、もっと短い質問をお試しください。</string>
+    <string name="ai_error_truncated_twice_description">モデルが完了前に出力枠を使い切りました。思考トークンも上限に含まれます。設定 → AI プロバイダーで推論の深さを「低」または「オフ」にしてから、もう一度お試しください。</string>
+    <string name="ai_error_truncated">返信が完了前にモデルの出力上限に達しました — 思考も上限に含まれます。設定 → AI プロバイダーで推論の深さを「低」または「オフ」にするか、もっと短い質問をお試しください。</string>
     <string name="ai_error_location_unsupported">Gemini はこのネットワーク環境（国/IP）では利用できません。VPN を使用している場合はオフにするか、住宅用出口に切り替えてください。データセンター/非住宅用 VPN IP はよくブロックされます。Google AI Studio プロジェクトで課金を有効にするか、別のネットワークを試すか、設定 → AI プロバイダーでプロバイダーを変更してください。</string>
     <string name="ai_error_model_unavailable">プロバイダーがこのモデルを見つけられませんでした。無料プランでは有料のみ、地域で制限されている、またはエンドポイントが間違っている可能性があります。設定 → AI プロバイダーでデフォルトの Flash モデルに切り替えるか、AI Studio プロジェクトで課金を有効にしてください。</string>
     <string name="ai_error_network_format">ネットワークエラー：%1$s</string>
@@ -859,10 +894,6 @@
     <string name="ai_error_provider_error">AI プロバイダーがエラーを返しました。</string>
     <string name="ai_error_provider_overloaded">AI プロバイダーが現在過負荷です。数回再試行しました。1分後に再度お試しいただくか、設定 → AI プロバイダーでプロバイダー/モデルを変更してください。</string>
     <string name="ai_error_rate_limit">API キーのリクエスト上限に達しました。1分待つか、設定 → AI プロバイダーで別のプロバイダーに切り替えてください。無料プランでは Flash-Lite モデルの割り当てが最も多いです。</string>
-    <string name="ai_error_timeout">AI プロバイダーの応答が遅すぎました。再試行するか、設定 → AI と音声でタイムアウトを延ばしてください。</string>
-    <string name="ai_error_truncated">AI の応答が応答長の上限で途切れました。設定 → AI と音声で最大応答長を増やすか、もっと短い質問を試してください。</string>
-    <string name="ai_error_truncated_twice">AI の応答が応答長の上限で2回途切れました。設定 → AI と音声で最大応答長を増やすか、もっと短い質問を試してください。</string>
-    <string name="ai_error_truncated_twice_description">モデルは回答を終える前に応答長の上限に達しました。思考もこの上限に含まれます。設定 → AI と音声で最大応答長を増やすか、モデルの思考を制限して、もう一度試してください。</string>
     <string name="ai_model_tier_paid">有料のみのモデル（無料プランには Pro は含まれなくなりました）</string>
     <string name="ai_model_tier_varies">無料プランでの利用可否はアカウントと地域によって異なります</string>
     <string name="ai_provider_on_device">オンデバイス（プライベート）</string>
@@ -1003,6 +1034,12 @@
     <string name="export_format">形式</string>
     <string name="export_from">開始</string>
     <string name="export_no_meals">選択した期間に記録された食事がありません。</string>
+    <string name="export_include_photos">写真を含める</string>
+    <string name="sync_photos">写真を同期</string>
+    <string name="sync_photos_caption">有効にすると、食事の写真が WebDAV サーバーにアップロードされます</string>
+    <string name="sync_photos_wifi_only">Wi-Fi のみで写真を同期</string>
+    <string name="sync_photos_syncing">写真を同期しています…</string>
+    <string name="sync_photos_failed">写真の同期に失敗しました</string>
     <string name="export_range">期間</string>
     <string name="export_range_all">すべて</string>
     <string name="export_range_custom">カスタム</string>
@@ -1485,8 +1522,6 @@
     <string name="settings_macro_pinned_label_format">%1$s（固定）</string>
     <string name="settings_macro_unlocked">固定解除</string>
     <string name="settings_manage_health_access">Health Connect アクセスを管理</string>
-    <string name="settings_max_tokens">最大応答長</string>
-    <string name="settings_max_tokens_unit">トークン</string>
     <string name="settings_meal_constituents">食事の材料内訳</string>
     <string name="settings_meal_constituents_footer">有効にすると、AI は複合的な食事を、グラムと単位付きの編集可能な材料に分割できます。食材ごとの微量栄養素はより強力なクラウドモデルにのみ要求され、小さなモデルでもマクロ付きの食材リストは返されます。</string>
     <string name="settings_meal_time_edit_format">%1$s</string>
@@ -2676,11 +2711,6 @@
         <item>ダウンロード</item>
         <item>ローカル</item>
         <item>オフライン</item>
-    </string-array>
-    <string-array name="settings_search_kw_max_tokens">
-        <item>トークン</item>
-        <item>長さ</item>
-        <item>上限</item>
     </string-array>
     <string-array name="settings_search_kw_ai_read_timeout">
         <item>タイムアウト</item>
